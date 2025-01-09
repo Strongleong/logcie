@@ -1,5 +1,7 @@
+#include <stdint.h>
 #include <stdio.h>
 #include <time.h>
+#include <stdarg.h>
 
 #if defined(__STDC__)
 # define PREDEF_STANDARD_C_1989
@@ -20,39 +22,56 @@
 # endif
 #endif
 
+#ifndef LOGCIE_PRINT
 #define LOGCIE_PRINT fprintf
+#endif
+
+#ifndef LOGCIE_VAPRINT
+#define LOGCIE_VAPRINT vfprintf
+#endif
 
 typedef enum Logcie_LogLevel {
-  LEVEL_DEBUG,
-  LEVEL_VERBOSE,
-  LEVEL_INFO,
-  LEVEL_WARN,
-  LEVEL_ERROR,
-  LEVEL_FATAL,
+  LOGCIE_LEVEL_DEBUG,
+  LOGCIE_LEVEL_VERBOSE,
+  LOGCIE_LEVEL_INFO,
+  LOGCIE_LEVEL_WARN,
+  LOGCIE_LEVEL_ERROR,
+  LOGCIE_LEVEL_FATAL,
 } Logcie_LogLevel;
 
 static char *logcie_level_label[] = {
-  [LEVEL_DEBUG]   = "debug",
-  [LEVEL_VERBOSE] = "verbose",
-  [LEVEL_INFO]    = "info",
-  [LEVEL_WARN]    = "warn",
-  [LEVEL_ERROR]   = "error",
-  [LEVEL_FATAL]   = "fatal",
+  [LOGCIE_LEVEL_DEBUG]   = "debug",
+  [LOGCIE_LEVEL_VERBOSE] = "verbose",
+  [LOGCIE_LEVEL_INFO]    = "info",
+  [LOGCIE_LEVEL_WARN]    = "warn",
+  [LOGCIE_LEVEL_ERROR]   = "error",
+  [LOGCIE_LEVEL_FATAL]   = "fatal",
+};
+
+static char *logcie_level_label_upper[] = {
+  [LOGCIE_LEVEL_DEBUG]   = "DEBUG",
+  [LOGCIE_LEVEL_VERBOSE] = "VERBOSE",
+  [LOGCIE_LEVEL_INFO]    = "INFO",
+  [LOGCIE_LEVEL_WARN]    = "WARN",
+  [LOGCIE_LEVEL_ERROR]   = "ERROR",
+  [LOGCIE_LEVEL_FATAL]   = "FATAL",
 };
 
 static char *logcie_level_color[] = {
-  [LEVEL_DEBUG]   = "\x1b[90m",         // gray
-  [LEVEL_VERBOSE] = "\x1b[90m",         // gray
-  [LEVEL_INFO]    = "\x1b[37m\x1b[44m", // white on blue
-  [LEVEL_WARN]    = "\x1b[37m\x1b[33m", // white on yellow
-  [LEVEL_ERROR]   = "\x1b[37m\x1b[91m", // white on red
-  [LEVEL_FATAL]   = "\x1b[37m\x1b[91m", // white on red
+  [LOGCIE_LEVEL_DEBUG]   = "\x1b[90m",         // gray
+  [LOGCIE_LEVEL_VERBOSE] = "\x1b[90m",         // gray
+  [LOGCIE_LEVEL_INFO]    = "\x1b[37m\x1b[44m", // white on blue
+  [LOGCIE_LEVEL_WARN]    = "\x1b[30m\x1b[43m", // black on yellow
+  [LOGCIE_LEVEL_ERROR]   = "\x1b[37m\x1b[41m", // white on red
+  [LOGCIE_LEVEL_FATAL]   = "\x1b[37m\x1b[0;101m", // white on red
 };
 
 /**
   * Format:
   *  $$ - literally symbol $
   *  $m - log message
+  *  $f - file
+  *  $x - line
   *  $l - log level (info, debug, warn)
   *  $L - log level in upper case (INFO, DEBUG, WARN)
   *  $d - current date (YYYY-MM-DD)
@@ -79,7 +98,10 @@ typedef struct Logcie_Logger {
   size_t sinks_cap;
 } Logcie_Logger;
 
-int logcie_log(Logcie_Sink *sink, Logcie_Log log) {
+int logcie_printf_formatter(Logcie_Sink *sink, Logcie_Log log, const char *file, uint32_t line, ...) {
+  va_list args;
+  va_start(args, line);
+
   if (log.level < sink->level) {
     return 0;
   }
@@ -110,12 +132,14 @@ int logcie_log(Logcie_Sink *sink, Logcie_Log log) {
         output_len += LOGCIE_PRINT(sink->sink, "$");
         break;
       case 'm':
-        output_len += LOGCIE_PRINT(sink->sink, "%s", log.msg);
+        output_len += LOGCIE_VAPRINT(sink->sink, log.msg, args);
         break;
       case 'l':
         output_len += LOGCIE_PRINT(sink->sink, "%s", logcie_level_label[log.level]);
         break;
-      /* case 'L': *out = 'L'; break; */
+      case 'L':
+        output_len += LOGCIE_PRINT(sink->sink, "%s", logcie_level_label_upper[log.level]);
+        break;
       case 'd':
         output_len += LOGCIE_PRINT(sink->sink, "%d-%02d-%02d", tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday);
         break;
@@ -127,6 +151,12 @@ int logcie_log(Logcie_Sink *sink, Logcie_Log log) {
         break;
       case 'c':
         output_len += LOGCIE_PRINT(sink->sink, "%s", logcie_level_color[log.level]);
+        break;
+      case 'f':
+        output_len += LOGCIE_PRINT(sink->sink, "%s", file);
+        break;
+      case 'x':
+        output_len += LOGCIE_PRINT(sink->sink, "%u", line);
         break;
       case 'r':
         output_len += LOGCIE_PRINT(sink->sink, "\x1b[0m");
@@ -140,22 +170,34 @@ int logcie_log(Logcie_Sink *sink, Logcie_Log log) {
   }
 
   output_len += LOGCIE_PRINT(sink->sink, "\n");
+  va_end(args);
   return output_len;
 }
 
+#define LOGCIE_CREATE_LOG(lvl, txt) (Logcie_Log) { .level = lvl, .msg = txt, }
+
+#define LOGCIE_DEBUG(sink, msg, ...)   logcie_printf_formatter(&sink, LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG,   msg), __FILE__, __LINE__, __VA_ARGS__)
+#define LOGCIE_VERBOSE(sink, msg, ...) logcie_printf_formatter(&sink, LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg), __FILE__, __LINE__, __VA_ARGS__)
+#define LOGCIE_INFO(sink, msg, ...)    logcie_printf_formatter(&sink, LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO,    msg), __FILE__, __LINE__, __VA_ARGS__)
+#define LOGCIE_WARN(sink, msg, ...)    logcie_printf_formatter(&sink, LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN,    msg), __FILE__, __LINE__, __VA_ARGS__)
+#define LOGCIE_ERROR(sink, msg, ...)   logcie_printf_formatter(&sink, LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR,   msg), __FILE__, __LINE__, __VA_ARGS__)
+#define LOGCIE_FATAL(sink, msg, ...)   logcie_printf_formatter(&sink, LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL,   msg), __FILE__, __LINE__, __VA_ARGS__)
+
+// TODO: Align output up to character
+
 int main(void) {
   Logcie_Sink sink = {
-    .level = LEVEL_DEBUG,
+    .level = LOGCIE_LEVEL_DEBUG,
     .sink = stdout,
-    .fmt = "$d $t (GMT $z) $c[$l]$r: $m @stdout"
+    .fmt = "$f:$x: $c$L$r: $d $t (GMT $z) $c[$l]$r: $m $$stdout"
   };
 
-  logcie_log(&sink, (Logcie_Log){ .level = LEVEL_DEBUG,   .msg = "debug",   .time = time(NULL) });
-  logcie_log(&sink, (Logcie_Log){ .level = LEVEL_VERBOSE, .msg = "verbose", .time = time(NULL) });
-  logcie_log(&sink, (Logcie_Log){ .level = LEVEL_INFO,    .msg = "info",    .time = time(NULL) });
-  logcie_log(&sink, (Logcie_Log){ .level = LEVEL_WARN,    .msg = "warn",    .time = time(NULL) });
-  logcie_log(&sink, (Logcie_Log){ .level = LEVEL_ERROR,   .msg = "error",   .time = time(NULL) });
-  logcie_log(&sink, (Logcie_Log){ .level = LEVEL_FATAL,   .msg = "fatal",   .time = time(NULL) });
+  LOGCIE_DEBUG(sink, "debugguy loggy %d %s", 1, "adsf");
+  LOGCIE_VERBOSE(sink, "verbosesy loggy %d", 2);
+  LOGCIE_INFO(sink, "infofofo loggy %d", 3);
+  LOGCIE_WARN(sink, "warnny loggy %d", 4);
+  LOGCIE_ERROR(sink, "errorry loggy %d", 5);
+  LOGCIE_FATAL(sink, "fatallyly loggy %d", 6);
 
   return 0;
 }
