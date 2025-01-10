@@ -111,14 +111,13 @@ typedef int (Logcie_FomratterFn)(LOGCIE_FOMRATTER_PARAMS);
   *  $d - current date (YYYY-MM-DD)
   *  $t - current time (H:i:m)
   *  $z - current time zone
-  *  $c - color marker of log level
-  *  $r - color reset
   */
 struct Logcie_Sink {
   FILE *sink;
   Logcie_LogLevel level;
   const char *fmt;
   Logcie_FomratterFn *formatter;
+  bool color;
 };
 
 struct Logcie_Log {
@@ -181,13 +180,12 @@ typedef struct Logcie_Logger {
 int logcie_log(Logcie_Log log, const char *file, uint32_t line, ...);
 int logcie_printf_formatter(LOGCIE_FOMRATTER_PARAMS);
 
-
 #define LOGCIE_COLOR_GRAY       "\x1b[90;20m"
 #define LOGCIE_COLOR_BLUE       "\x1b[36;20m"
 #define LOGCIE_COLOR_YELLOW     "\x1b[33;20m"
 #define LOGCIE_COLOR_RED        "\x1b[31;20m"
 #define LOGCIE_COLOR_BRIGHT_RED "\x1b[31;1m"
-#define LOGCIE_COLOR_RESET      "\x1b[0m\x1b[0;101m"
+#define LOGCIE_COLOR_RESET      "\x1b[0m"
 
 #ifdef __cplusplus
 } /* extern "C" */
@@ -222,7 +220,7 @@ static const char *logcie_level_label[] = {
   [LOGCIE_LEVEL_FATAL]   = "fatal",
 };
 
-const char *get_logcie_level_lable(Logcie_LogLevel level) {
+static inline const char *get_logcie_level_lable(Logcie_LogLevel level) {
   _LOGCIE_DEBUG_ASSERT(Count_LOGCICE_LEVEL == 7, "Forgot to update get_logcie_level_lable, you dummy dumb fuck");
   _LOGCIE_ASSERT(level < Count_LOGCICE_LEVEL, "Unexpected log level");
   return logcie_level_label[level];
@@ -238,7 +236,7 @@ static const char *logcie_level_label_upper[] = {
   [LOGCIE_LEVEL_FATAL]   = "FATAL",
 };
 
-const char *get_logcie_level_label_upper(Logcie_LogLevel level) {
+static inline const char *get_logcie_level_label_upper(Logcie_LogLevel level) {
   _LOGCIE_DEBUG_ASSERT(Count_LOGCICE_LEVEL == 7, "Forgot to update get_logcie_level_lable, you dummy dumb fuck");
   _LOGCIE_ASSERT(level < Count_LOGCICE_LEVEL, "Unexpected log level");
   return logcie_level_label_upper[level];
@@ -254,7 +252,7 @@ static const char *logcie_level_color[] = {
   [LOGCIE_LEVEL_FATAL]   = LOGCIE_COLOR_BRIGHT_RED,
 };
 
-const char *get_logcie_level_color(Logcie_LogLevel level) {
+static inline const char *get_logcie_level_color(Logcie_LogLevel level) {
   _LOGCIE_DEBUG_ASSERT(Count_LOGCICE_LEVEL == 7, "Forgot to update get_logcie_level_lable, you dummy dumb fuck");
   _LOGCIE_ASSERT(level < Count_LOGCICE_LEVEL, "Unexpected log level");
   return logcie_level_color[level];
@@ -263,8 +261,9 @@ const char *get_logcie_level_color(Logcie_LogLevel level) {
 static Logcie_Sink default_stdout_sink = {
   .level = LOGCIE_LEVEL_TRACE,
   .sink = NULL,
-  .fmt = "$c$f:$x: $M $L: $d $t (GMT $z) [$l]: $m $$stdout$r",
+  .fmt = "$f:$x: $M $L: $d $t (GMT $z) [$l]: $m $$stdout",
   .formatter = logcie_printf_formatter,
+  .color = true,
 };
 
 #ifdef ATTR_CONSTRUCT
@@ -311,6 +310,10 @@ int logcie_printf_formatter(LOGCIE_FOMRATTER_PARAMS) {
   tm = gmtime(&log.time);
   int timediff = local_hours - tm->tm_hour;
 
+  if (sink->color) {
+    output_len += LOGCIE_PRINT(sink->sink, "%s", get_logcie_level_color(log.level));
+  }
+
   while (*fmt != '\0') {
     if (*fmt != '$') {
       output_len += LOGCIE_PRINT(sink->sink, "%c", *fmt);
@@ -346,9 +349,6 @@ int logcie_printf_formatter(LOGCIE_FOMRATTER_PARAMS) {
       case 'z':
         output_len += LOGCIE_PRINT(sink->sink, "%c%d", timediff > 0 ? '+' : '-', timediff);
         break;
-      case 'c':
-        output_len += LOGCIE_PRINT(sink->sink, "%s", get_logcie_level_color(log.level));
-        break;
       case 'f':
         output_len += LOGCIE_PRINT(sink->sink, "%s", file);
         break;
@@ -358,15 +358,16 @@ int logcie_printf_formatter(LOGCIE_FOMRATTER_PARAMS) {
       case 'M':
         output_len += LOGCIE_PRINT(sink->sink, "%s", log.module);
         break;
-      case 'r':
-        output_len += LOGCIE_PRINT(sink->sink, "\x1b[0m");
-        break;
       default: break;
       // TODO: Add reporing of unknown log operator
       // TODO: Come up with actial name of those "log operators" thingy
     }
 
     fmt++;
+  }
+
+  if (sink->color) {
+    output_len += LOGCIE_PRINT(sink->sink, LOGCIE_COLOR_RESET);
   }
 
   output_len += LOGCIE_PRINT(sink->sink, "\n");
@@ -397,4 +398,3 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
-
