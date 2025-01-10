@@ -1,7 +1,7 @@
 #!/bin/sh
 
-CFLAGS="-Wall -Wextra -std=c99 -pedantic"
-CLIBS="-I./lib/ -lmd -lcrypto"
+CFLAGS="-Wall -Wextra -pedantic -std=c23"
+CLIBS="-I. -lmd -lcrypto"
 CDEBUG="-ggdb -fsanitize=address -fno-omit-frame-pointer"
 CC="clang"
 OUTDIR="./out"
@@ -50,10 +50,8 @@ if [ ! -d "$OUTDIR" ]; then
   mkdir -p "$OUTDIR";
 fi
 
-# sources=$(find ./src -name '*.c')
-
 if $VERBOSE; then
   set -x
 fi
 
-$CC $CFLAGS $CLIBS -o "$OUTDIR/test" ./test/test.c
+$CC $CFLAGS $CLIBS -o "$OUTDIR/test" ./test/test.c # ./test/module.c

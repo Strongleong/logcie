@@ -47,3 +47,7 @@ int main(void) {
  - $z - current time zone
  - $c - color marker of log level
  - $r - color reset
+
+## Notes
+ - If you use clang and flags `-std=c23 -pedantic` you will get warning  if you don't supply any variadic arguments.
+   To suppress this warning you can use `#pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"`.
