@@ -4,8 +4,8 @@ Logcie v0.0.1
 Single header only library in C
 */
 
-#ifndef LOGCIE_H
-#define LOGCIE_H
+#ifndef LOGCIE
+#define LOGCIE
 
 #ifndef LOGCIE_DEF
 #define LOGCIE_DEF extern
@@ -21,38 +21,6 @@ Single header only library in C
 #define LOGCIE_EXPAND_AND_QUOTE(str) LOGCIE_QUOTE(str)
 #define LOGCIE_VERSION_STRING LOGCIE_EXPAND_AND_QUOTE(LOGCIE_VERSION_FULL)
 
-#ifndef __CGCC__
-#  define __PEDANTIC__
-#endif
-
-#if defined(__STDC__)
-# define PREDEF_STANDARD_C_1989
-# if defined(__STDC_VERSION__)
-#  define PREDEF_STANDARD_C_1990
-#  if (__STDC_VERSION__ >= 199409L)
-#   define STD_C94
-#  endif
-#  if (__STDC_VERSION__ >= 199901L)
-#   define STD_C99
-#  endif
-#  if (__STDC_VERSION__ >= 201112L)
-#    define STD_C11
-#  endif
-#  if (__STDC_VERSION__ >= 201710L)
-#   define STDC_18
-#  endif
-#  if (__STDC_VERSION__ >= 202311L)
-#   define STD_C23
-#  endif
-# endif
-#endif
-
-#ifdef __clang__
-#  if defined(__has_attribute) && __has_attribute(constructor)
-#    define ATTR_CONSTRUCT
-#  endif
-#endif
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -65,19 +33,18 @@ extern "C" {
 #define LOGCIE_VAPRINT vfprintf
 #endif
 
-#ifndef NO_STD
-#include <stdio.h>
-#include <time.h>
-#include <stdint.h>
-#include <stdarg.h>
+#ifndef LOGCIE_NO_STD
+# include <stdio.h>
+# include <time.h>
+# include <stdint.h>
+# include <stdarg.h>
+# if (__STDC_VERSION__ < 201710L)
+#  include <stdbool.h>
+# endif
 #endif
 
-#ifndef LOGCIE_PRINT
-#ifndef LOGCIE_VAPRINT
-#ifdef NO_STD
-#error "You must provide implementation of std shit and stuff yo bitch"
-#endif
-#endif
+#if defined(LOGCIE_NO_STD) && !defined(LOGCIE_PRINT) && !defined(LOGCIE_VAPRINT)
+# error "You must provide implementation of std shit and stuff yo bitch"
 #endif
 
 typedef enum Logcie_LogLevel {
@@ -91,8 +58,11 @@ typedef enum Logcie_LogLevel {
   Count_LOGCICE_LEVEL,
 } Logcie_LogLevel;
 
-
-static const char *logcie_module;
+#ifdef __GNUC__
+ static const char __attribute__ ((unused)) *logcie_module;
+#else
+ static const char *logcie_module;
+#endif
 
 typedef struct Logcie_Sink Logcie_Sink;
 typedef struct Logcie_Log Logcie_Log;
@@ -100,7 +70,7 @@ typedef struct Logcie_Log Logcie_Log;
 typedef int (Logcie_FomratterFn)(LOGCIE_FOMRATTER_PARAMS);
 
 /**
-  * Format:
+  * Format sequences:
   *  $$ - literally symbol $
   *  $m - log message
   *  $f - file
@@ -111,6 +81,7 @@ typedef int (Logcie_FomratterFn)(LOGCIE_FOMRATTER_PARAMS);
   *  $d - current date (YYYY-MM-DD)
   *  $t - current time (H:i:m)
   *  $z - current time zone
+  *  $| - align up to this delimiter
   */
 struct Logcie_Sink {
   FILE *sink;
@@ -127,32 +98,25 @@ struct Logcie_Log {
   const char *module;
 };
 
-typedef struct Logcie_Logger {
-  Logcie_Sink *sinks;
-  size_t sinks_len;
-  size_t sinks_cap;
-} Logcie_Logger;
-
 #define LOGCIE_CREATE_LOG(lvl, txt) (Logcie_Log) { .level = lvl, .msg = txt, .time = time(NULL), .module = logcie_module }
 
-#ifndef __PEDANTIC__
-# define LOGCIE_TRACE(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE,   msg), __FILE__, __LINE__, ##__VA_ARGS__)
-# define LOGCIE_DEBUG(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG,   msg), __FILE__, __LINE__, ##__VA_ARGS__)
-# define LOGCIE_VERBOSE(msg, ...) logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg), __FILE__, __LINE__, ##__VA_ARGS__)
-# define LOGCIE_INFO(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO,    msg), __FILE__, __LINE__, ##__VA_ARGS__)
-# define LOGCIE_WARN(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN,    msg), __FILE__, __LINE__, ##__VA_ARGS__)
-# define LOGCIE_ERROR(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR,   msg), __FILE__, __LINE__, ##__VA_ARGS__)
-# define LOGCIE_FATAL(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL,   msg), __FILE__, __LINE__, ##__VA_ARGS__)
+#if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 202000L)
+# define LOGCIE_TRACE(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE,   msg), __FILE__, __LINE__ __VA_OPT__(,) __VA_ARGS__)
+# define LOGCIE_DEBUG(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG,   msg), __FILE__, __LINE__ __VA_OPT__(,) __VA_ARGS__)
+# define LOGCIE_VERBOSE(msg, ...) logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg), __FILE__, __LINE__ __VA_OPT__(,) __VA_ARGS__)
+# define LOGCIE_INFO(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO,    msg), __FILE__, __LINE__ __VA_OPT__(,) __VA_ARGS__)
+# define LOGCIE_WARN(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN,    msg), __FILE__, __LINE__ __VA_OPT__(,) __VA_ARGS__)
+# define LOGCIE_ERROR(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR,   msg), __FILE__, __LINE__ __VA_OPT__(,) __VA_ARGS__)
+# define LOGCIE_FATAL(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL,   msg), __FILE__, __LINE__ __VA_OPT__(,) __VA_ARGS__)
 #else
-# ifdef STD_C23
-#  pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
-#  define LOGCIE_TRACE(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE,   msg), __FILE__, __LINE__ __VA_OPT__(,) __VA_ARGS__)
-#  define LOGCIE_DEBUG(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG,   msg), __FILE__, __LINE__ __VA_OPT__(,) __VA_ARGS__)
-#  define LOGCIE_VERBOSE(msg, ...) logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg), __FILE__, __LINE__ __VA_OPT__(,) __VA_ARGS__)
-#  define LOGCIE_INFO(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO,    msg), __FILE__, __LINE__ __VA_OPT__(,) __VA_ARGS__)
-#  define LOGCIE_WARN(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN,    msg), __FILE__, __LINE__ __VA_OPT__(,) __VA_ARGS__)
-#  define LOGCIE_ERROR(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR,   msg), __FILE__, __LINE__ __VA_OPT__(,) __VA_ARGS__)
-#  define LOGCIE_FATAL(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL,   msg), __FILE__, __LINE__ __VA_OPT__(,) __VA_ARGS__)
+# if !defined(LOGCIE_PEDANTIC) && (defined(__GNUC__) || defined (__clang__))
+#  define LOGCIE_TRACE(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE,   msg), __FILE__, __LINE__, ##__VA_ARGS__)
+#  define LOGCIE_DEBUG(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG,   msg), __FILE__, __LINE__, ##__VA_ARGS__)
+#  define LOGCIE_VERBOSE(msg, ...) logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg), __FILE__, __LINE__, ##__VA_ARGS__)
+#  define LOGCIE_INFO(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO,    msg), __FILE__, __LINE__, ##__VA_ARGS__)
+#  define LOGCIE_WARN(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN,    msg), __FILE__, __LINE__, ##__VA_ARGS__)
+#  define LOGCIE_ERROR(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR,   msg), __FILE__, __LINE__, ##__VA_ARGS__)
+#  define LOGCIE_FATAL(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL,   msg), __FILE__, __LINE__, ##__VA_ARGS__)
 # else
 #  define LOGCIE_TRACE(msg)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE,   msg), __FILE__, __LINE__)
 #  define LOGCIE_DEBUG(msg)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG,   msg), __FILE__, __LINE__)
@@ -161,9 +125,7 @@ typedef struct Logcie_Logger {
 #  define LOGCIE_WARN(msg)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN,    msg), __FILE__, __LINE__)
 #  define LOGCIE_ERROR(msg)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR,   msg), __FILE__, __LINE__)
 #  define LOGCIE_FATAL(msg)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL,   msg), __FILE__, __LINE__)
-#  ifndef LOGCIE_VA_LOGS
-#    define LOGCIE_VA_LOGS
-#  endif
+#  define LOGCIE_VA_LOGS
 # endif
 #endif
 
@@ -179,6 +141,7 @@ typedef struct Logcie_Logger {
 
 int logcie_log(Logcie_Log log, const char *file, uint32_t line, ...);
 int logcie_printf_formatter(LOGCIE_FOMRATTER_PARAMS);
+void logcie_add_sink(Logcie_Sink sink);
 
 #define LOGCIE_COLOR_GRAY       "\x1b[90;20m"
 #define LOGCIE_COLOR_BLUE       "\x1b[36;20m"
@@ -191,16 +154,23 @@ int logcie_printf_formatter(LOGCIE_FOMRATTER_PARAMS);
 } /* extern "C" */
 #endif
 
-#endif /* end of include guard: LOGCIE_H */
+#endif /* end of include guard: LOGCIE */
 
-#define LOGCIE_IMPLEMENTATION
+/* --------------------------------------------- */
+
 #ifdef LOGCIE_IMPLEMENTATION
+
+static const char *default_module = "Logcie";
+
+#ifndef _LOGCIE_MALLOC
+#  include <stdlib.h>
+#  define _LOGCIE_MALLOC malloc
+#endif
 
 #ifndef _LOGCIE_ASSERT
 #  define _LOGCIE_ASSERT(bool, msg) assert(bool && msg);
 #endif
 
-#define _LOGCIE_DEBUG
 #ifdef _LOGCIE_DEBUG
 #  include <assert.h>
 #  ifdef C_STD_2011
@@ -213,7 +183,7 @@ int logcie_printf_formatter(LOGCIE_FOMRATTER_PARAMS);
 static const char *logcie_level_label[] = {
   [LOGCIE_LEVEL_TRACE]   = "trace",
   [LOGCIE_LEVEL_DEBUG]   = "debug",
-  [LOGCIE_LEVEL_VERBOSE] = "verbose",
+  [LOGCIE_LEVEL_VERBOSE] = "verb",
   [LOGCIE_LEVEL_INFO]    = "info",
   [LOGCIE_LEVEL_WARN]    = "warn",
   [LOGCIE_LEVEL_ERROR]   = "error",
@@ -229,7 +199,7 @@ static inline const char *get_logcie_level_lable(Logcie_LogLevel level) {
 static const char *logcie_level_label_upper[] = {
   [LOGCIE_LEVEL_TRACE]   = "TRACE",
   [LOGCIE_LEVEL_DEBUG]   = "DEBUG",
-  [LOGCIE_LEVEL_VERBOSE] = "VERBOSE",
+  [LOGCIE_LEVEL_VERBOSE] = "VERB",
   [LOGCIE_LEVEL_INFO]    = "INFO",
   [LOGCIE_LEVEL_WARN]    = "WARN",
   [LOGCIE_LEVEL_ERROR]   = "ERROR",
@@ -261,16 +231,26 @@ static inline const char *get_logcie_level_color(Logcie_LogLevel level) {
 static Logcie_Sink default_stdout_sink = {
   .level = LOGCIE_LEVEL_TRACE,
   .sink = NULL,
-  .fmt = "$f:$x: $M $L: $d $t (GMT $z) [$l]: $m $$stdout",
+  .fmt = "$L: $m",
   .formatter = logcie_printf_formatter,
   .color = true,
 };
 
-#ifdef ATTR_CONSTRUCT
+#if defined(__has_attribute) && __has_attribute(constructor)
+# define __L_ATTR_CONSTRUCT
+#endif
+
+#ifdef __L_ATTR_CONSTRUCT
 __attribute__((constructor)) void init_default_stdout_sink(void) {
   default_stdout_sink.sink = stdout;
 }
 #endif
+
+typedef struct Logcie_Logger {
+  Logcie_Sink *sinks;
+  size_t sinks_len;
+  size_t sinks_cap;
+} Logcie_Logger;
 
 static Logcie_Logger logcie = {
   .sinks_cap = 1,
@@ -278,18 +258,39 @@ static Logcie_Logger logcie = {
   .sinks = &default_stdout_sink
 };
 
+// This should be called once
+static void _logcie_reset(void) {
+  /* _LOGCIE_ASSERT(logcie.sinks == NULL, "Badly bad stuff"); */
+  logcie.sinks_cap = 8;
+  logcie.sinks_len = 0;
+  logcie.sinks = malloc(sizeof(*logcie.sinks) * 8);
+}
+
+void logcie_add_sink(Logcie_Sink sink) {
+
+#ifndef __L_ATTR_CONSTRUCT
+    if (sink.sink == NULL) sink.sink = stdout;
+#endif
+
+  if (logcie.sinks_cap == 1) {
+    _logcie_reset();
+  }
+
+  if (logcie.sinks_cap == logcie.sinks_len) {
+    logcie.sinks_cap *= 2;
+    logcie.sinks = realloc(logcie.sinks, logcie.sinks_cap);
+  }
+
+  logcie.sinks[logcie.sinks_len] = sink;
+  logcie.sinks_len++;
+}
+
 int logcie_log(Logcie_Log log, const char *file, uint32_t line, ...) {
   va_list args;
   va_start(args, line);
 
   for (size_t i = 0; i < logcie.sinks_len; i++) {
     Logcie_Sink sink = logcie.sinks[i];
-
-#ifndef ATTR_CONSTRUCT
-    // TODO: Move this to another function that does not run too often
-    if (sink.sink == NULL) sink.sink = stdout;
-#endif
-
     sink.formatter(&sink, log, file, line, &args);
   }
 
@@ -335,10 +336,10 @@ int logcie_printf_formatter(LOGCIE_FOMRATTER_PARAMS) {
         output_len += LOGCIE_VAPRINT(sink->sink, log.msg, *args);
         break;
       case 'l':
-        output_len += LOGCIE_PRINT(sink->sink, "%s", get_logcie_level_lable(log.level));
+        output_len += LOGCIE_PRINT(sink->sink, "%-5s", get_logcie_level_lable(log.level));
         break;
       case 'L':
-        output_len += LOGCIE_PRINT(sink->sink, "%s", get_logcie_level_label_upper(log.level));
+        output_len += LOGCIE_PRINT(sink->sink, "%-5s", get_logcie_level_label_upper(log.level));
         break;
       case 'd':
         output_len += LOGCIE_PRINT(sink->sink, "%d-%02d-%02d", tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday);
@@ -347,7 +348,7 @@ int logcie_printf_formatter(LOGCIE_FOMRATTER_PARAMS) {
         output_len += LOGCIE_PRINT(sink->sink, "%02d:%02d:%02d", local_hours, tm->tm_min, tm->tm_sec);
         break;
       case 'z':
-        output_len += LOGCIE_PRINT(sink->sink, "%c%d", timediff > 0 ? '+' : '-', timediff);
+        output_len += LOGCIE_PRINT(sink->sink, "%c%d", timediff > 0 ? '+' : ' ', timediff);
         break;
       case 'f':
         output_len += LOGCIE_PRINT(sink->sink, "%s", file);
@@ -356,11 +357,11 @@ int logcie_printf_formatter(LOGCIE_FOMRATTER_PARAMS) {
         output_len += LOGCIE_PRINT(sink->sink, "%u", line);
         break;
       case 'M':
-        output_len += LOGCIE_PRINT(sink->sink, "%s", log.module);
+        output_len += LOGCIE_PRINT(sink->sink, "%s", log.module ? log.module : default_module);
         break;
-      default: break;
-      // TODO: Add reporing of unknown log operator
-      // TODO: Come up with actial name of those "log operators" thingy
+      default:
+        LOGCIE_PRINT(stderr, "%sWARN: unknown format sequence '$%c'. Skipping...\n"LOGCIE_COLOR_RESET, get_logcie_level_color(LOGCIE_LEVEL_WARN), *fmt);
+        break;
     }
 
     fmt++;
@@ -374,7 +375,7 @@ int logcie_printf_formatter(LOGCIE_FOMRATTER_PARAMS) {
   return output_len;
 }
 
-// TODO: Align output up to character
+// TODO: Align output up to delimiter
 
 
 #endif /* end of include guard: LOGCIE_IMPLEMENTATION */
