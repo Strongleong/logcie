@@ -34,7 +34,7 @@ int main(void) {
 ./test/test.c:200: FATAL: 1970-01-01 11:00:00 (GMT +11) [fatal]: fatallyly loggy 6 $stdout
 ```
 
-## Log format
+## Log format sequences
 
  - $$ - literally symbol $
  - $m - log message
