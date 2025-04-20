@@ -1,6 +1,6 @@
 #!/bin/sh
 
-CFLAGS="-Wall -Wextra -std=c23 -pedantic"
+CFLAGS="-Wall -Wextra -std=c99"
 CLIBS="-I. -lmd -lcrypto"
 CDEBUG="-ggdb -fsanitize=address -fno-omit-frame-pointer -D_LOGCIE_DEBUG"
 CC="gcc"
