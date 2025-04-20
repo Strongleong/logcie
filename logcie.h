@@ -168,16 +168,18 @@ static const char *default_module = "Logcie";
 #endif
 
 #ifndef _LOGCIE_ASSERT
-#  define _LOGCIE_ASSERT(bool, msg) assert(bool && msg);
+# include <assert.h>
+# define _LOGCIE_ASSERT(bool, msg) assert(bool && msg)
 #endif
 
 #ifdef _LOGCIE_DEBUG
-#  include <assert.h>
-#  ifdef C_STD_2011
-#    define _LOGCIE_DEBUG_ASSERT(bool, msg) static_assert(bool, msg)
-#  else
-#    define _LOGCIE_DEBUG_ASSERT(bool, msg) _LOGCIE_ASSERT(bool, msg)
-#  endif
+# if __STDC_VERSION__ >= 201112L  // Check for C11 support
+#  define _LOGCIE_DEBUG_ASSERT(bool, msg) static_assert(bool, msg)
+# else
+#  define _LOGCIE_DEBUG_ASSERT(bool, msg) _LOGCIE_ASSERT(bool, msg)
+# endif
+#else
+# define _LOGCIE_DEBUG_ASSERT(bool, msg)
 #endif
 
 static const char *logcie_level_label[] = {
