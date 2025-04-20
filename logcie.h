@@ -58,7 +58,7 @@ typedef enum Logcie_LogLevel {
   Count_LOGCICE_LEVEL,
 } Logcie_LogLevel;
 
-#ifdef __GNUC__
+#if defined(__has_attribute) && __has_attribute(unused)
  static const char __attribute__ ((unused)) *logcie_module;
 #else
  static const char *logcie_module;
@@ -214,6 +214,9 @@ static inline const char *get_logcie_level_label_upper(Logcie_LogLevel level) {
   return logcie_level_label_upper[level];
 }
 
+// TODO: Think about makeing log level colors customizable
+//       May be it can be done by overwiring this array
+//       like I did with `logcie_module`
 static const char *logcie_level_color[] = {
   [LOGCIE_LEVEL_TRACE]   = LOGCIE_COLOR_GRAY,
   [LOGCIE_LEVEL_DEBUG]   = LOGCIE_COLOR_GRAY,
