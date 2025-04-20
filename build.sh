@@ -1,6 +1,6 @@
 #!/bin/sh
 
-CFLAGS="-Wall -Wextra -std=c11"
+CFLAGS="-Wall -Wextra -std=c23 -pedantic"
 CLIBS="-I. -lmd -lcrypto"
 CDEBUG="-ggdb -fsanitize=address -fno-omit-frame-pointer -D_LOGCIE_DEBUG"
 CC="gcc"
@@ -70,8 +70,10 @@ done
 set -e
 
 # Insuring that flag -c would not undo flag -b
-if $BEAR; then
+if $BEAR && command -v "bear" > /dev/null 2>&1; then
   CC="bear -- $CC"
+else
+  echo "WARN: No executable 'bear' was found. Ignoring flag '-b'"
 fi
 
 if [ ! -d "$OUTDIR" ]; then
