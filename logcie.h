@@ -1,7 +1,9 @@
 /*
-Logcie v0.0.1
+Logcie v0.1.0
 
 Single header only library in C
+
+License: MIT (at the end of the file)
 */
 
 #ifndef LOGCIE
@@ -12,8 +14,8 @@ Single header only library in C
 #endif
 
 #define LOGCIE_VERSION_MAJOR    0
-#define LOGCIE_VERSION_MINOR    0
-#define LOGCIE_VERSION_RELEASE  1
+#define LOGCIE_VERSION_MINOR    1
+#define LOGCIE_VERSION_RELEASE  0
 #define LOGCIE_VERSION_NUMBER (LOGCIE_VERSION_MAJOR *100*100 + LOGCIE_VERSION_MINOR *100 + LOGCIE_VERSION_RELEASE)
 
 #define LOGCIE_VERSION_FULL LOGCIE_VERSION_MAJOR.LOGCIE_VERSION_MINOR.LOGCIE_VERSION_RELEASE
@@ -21,31 +23,21 @@ Single header only library in C
 #define LOGCIE_EXPAND_AND_QUOTE(str) LOGCIE_QUOTE(str)
 #define LOGCIE_VERSION_STRING LOGCIE_EXPAND_AND_QUOTE(LOGCIE_VERSION_FULL)
 
+#define LOGCIE_COLOR_GRAY       "\x1b[90;20m"
+#define LOGCIE_COLOR_BLUE       "\x1b[36;20m"
+#define LOGCIE_COLOR_YELLOW     "\x1b[33;20m"
+#define LOGCIE_COLOR_RED        "\x1b[31;20m"
+#define LOGCIE_COLOR_BRIGHT_RED "\x1b[31;1m"
+#define LOGCIE_COLOR_RESET      "\x1b[0m"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#ifndef LOGCIE_PRINT
-#define LOGCIE_PRINT fprintf
-#endif
-
-#ifndef LOGCIE_VAPRINT
-#define LOGCIE_VAPRINT vfprintf
-#endif
-
-#ifndef LOGCIE_NO_STD
-# include <stdio.h>
-# include <time.h>
-# include <stdint.h>
-# include <stdarg.h>
-# if (__STDC_VERSION__ < 201710L)
-#  include <stdbool.h>
-# endif
-#endif
-
-#if defined(LOGCIE_NO_STD) && !defined(LOGCIE_PRINT) && !defined(LOGCIE_VAPRINT)
-# error "You must provide implementation of std shit and stuff yo bitch"
-#endif
+#include <stdarg.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <time.h>
 
 typedef enum Logcie_LogLevel {
   LOGCIE_LEVEL_TRACE,
@@ -55,7 +47,7 @@ typedef enum Logcie_LogLevel {
   LOGCIE_LEVEL_WARN,
   LOGCIE_LEVEL_ERROR,
   LOGCIE_LEVEL_FATAL,
-  Count_LOGCICE_LEVEL,
+  Count_LOGCIE_LEVEL,
 } Logcie_LogLevel;
 
 #if defined(__has_attribute) && __has_attribute(unused)
@@ -66,8 +58,12 @@ typedef enum Logcie_LogLevel {
 
 typedef struct Logcie_Sink Logcie_Sink;
 typedef struct Logcie_Log Logcie_Log;
-#define LOGCIE_FOMRATTER_PARAMS Logcie_Sink *sink, Logcie_Log log, const char *file, uint32_t line, va_list *args
-typedef int (Logcie_FomratterFn)(LOGCIE_FOMRATTER_PARAMS);
+
+/**
+ *  Formats log to a string
+ */
+typedef size_t (Logcie_FormatterFn)(Logcie_Sink *sink, Logcie_Log log, const char *file, uint32_t line, va_list *args);
+typedef uint8_t (Logcie_FilterFn)(Logcie_Sink *sink, Logcie_Log *log, const char *file, uint32_t line);
 
 /**
   * Format sequences:
@@ -78,17 +74,19 @@ typedef int (Logcie_FomratterFn)(LOGCIE_FOMRATTER_PARAMS);
   *  $M - module
   *  $l - log level (info, debug, warn)
   *  $L - log level in upper case (INFO, DEBUG, WARN)
+  *  $c - color of current log level
+  *  $r - color reset (just handy)
   *  $d - current date (YYYY-MM-DD)
   *  $t - current time (H:i:m)
   *  $z - current time zone
-  *  $| - align up to this delimiter
   */
 struct Logcie_Sink {
   FILE *sink;
-  Logcie_LogLevel level;
+  Logcie_LogLevel min_level;
   const char *fmt;
-  Logcie_FomratterFn *formatter;
-  bool color;
+  Logcie_FormatterFn *formatter;
+  Logcie_FilterFn *filter;
+  void *userdata;
 };
 
 struct Logcie_Log {
@@ -98,9 +96,18 @@ struct Logcie_Log {
   const char *module;
 };
 
+typedef struct Logcie_CombinedFilterContext {
+  Logcie_FilterFn *a;
+  Logcie_FilterFn *b;
+} Logcie_CombinedFilterContext;
+
+typedef struct Logcie_NotFilterContext {
+  Logcie_FilterFn *a;
+} Logcie_NotFilterContext;
+
 #define LOGCIE_CREATE_LOG(lvl, txt) (Logcie_Log) { .level = lvl, .msg = txt, .time = time(NULL), .module = logcie_module }
 
-#if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 202000L)
+#if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 202311L)
 # define LOGCIE_TRACE(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE,   msg), __FILE__, __LINE__ __VA_OPT__(,) __VA_ARGS__)
 # define LOGCIE_DEBUG(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG,   msg), __FILE__, __LINE__ __VA_OPT__(,) __VA_ARGS__)
 # define LOGCIE_VERBOSE(msg, ...) logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg), __FILE__, __LINE__ __VA_OPT__(,) __VA_ARGS__)
@@ -139,20 +146,39 @@ struct Logcie_Log {
 #  define LOGCIE_FATAL_VA(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL,   msg), __FILE__, __LINE__, __VA_ARGS__)
 #endif
 
-int logcie_log(Logcie_Log log, const char *file, uint32_t line, ...);
-int logcie_printf_formatter(LOGCIE_FOMRATTER_PARAMS);
-void logcie_add_sink(Logcie_Sink sink);
+// Main logging function. Should not be called manually but who am I to tell you
+LOGCIE_DEF size_t logcie_log(Logcie_Log log, const char *file, uint32_t line, ...);
 
-#define LOGCIE_COLOR_GRAY       "\x1b[90;20m"
-#define LOGCIE_COLOR_BLUE       "\x1b[36;20m"
-#define LOGCIE_COLOR_YELLOW     "\x1b[33;20m"
-#define LOGCIE_COLOR_RED        "\x1b[31;20m"
-#define LOGCIE_COLOR_BRIGHT_RED "\x1b[31;1m"
-#define LOGCIE_COLOR_RESET      "\x1b[0m"
+// Add logs sink
+LOGCIE_DEF void logcie_add_sink(Logcie_Sink *sink);
+
+// Combine a filter with logical NOT
+LOGCIE_DEF uint8_t logcie_filter_not(Logcie_Sink *sink, Logcie_Log *log, const char *file, uint32_t line);
+
+// Combine two filters with logical AND
+LOGCIE_DEF uint8_t logcie_filter_and(Logcie_Sink *sink, Logcie_Log *log, const char *file, uint32_t line);
+
+// Combine two filters with logical OR
+LOGCIE_DEF uint8_t logcie_filter_or(Logcie_Sink *sink, Logcie_Log *log, const char *file, uint32_t line);
+
+// Helpers to create combined filters
+LOGCIE_DEF void logcie_set_filter_not(Logcie_Sink *sink, Logcie_FilterFn *a);
+LOGCIE_DEF void logcie_set_filter_and(Logcie_Sink *sink, Logcie_FilterFn *a, Logcie_FilterFn *b);
+LOGCIE_DEF void logcie_set_filter_or(Logcie_Sink *sink, Logcie_FilterFn *a, Logcie_FilterFn *b);
+
+// Main logging function
+LOGCIE_DEF size_t logcie_printf_formatter(Logcie_Sink *sink, Logcie_Log log, const char *file, uint32_t line, va_list *args);
+
+/**
+ * Override log level colors.
+ * Must provide array of size [Count_LOGCIE_LEVEL].
+ * Pass NULL to reset to defaults.
+ */
+LOGCIE_DEF void logcie_set_colors(const char **colors);
 
 #ifdef __cplusplus
 } /* extern "C" */
-#endif
+#endif /* __cplusplus */
 
 #endif /* end of include guard: LOGCIE */
 
@@ -160,17 +186,14 @@ void logcie_add_sink(Logcie_Sink sink);
 
 #ifdef LOGCIE_IMPLEMENTATION
 
+#include <assert.h>
+#include <stdlib.h>
+
 static const char *default_module = "Logcie";
 
-#ifndef _LOGCIE_MALLOC
-#  include <stdlib.h>
-#  define _LOGCIE_MALLOC malloc
-#endif
-
-#ifndef _LOGCIE_ASSERT
-# include <assert.h>
-# define _LOGCIE_ASSERT(bool, msg) assert(bool && msg)
-#endif
+# ifndef _LOGCIE_ASSERT
+#  define _LOGCIE_ASSERT(bool, msg) assert(bool && msg)
+# endif
 
 #ifdef _LOGCIE_DEBUG
 # if __STDC_VERSION__ >= 201112L  // Check for C11 support
@@ -192,9 +215,9 @@ static const char *logcie_level_label[] = {
   [LOGCIE_LEVEL_FATAL]   = "fatal",
 };
 
-static inline const char *get_logcie_level_lable(Logcie_LogLevel level) {
-  _LOGCIE_DEBUG_ASSERT(Count_LOGCICE_LEVEL == 7, "Forgot to update get_logcie_level_lable, you dummy dumb fuck");
-  _LOGCIE_ASSERT(level < Count_LOGCICE_LEVEL, "Unexpected log level");
+static inline const char *get_logcie_level_label(Logcie_LogLevel level) {
+  _LOGCIE_DEBUG_ASSERT(Count_LOGCIE_LEVEL == 7, "Forgot to update get_logcie_level_label, you dummy dumb fuck");
+  _LOGCIE_ASSERT(level < Count_LOGCIE_LEVEL, "Unexpected log level");
   return logcie_level_label[level];
 }
 
@@ -209,15 +232,12 @@ static const char *logcie_level_label_upper[] = {
 };
 
 static inline const char *get_logcie_level_label_upper(Logcie_LogLevel level) {
-  _LOGCIE_DEBUG_ASSERT(Count_LOGCICE_LEVEL == 7, "Forgot to update get_logcie_level_lable, you dummy dumb fuck");
-  _LOGCIE_ASSERT(level < Count_LOGCICE_LEVEL, "Unexpected log level");
+  _LOGCIE_DEBUG_ASSERT(Count_LOGCIE_LEVEL == 7, "Forgot to update get_logcie_level_label, you dummy dumb fuck");
+  _LOGCIE_ASSERT(level < Count_LOGCIE_LEVEL, "Unexpected log level");
   return logcie_level_label_upper[level];
 }
 
-// TODO: Think about makeing log level colors customizable
-//       May be it can be done by overwiring this array
-//       like I did with `logcie_module`
-static const char *logcie_level_color[] = {
+static const char *logcie_default_level_color[] = {
   [LOGCIE_LEVEL_TRACE]   = LOGCIE_COLOR_GRAY,
   [LOGCIE_LEVEL_DEBUG]   = LOGCIE_COLOR_GRAY,
   [LOGCIE_LEVEL_VERBOSE] = LOGCIE_COLOR_GRAY,
@@ -227,19 +247,30 @@ static const char *logcie_level_color[] = {
   [LOGCIE_LEVEL_FATAL]   = LOGCIE_COLOR_BRIGHT_RED,
 };
 
+static const char **logcie_level_color = logcie_default_level_color;
+
+void logcie_set_colors(const char **colors) {
+  if (colors) {
+    logcie_level_color = colors;
+  } else {
+    logcie_level_color = logcie_default_level_color;
+  }
+}
+
 static inline const char *get_logcie_level_color(Logcie_LogLevel level) {
-  _LOGCIE_DEBUG_ASSERT(Count_LOGCICE_LEVEL == 7, "Forgot to update get_logcie_level_lable, you dummy dumb fuck");
-  _LOGCIE_ASSERT(level < Count_LOGCICE_LEVEL, "Unexpected log level");
+  _LOGCIE_DEBUG_ASSERT(Count_LOGCIE_LEVEL == 7, "Forgot to update get_logcie_level_label, you dummy dumb fuck");
+  _LOGCIE_ASSERT(level < Count_LOGCIE_LEVEL, "Unexpected log level");
   return logcie_level_color[level];
 }
 
 static Logcie_Sink default_stdout_sink = {
-  .level = LOGCIE_LEVEL_TRACE,
+  .min_level = LOGCIE_LEVEL_TRACE,
   .sink = NULL,
-  .fmt = "$L: $m",
+  .fmt = "$c$L$r "LOGCIE_COLOR_GRAY"$f$x$r: $m",
   .formatter = logcie_printf_formatter,
-  .color = true,
 };
+
+static Logcie_Sink *default_stdout_sink_ptr = &default_stdout_sink;
 
 #if defined(__has_attribute) && __has_attribute(constructor)
 # define __L_ATTR_CONSTRUCT
@@ -251,30 +282,70 @@ __attribute__((constructor)) void init_default_stdout_sink(void) {
 }
 #endif
 
+uint8_t logcie_filter_not(Logcie_Sink *sink, Logcie_Log *log, const char *file, uint32_t line) {
+  Logcie_NotFilterContext *ctx = (Logcie_NotFilterContext *)sink->userdata;
+  return !ctx->a(sink, log, file, line);
+}
+
+uint8_t logcie_filter_and(Logcie_Sink *sink, Logcie_Log *log, const char *file, uint32_t line) {
+  Logcie_CombinedFilterContext *ctx = (Logcie_CombinedFilterContext *)sink->userdata;
+  return ctx->a(sink, log, file, line) && ctx->b(sink, log, file, line);
+}
+
+uint8_t logcie_filter_or(Logcie_Sink *sink, Logcie_Log *log, const char *file, uint32_t line) {
+  Logcie_CombinedFilterContext *ctx = (Logcie_CombinedFilterContext *)sink->userdata;
+  return ctx->a(sink, log, file, line) || ctx->b(sink, log, file, line);
+}
+
+void logcie_set_filter_not(Logcie_Sink *sink, Logcie_FilterFn *a) {
+  static Logcie_NotFilterContext ctx;
+  ctx.a = a;
+  sink->filter = logcie_filter_not;
+  sink->userdata = &ctx;
+}
+
+void logcie_set_filter_and(Logcie_Sink *sink, Logcie_FilterFn *a, Logcie_FilterFn *b) {
+  static Logcie_CombinedFilterContext ctx;
+  ctx.a = a;
+  ctx.b = b;
+  sink->filter = logcie_filter_and;
+  sink->userdata = &ctx;
+}
+
+void logcie_set_filter_or(Logcie_Sink *sink, Logcie_FilterFn *a, Logcie_FilterFn *b) {
+  static Logcie_CombinedFilterContext ctx;
+  ctx.a = a;
+  ctx.b = b;
+  sink->filter = logcie_filter_or;
+  sink->userdata = &ctx;
+}
+
 typedef struct Logcie_Logger {
-  Logcie_Sink *sinks;
+  Logcie_Sink **sinks;
   size_t sinks_len;
   size_t sinks_cap;
 } Logcie_Logger;
 
+// INFO: By default there is one default sink to allow logging right
+//       after includnig logcie without initializing anything
 static Logcie_Logger logcie = {
   .sinks_cap = 1,
   .sinks_len = 1,
-  .sinks = &default_stdout_sink
+  .sinks = &default_stdout_sink_ptr
 };
 
-// This should be called once
+// WARN: This should be called once
 static void _logcie_reset(void) {
   /* _LOGCIE_ASSERT(logcie.sinks == NULL, "Badly bad stuff"); */
   logcie.sinks_cap = 8;
   logcie.sinks_len = 0;
-  logcie.sinks = malloc(sizeof(*logcie.sinks) * 8);
+  logcie.sinks = malloc(sizeof(*logcie.sinks) * logcie.sinks_cap);
 }
 
-void logcie_add_sink(Logcie_Sink sink) {
+void logcie_add_sink(Logcie_Sink *sink) {
 
 #ifndef __L_ATTR_CONSTRUCT
-    if (sink.sink == NULL) sink.sink = stdout;
+    if (sink->sink == NULL) sink->sink = stdout;
 #endif
 
   if (logcie.sinks_cap == 1) {
@@ -283,46 +354,53 @@ void logcie_add_sink(Logcie_Sink sink) {
 
   if (logcie.sinks_cap == logcie.sinks_len) {
     logcie.sinks_cap *= 2;
-    logcie.sinks = realloc(logcie.sinks, logcie.sinks_cap);
+    logcie.sinks = realloc(logcie.sinks, sizeof(*logcie.sinks) * logcie.sinks_cap);
   }
 
   logcie.sinks[logcie.sinks_len] = sink;
   logcie.sinks_len++;
 }
 
-int logcie_log(Logcie_Log log, const char *file, uint32_t line, ...) {
+size_t logcie_log(Logcie_Log log, const char *file, uint32_t line, ...) {
   va_list args;
   va_start(args, line);
 
   for (size_t i = 0; i < logcie.sinks_len; i++) {
-    Logcie_Sink sink = logcie.sinks[i];
-    sink.formatter(&sink, log, file, line, &args);
+    Logcie_Sink *sink = logcie.sinks[i];
+
+    if (log.level < sink->min_level) {
+      continue;
+    }
+
+    if (sink->filter && !sink->filter(sink, &log, file, line)) {
+      continue;
+    }
+
+    va_list args_copy;
+    va_copy(args_copy, args);
+
+    sink->formatter(sink, log, file, line, &args_copy);
+
+    va_end(args_copy);
   }
 
   va_end(args);
   return 0;
 }
 
-int logcie_printf_formatter(LOGCIE_FOMRATTER_PARAMS) {
-  if (log.level < sink->level) {
-    return 0;
-  }
-
-  int output_len = 0;
+size_t logcie_printf_formatter(Logcie_Sink *sink, Logcie_Log log, const char *file, uint32_t line, va_list *args) {
+  size_t output_len = 0;
   const char *fmt = sink->fmt;
 
-  struct tm *tm = localtime(&log.time);
-  int local_hours = tm->tm_hour;
-  tm = gmtime(&log.time);
-  int timediff = local_hours - tm->tm_hour;
+  struct tm local_tm = *localtime(&log.time);
+  struct tm utc_tm = *gmtime(&log.time);
 
-  if (sink->color) {
-    output_len += LOGCIE_PRINT(sink->sink, "%s", get_logcie_level_color(log.level));
-  }
+  int32_t local_hours = local_tm.tm_hour;
+  int32_t timediff = local_hours - utc_tm.tm_hour;
 
   while (*fmt != '\0') {
     if (*fmt != '$') {
-      output_len += LOGCIE_PRINT(sink->sink, "%c", *fmt);
+      output_len += fprintf(sink->sink, "%c", *fmt);
       fmt++;
       continue;
     }
@@ -335,53 +413,55 @@ int logcie_printf_formatter(LOGCIE_FOMRATTER_PARAMS) {
 
     switch (*fmt) {
       case '$':
-        output_len += LOGCIE_PRINT(sink->sink, "$");
+        output_len += fprintf(sink->sink, "$");
         break;
       case 'm':
-        output_len += LOGCIE_VAPRINT(sink->sink, log.msg, *args);
+        output_len += vfprintf(sink->sink, log.msg, *args);
         break;
       case 'l':
-        output_len += LOGCIE_PRINT(sink->sink, "%-5s", get_logcie_level_lable(log.level));
+        output_len += fprintf(sink->sink, "%-5s", get_logcie_level_label(log.level));
         break;
       case 'L':
-        output_len += LOGCIE_PRINT(sink->sink, "%-5s", get_logcie_level_label_upper(log.level));
+        output_len += fprintf(sink->sink, "%-5s", get_logcie_level_label_upper(log.level));
+        break;
+      case 'c':
+        output_len += fprintf(sink->sink, "%s", get_logcie_level_color(log.level));
+        break;
+      case 'r':
+        output_len += fprintf(sink->sink, LOGCIE_COLOR_RESET);
         break;
       case 'd':
-        output_len += LOGCIE_PRINT(sink->sink, "%d-%02d-%02d", tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday);
+        output_len += fprintf(sink->sink, "%d-%02d-%02d", local_tm.tm_year + 1900, local_tm.tm_mon + 1, local_tm.tm_mday);
         break;
       case 't':
-        output_len += LOGCIE_PRINT(sink->sink, "%02d:%02d:%02d", local_hours, tm->tm_min, tm->tm_sec);
+        output_len += fprintf(sink->sink, "%02d:%02d:%02d", local_hours, local_tm.tm_min, local_tm.tm_sec);
         break;
       case 'z':
-        output_len += LOGCIE_PRINT(sink->sink, "%c%d", timediff > 0 ? '+' : ' ', timediff);
+        output_len += fprintf(sink->sink, "%+d", timediff);
         break;
       case 'f':
-        output_len += LOGCIE_PRINT(sink->sink, "%s", file);
+        output_len += fprintf(sink->sink, "%s", file);
         break;
       case 'x':
-        output_len += LOGCIE_PRINT(sink->sink, "%u", line);
+        output_len += fprintf(sink->sink, "%u", line);
         break;
       case 'M':
-        output_len += LOGCIE_PRINT(sink->sink, "%s", log.module ? log.module : default_module);
+        output_len += fprintf(sink->sink, "%s", log.module ? log.module : default_module);
         break;
       default:
-        LOGCIE_PRINT(stderr, "%sWARN: unknown format sequence '$%c'. Skipping...\n"LOGCIE_COLOR_RESET, get_logcie_level_color(LOGCIE_LEVEL_WARN), *fmt);
+        fprintf(stderr, "%sWARN: unknown format sequence '$%c'. Skipping...\n"LOGCIE_COLOR_RESET, get_logcie_level_color(LOGCIE_LEVEL_WARN), *fmt);
         break;
     }
 
     fmt++;
   }
 
-  if (sink->color) {
-    output_len += LOGCIE_PRINT(sink->sink, LOGCIE_COLOR_RESET);
-  }
-
-  output_len += LOGCIE_PRINT(sink->sink, "\n");
+  output_len += fprintf(sink->sink, "\n");
+  fflush(sink->sink);
   return output_len;
 }
 
 // TODO: Align output up to delimiter
-
 
 #endif /* end of include guard: LOGCIE_IMPLEMENTATION */
 
