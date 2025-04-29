@@ -1,53 +1,115 @@
 # Logcie
 
-Sinlge header-only (in development) Logging library in C
+Logcie is a minimalistic, single-header C logging library designed to provide logging functionality with support for log levels, formatted output, color support, and customizable sinks.
 
 **NOTE** This library is in development and VERY unfinished. You can add "for now" to literally anything in this readme
 
-# Example
+## Features
+
+ - Log Levels: Trace, Debug, Verbose, Info, Warn, Error, Fatal.
+ - Customizable Format: Define your log format with placeholders for various log data.
+ - Color Support: Log messages can be color-coded based on their log level.
+ - Custom Sinks: Support for writing logs to different outputs, such as files or stdout.
+ - Filters: Combine filters using logical operations (AND, OR, NOT).
+
+You can find example at [./examples/]
+
+## Installation
+
+Simply include logcie.h in your project. To use Logcie, define LOGCIE_IMPLEMENTATION before including the header in one .c file.
 
 ```c
-int main(void) {
-  Logcie_Sink sink = {
-    .level = LOGCIE_LEVEL_DEBUG,
+#define LOGCIE_IMPLEMENTATION
+#include "logcie.h"
+```
+
+In other files, you only need to include logcie.h without defining LOGCIE_IMPLEMENTATION.
+
+```c
+#include "logcie.h"
+```
+
+## Usage
+
+### Basic Logging
+
+You can use the logging macros to log messages at different levels:
+
+```c
+LOGCIE_TRACE("This is a trace message");
+LOGCIE_DEBUG("This is a debug message");
+LOGCIE_INFO("This is an info message");
+LOGCIE_WARN("This is a warning message");
+LOGCIE_ERROR("This is an error message");
+LOGCIE_FATAL("This is a fatal error message");
+```
+
+The macros automatically include the file and line number information.
+
+### Custom Log Format
+
+Logcie allows you to define the log output format. You can customize the format for each log sink. A format string may include the following placeholders:
+
+ - $m: Log message.
+ - $f: File name.
+ - $x: Line number.
+ - $M: Module name.
+ - $l: Log level (lowercase).
+ - $L: Log level (uppercase).
+ - $c: Color for the current log level.
+ - $r: Color reset.
+ - $d: Current date (YYYY-MM-DD).
+ - $t: Current time (HH:MM:SS).
+ - $z: Time zone offset.
+
+Here is an example:
+
+```c
+Logcie_Sink custom_sink = {
+    .min_level = LOGCIE_LEVEL_DEBUG,
     .sink = stdout,
-    .fmt = "$f:$x: $c$L$r: $d $t (GMT $z) $c[$l]$r: $m $$stdout"
-  };
+    .fmt = "$c$L$r $d $t $f:$x: $m"
+};
 
-  LOGCIE_DEBUG(sink, "debugguy loggy %d %s", 1, "adsf");
-  LOGCIE_VERBOSE(sink, "verbosesy loggy %d", 2);
-  LOGCIE_INFO(sink, "infofofo loggy %d", 3);
-  LOGCIE_WARN(sink, "warnny loggy %d", 4);
-  LOGCIE_ERROR(sink, "errorry loggy %d", 5);
-  LOGCIE_FATAL(sink, "fatallyly loggy %d", 6);
+logcie_add_sink(&custom_sink);
+```
 
-  return 0;
+### Filters
+
+Logcie supports filters, which allow you to control which log messages should be logged based on criteria. You can combine filters with logical AND, OR, and NOT operations.
+
+```c
+uint8_t filter1(Logcie_Sink *sink, Logcie_Log *log, const char *file, uint32_t line) {
+    (void)sink; (void)file; (void)line;
+    return log->level >= LOGCIE_LEVEL_INFO && log->level <= LOGCIE_ERROR;
 }
+
+uint8_t filter2(Logcie_Sink *sink, Logcie_Log *log, const char *file, uint32_t line) {
+    (void)sink; (void)file; (void)line;
+    return log->module && strcmp(log->module, "module") == 0;
+}
+
+logcie_set_filter_and(&custom_sink, filter1, filter2);
+logcie_set_filter_or(&custom_sink, filter1, filter2);
+logcie_set_filter_not(&custom_sink, filter1);
 ```
 
-```console
-./test/test.c:195: DEBUG: 1970-01-01 11:00:00 (GMT +11) [debug]: debugguy loggy 1 adsf $stdout
-./test/test.c:196: VERBOSE: 1970-01-01 11:00:00 (GMT +11) [verbose]: verbosesy loggy 2 $stdout
-./test/test.c:197: INFO: 1970-01-01 11:00:00 (GMT +11) [info]: infofofo loggy 3 $stdout
-./test/test.c:198: WARN: 1970-01-01 11:00:00 (GMT +11) [warn]: warnny loggy 4 $stdout
-./test/test.c:199: ERROR: 1970-01-01 11:00:00 (GMT +11) [error]: errorry loggy 5 $stdout
-./test/test.c:200: FATAL: 1970-01-01 11:00:00 (GMT +11) [fatal]: fatallyly loggy 6 $stdout
+### Setting Log Colors
+
+You can override the default colors for each log level. To do so, provide an array of colors for each log level:
+
+```c
+const char *custom_colors[Count_LOGCIE_LEVEL] = {
+    LOGCIE_COLOR_BLUE,   // TRACE
+    LOGCIE_COLOR_GREEN,  // DEBUG
+    LOGCIE_COLOR_CYAN,   // VERBOSE
+    LOGCIE_COLOR_BLUE,   // INFO
+    LOGCIE_COLOR_YELLOW, // WARN
+    LOGCIE_COLOR_RED,    // ERROR
+    LOGCIE_COLOR_BRIGHT_RED // FATAL
+};
+
+logcie_set_colors(custom_colors);
 ```
 
-## Log format sequences
-
- - $$ - literally symbol $
- - $m - log message
- - $f - file
- - $x - line
- - $l - log level (info, debug, warn)
- - $L - log level in upper case (INFO, DEBUG, WARN)
- - $d - current date (YYYY-MM-DD)
- - $t - current time (H:i:m)
- - $z - current time zone
- - $c - color marker of log level
- - $r - color reset
-
-## Notes
- - If you use clang and flags `-std=c23 -pedantic` you will get warning  if you don't supply any variadic arguments.
-   To suppress this warning you can use `#pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"`.
+You can pass `NULL` to `logcie_set_colors` to reset colors to default
