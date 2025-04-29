@@ -1,8 +1,8 @@
 #!/bin/sh
 
 CFLAGS="-Wall -Wextra -std=c99"
-CLIBS="-I. -lmd -lcrypto"
-CDEBUG="-ggdb -fsanitize=address -fno-omit-frame-pointer -D_LOGCIE_DEBUG"
+CLIBS="-I."
+CDEBUG="-ggdb -fsanitize=address -fno-omit-frame-pointer -D_LOGCIE_DEBUG -O0"
 CC="gcc"
 OUTDIR="./out"
 VERBOSE=true
@@ -70,18 +70,28 @@ done
 set -e
 
 # Insuring that flag -c would not undo flag -b
-if $BEAR && command -v "bear" > /dev/null 2>&1; then
-  CC="bear -- $CC"
-else
-  echo "WARN: No executable 'bear' was found. Ignoring flag '-b'"
+if $BEAR; then
+  if command -v "bear" > /dev/null 2>&1; then
+    CC="bear -- $CC"
+  else
+    echo "WARN: No executable 'bear' was found. Ignoring flag '-b'"
+  fi
 fi
 
 if [ ! -d "$OUTDIR" ]; then
   mkdir -p "$OUTDIR";
 fi
 
-if $VERBOSE; then
-  set -x
-fi
+examples=$(find ./examples -name '*.c')
 
-$CC $CFLAGS $CLIBS -o "$OUTDIR/test" ./examples/example.c ./examples/module.c ./examples/libs.c
+for example in $examples; do
+  CMD="$CC $CFLAGS $CLIBS -o $OUTDIR/$(basename ${example%.*}) $example"
+
+  if $VERBOSE; then
+    echo $CMD
+  fi
+
+  $CMD &
+done
+
+wait
