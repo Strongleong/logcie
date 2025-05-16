@@ -99,6 +99,14 @@ struct Logcie_Sink {
 };
 
 /**
+ * @brief Structure representing location where log occured.
+ */
+typedef struct Logcie_LogLocation {
+  const char *file;
+  uint32_t line;
+} Logcie_LogLocation;
+
+/**
  * @brief Structure representing a log message.
  * Carries metadata and log content for formatting.
  */
@@ -107,8 +115,7 @@ struct Logcie_Log {
   const char *msg;
   time_t time;
   const char *module;
-  const char *file;
-  uint32_t line;
+  Logcie_LogLocation location;
 };
 
 /**
@@ -127,7 +134,7 @@ typedef struct Logcie_NotFilterContext {
 } Logcie_NotFilterContext;
 
 // Helper macro for constructing a log message
-#define LOGCIE_CREATE_LOG(lvl, txt, f, l) (Logcie_Log) { .level = lvl, .msg = txt, .time = time(NULL), .module = logcie_module, .file = f, .line = l }
+#define LOGCIE_CREATE_LOG(lvl, txt, f, l) (Logcie_Log) { .level = lvl, .msg = txt, .time = time(NULL), .module = logcie_module, .location = {.file = f, .line = l }}
 
 /**
  * @brief Convenience macros for each log level.
@@ -486,10 +493,10 @@ size_t logcie_printf_formatter(Logcie_Sink *sink, Logcie_Log log, va_list *args)
         output_len += fprintf(sink->sink, "%+d", timediff);
         break;
       case 'f':
-        output_len += fprintf(sink->sink, "%s", log.file);
+        output_len += fprintf(sink->sink, "%s", log.location.file);
         break;
       case 'x':
-        output_len += fprintf(sink->sink, "%u", log.line);
+        output_len += fprintf(sink->sink, "%u", log.location.line);
         break;
       case 'M':
         output_len += fprintf(sink->sink, "%s", log.module ? log.module : default_module);
