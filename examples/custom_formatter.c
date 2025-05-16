@@ -4,10 +4,7 @@
 #define LOGCIE_IMPLEMENTATION
 #include "logcie.h"
 
-size_t my_simple_formatter(Logcie_Sink *sink, Logcie_Log log, const char *file, uint32_t line, va_list *args) {
-    (void) line;
-    (void) file;
-
+size_t my_simple_formatter(Logcie_Sink *sink, Logcie_Log log, va_list *args) {
     char time_buf[9];
     struct tm *tminfo = localtime(&log.time);
     strftime(time_buf, sizeof(time_buf), "%H:%M:%S", tminfo);
