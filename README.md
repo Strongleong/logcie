@@ -1,115 +1,171 @@
 # Logcie
 
-Logcie is a minimalistic, single-header C logging library designed to provide logging functionality with support for log levels, formatted output, color support, and customizable sinks.
+**Logcie** is a lightweight, modular, single-header logging library for C.
 
-**NOTE** This library is in development and VERY unfinished. You can add "for now" to literally anything in this readme
+It provides:
+- Multiple log levels
+- ANSI color support
+- Fully customizable output format
+- Filters (with combinators like AND/OR/NOT)
+- Support for multiple sinks (stdout, file, etc.)
 
-## Features
+> ⚠️ Note: This library is under active development. Many APIs or behaviors may change. Add "for now" to basically anything in this README.
 
- - Log Levels: Trace, Debug, Verbose, Info, Warn, Error, Fatal.
- - Customizable Format: Define your log format with placeholders for various log data.
- - Color Support: Log messages can be color-coded based on their log level.
- - Custom Sinks: Support for writing logs to different outputs, such as files or stdout.
- - Filters: Combine filters using logical operations (AND, OR, NOT).
+---
 
-You can find example at [./examples/]
+## 🔧 Installation
 
-## Installation
-
-Simply include logcie.h in your project. To use Logcie, define LOGCIE_IMPLEMENTATION before including the header in one .c file.
+Copy `logcie.h` to your project and include it:
 
 ```c
 #define LOGCIE_IMPLEMENTATION
 #include "logcie.h"
 ```
 
-In other files, you only need to include logcie.h without defining LOGCIE_IMPLEMENTATION.
+In other translation units (files), use:
 
 ```c
 #include "logcie.h"
 ```
 
-## Usage
+---
 
-### Basic Logging
+## 🪵 Logging Usage
 
-You can use the logging macros to log messages at different levels:
+Logcie provides macros for common log levels:
 
 ```c
-LOGCIE_TRACE("This is a trace message");
-LOGCIE_DEBUG("This is a debug message");
-LOGCIE_INFO("This is an info message");
-LOGCIE_WARN("This is a warning message");
-LOGCIE_ERROR("This is an error message");
-LOGCIE_FATAL("This is a fatal error message");
+LOGCIE_TRACE("Hello from trace");
+LOGCIE_DEBUG("Value: %d", val);
+LOGCIE_VERBOSE("Running details...");
+LOGCIE_INFO("All good here.");
+LOGCIE_WARN("Something might be wrong.");
+LOGCIE_ERROR("Something is wrong!");
+LOGCIE_FATAL("We're going down!");
 ```
 
-The macros automatically include the file and line number information.
+These macros include:
+- Log level
+- Source file
+- Line number
+- Optional module (via `logcie_module`)
 
-### Custom Log Format
+You can also use `LOGCIE_TRACE_VA` style macros if variadic support is limited.
 
-Logcie allows you to define the log output format. You can customize the format for each log sink. A format string may include the following placeholders:
+---
 
- - $m: Log message.
- - $f: File name.
- - $x: Line number.
- - $M: Module name.
- - $l: Log level (lowercase).
- - $L: Log level (uppercase).
- - $c: Color for the current log level.
- - $r: Color reset.
- - $d: Current date (YYYY-MM-DD).
- - $t: Current time (HH:MM:SS).
- - $z: Time zone offset.
+## 🎨 Formatting Output
 
-Here is an example:
+Each `Logcie_Sink` allows a format string using special `$` tokens:
+
+| Token   | Description                                    |
+| ------- | -------------                                  |
+| `$m`    | Log message (supports printf-style formatting) |
+| `$f`    | File name                                      |
+| `$x`    | Line number                                    |
+| `$M`    | Module name (`logcie_module`)                  |
+| `$l`    | Log level (lowercase)                          |
+| `$L`    | Log level (uppercase)                          |
+| `$c`    | Start color for log level                      |
+| `$r`    | Reset color                                    |
+| `$d`    | Date (YYYY-MM-DD)                              |
+| `$t`    | Time (HH:MM:SS)                                |
+| `$z`    | Timezone offset                                |
+| `$$`    | Literal `$`                                    |
+
+### Example
 
 ```c
-Logcie_Sink custom_sink = {
+Logcie_Sink sink = {
     .min_level = LOGCIE_LEVEL_DEBUG,
     .sink = stdout,
-    .fmt = "$c$L$r $d $t $f:$x: $m"
+    .fmt = "$c$L$r $d $t [$f:$x] $m",
+    .formatter = logcie_printf_formatter,
 };
 
-logcie_add_sink(&custom_sink);
+logcie_add_sink(&sink);
 ```
 
-### Filters
+---
 
-Logcie supports filters, which allow you to control which log messages should be logged based on criteria. You can combine filters with logical AND, OR, and NOT operations.
+## 🧪 Filters
+
+Filters allow fine-grained control over which logs are emitted to a sink. You can:
+- Write custom filters
+- Combine filters with `AND`, `OR`, and `NOT`
+
+### Example
 
 ```c
-uint8_t filter1(Logcie_Sink *sink, Logcie_Log *log, const char *file, uint32_t line) {
-    (void)sink; (void)file; (void)line;
-    return log->level >= LOGCIE_LEVEL_INFO && log->level <= LOGCIE_ERROR;
+uint8_t level_filter(Logcie_Sink *sink, Logcie_Log *log) {
+    return log->level >= LOGCIE_LEVEL_INFO;
 }
 
-uint8_t filter2(Logcie_Sink *sink, Logcie_Log *log, const char *file, uint32_t line) {
-    (void)sink; (void)file; (void)line;
-    return log->module && strcmp(log->module, "module") == 0;
+uint8_t module_filter(Logcie_Sink *sink, Logcie_Log *log) {
+    return log->module && strcmp(log->module, "core") == 0;
 }
 
-logcie_set_filter_and(&custom_sink, filter1, filter2);
-logcie_set_filter_or(&custom_sink, filter1, filter2);
-logcie_set_filter_not(&custom_sink, filter1);
+// Allocate contexts statically
+static Logcie_CombinedFilterContext and_ctx;
+static Logcie_NotFilterContext not_ctx;
+
+// Combine them
+logcie_set_filter_and(&sink, level_filter, module_filter, &and_ctx);
+logcie_set_filter_not(&sink, module_filter, &not_ctx);
 ```
 
-### Setting Log Colors
+---
 
-You can override the default colors for each log level. To do so, provide an array of colors for each log level:
+## 🎨 Custom Log Level Colors
+
+Override the default ANSI colors per log level:
 
 ```c
-const char *custom_colors[Count_LOGCIE_LEVEL] = {
-    LOGCIE_COLOR_BLUE,   // TRACE
-    LOGCIE_COLOR_GREEN,  // DEBUG
-    LOGCIE_COLOR_CYAN,   // VERBOSE
-    LOGCIE_COLOR_BLUE,   // INFO
-    LOGCIE_COLOR_YELLOW, // WARN
-    LOGCIE_COLOR_RED,    // ERROR
+const char *my_colors[Count_LOGCIE_LEVEL] = {
+    LOGCIE_COLOR_GRAY,  // TRACE
+    LOGCIE_COLOR_GRAY,  // DEBUG
+    LOGCIE_COLOR_CYAN,  // VERBOSE
+    LOGCIE_COLOR_BLUE,  // INFO
+    LOGCIE_COLOR_YELLOW,// WARN
+    LOGCIE_COLOR_RED,   // ERROR
     LOGCIE_COLOR_BRIGHT_RED // FATAL
 };
 
-logcie_set_colors(custom_colors);
+logcie_set_colors(my_colors);
 ```
 
-You can pass `NULL` to `logcie_set_colors` to reset colors to default
+To reset to defaults:
+```c
+logcie_set_colors(NULL);
+```
+
+---
+
+## 📚 Example
+
+```c
+#define LOGCIE_IMPLEMENTATION
+#include "logcie.h"
+
+int main() {
+    LOGCIE_INFO("Program started: version %s", LOGCIE_VERSION_STRING);
+    return 0;
+}
+```
+
+You can find more examples at [./examples/](./examples/)
+
+---
+
+## 🧱 TODOs & Limitations
+
+- No built-in thread safety yet
+- No sink destruction API
+- No output alignment (TODO noted in code)
+- Custom formatters are manual and require `va_list` handling
+
+---
+
+## 📜 License
+
+MIT License © 2025 [Nikita (Strongleong) Chulkov](mailto:nikita_chul@mail.ru)
