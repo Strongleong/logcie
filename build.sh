@@ -98,4 +98,10 @@ for example in $examples; do
   fi
 done
 
-wait
+status=0
+
+for job in $(jobs -p); do
+  wait $job || status=1
+done
+
+exit $status
