@@ -22,8 +22,8 @@
 #endif
 
 // Versioning macros
-#define LOGCIE_VERSION_MAJOR    0
-#define LOGCIE_VERSION_MINOR    2
+#define LOGCIE_VERSION_MAJOR    1
+#define LOGCIE_VERSION_MINOR    0
 #define LOGCIE_VERSION_RELEASE  0
 #define LOGCIE_VERSION_NUMBER   (LOGCIE_VERSION_MAJOR *100*100 + LOGCIE_VERSION_MINOR *100 + LOGCIE_VERSION_RELEASE)
 #define LOGCIE_VERSION_FULL     LOGCIE_VERSION_MAJOR.LOGCIE_VERSION_MINOR.LOGCIE_VERSION_RELEASE
@@ -50,7 +50,19 @@ extern "C" {
 
 /**
  * @enum Logcie_LogLevel
- * Enumerates the available logging levels.
+ * @brief Enumerates all available log severity levels.
+ *
+ * Log levels are ordered from most verbose (TRACE) to most severe (FATAL).
+ * Each sink can be configured with a minimum level to control verbosity.
+ *
+ * @value LOGCIE_LEVEL_TRACE   Most detailed information for deep debugging
+ * @value LOGCIE_LEVEL_DEBUG   Debugging information for development
+ * @value LOGCIE_LEVEL_VERBOSE Verbose operational details
+ * @value LOGCIE_LEVEL_INFO    General informational messages
+ * @value LOGCIE_LEVEL_WARN    Warning conditions that might need attention
+ * @value LOGCIE_LEVEL_ERROR   Error conditions that prevent normal operation
+ * @value LOGCIE_LEVEL_FATAL   Fatal conditions requiring immediate shutdown
+ * @value Count_LOGCIE_LEVEL   Sentinel value representing total count of levels
  */
 typedef enum Logcie_LogLevel {
   LOGCIE_LEVEL_TRACE,
@@ -63,7 +75,18 @@ typedef enum Logcie_LogLevel {
   Count_LOGCIE_LEVEL,
 } Logcie_LogLevel;
 
-// Optional: define module name for log context
+/**
+ * @brief Defines the module name for the current translation unit.
+ *
+ * When this variable is defined, all logs from this file will be tagged
+ * with the specified module name, which can be displayed using $M in format strings
+ * or can be useid in filters.
+ *
+ * Example usage:
+ * @code
+ * static const char *logcie_module = "network";
+ * @endcode
+ */
 #if defined(__has_attribute) && __has_attribute(unused)
  static const char __attribute__ ((unused)) *logcie_module;
 #else
@@ -74,20 +97,45 @@ typedef struct Logcie_Sink Logcie_Sink;
 typedef struct Logcie_Log Logcie_Log;
 
 /**
- * @brief Formatter function signature.
- * Responsible for formatting a log entry and writing it to the sink.
+ * @brief Formatter function type signature.
+ *
+ * A formatter function is responsible for converting a Logcie_Log structure
+ * into formatted output written to a sink. The default formatter is
+ * logcie_printf_formatter() which uses $ tokens for formatting.
+ *
+ * @param sink  The sink to write formatted output to
+ * @param log   Log metadata and message to format
+ * @param args  Variable argument list for message formatting
+ * @return      Number of characters written to the sink
  */
 typedef size_t (Logcie_FormatterFn)(Logcie_Sink *sink, Logcie_Log log, va_list *args);
 
 /**
- * @brief Filter function signature.
- * Determines whether a given log should be output to the sink.
+ * @brief Filter function type signature.
+ *
+ * A filter function determines whether a log message should be emitted
+ * to a particular sink. Return 1 (true) to allow the log, 0 (false) to
+ * suppress it.
+ *
+ * @param sink  The sink being evaluated
+ * @param log   Log metadata to evaluate
+ * @return      1 to emit log, 0 to suppress
  */
 typedef uint8_t (Logcie_FilterFn)(Logcie_Sink *sink, Logcie_Log *log);
 
 /**
  * @brief Structure representing a single log sink (output target).
- * A sink can be stdout, file, buffer, etc.
+ *
+ * A sink defines where log messages are written and how they are formatted.
+ * Multiple sinks can be active simultaneously, each with different formatting
+ * and filtering rules.
+ *
+ * @field sink        Output file stream (stdout, file, etc.)
+ * @field min_level   Minimum log level to emit (messages below this are ignored)
+ * @field fmt         Format string using $ tokens for customization
+ * @field formatter   Function pointer to format and write log messages
+ * @field filter      Optional filter function to selectively output messages
+ * @field userdata    User-provided context data for custom filters
  */
 struct Logcie_Sink {
   FILE *sink;                     ///< Output file stream (stdout, file, etc.)
@@ -99,7 +147,12 @@ struct Logcie_Sink {
 };
 
 /**
- * @brief Structure representing location where log occured.
+ * @brief Structure representing source code location of a log call.
+ *
+ * Automatically populated by the LOGCIE_* macros using __FILE__ and __LINE__.
+ *
+ * @field file      Source file name where log was called
+ * @field line      Line number in source file where log was called
  */
 typedef struct Logcie_LogLocation {
   const char *file;
@@ -107,8 +160,17 @@ typedef struct Logcie_LogLocation {
 } Logcie_LogLocation;
 
 /**
- * @brief Structure representing a log message.
- * Carries metadata and log content for formatting.
+ * @brief Structure representing a complete log message with metadata.
+ *
+ * This structure contains all information about a log event, including
+ * severity level, message text, timestamp, source location, and module.
+ * It is typically created by the LOGCIE_* macros and passed to formatters.
+ *
+ * @field level     Severity level of the log message
+ * @field msg       Format string for the log message
+ * @field time      Timestamp when the log was created
+ * @field module    Optional module name for categorizing logs
+ * @field location  Source file and line number where log was called
  */
 struct Logcie_Log {
   Logcie_LogLevel level;
@@ -119,7 +181,13 @@ struct Logcie_Log {
 };
 
 /**
- * @brief Context used with logical AND/OR filters.
+ * @brief Context structure for logical AND/OR filter combinations.
+ *
+ * Used with logcie_set_filter_and() and logcie_set_filter_or() to store
+ * references to the two filter functions being combined.
+ *
+ * @field a    First filter function
+ * @field b    Second filter function
  */
 typedef struct Logcie_CombinedFilterContext {
   Logcie_FilterFn *a;
@@ -127,7 +195,12 @@ typedef struct Logcie_CombinedFilterContext {
 } Logcie_CombinedFilterContext;
 
 /**
- * @brief Context used with logical NOT filters.
+ * @brief Context structure for logical NOT filter.
+ *
+ * Used with logcie_set_filter_not() to store reference to the filter
+ * function being negated.
+ *
+ * @field a    Filter function to negate
  */
 typedef struct Logcie_NotFilterContext {
   Logcie_FilterFn *a;
@@ -195,10 +268,68 @@ typedef struct Logcie_NotFilterContext {
 LOGCIE_DEF size_t logcie_log(Logcie_Log log, const char *fmt, ...) PRINTF_TYPECHECK(2, 3);
 
 /**
+ * @brief Gets the number of sinks currently registered in the logger.
+ *
+ * This includes both user-added sinks and the default stdout sink.
+ * Useful for iterating through sinks or monitoring sink count.
+ *
+ * @return Number of active sinks
+ */
+LOGCIE_DEF size_t logcie_get_sink_count(void);
+
+/**
+ * @brief Retrieves a sink by its index in the sink array.
+ *
+ * Sinks are stored in the order they were added. The default stdout sink
+ * is always at index 0 unless logcie_reset() has been called.
+ *
+ * @param index Zero-based index of the sink to retrieve
+ * @return Pointer to the Logcie_Sink, or NULL if index is invalid
+ */
+LOGCIE_DEF Logcie_Sink *logcie_get_sink(size_t index);
+
+/**
  * @brief Adds a new sink to the logger.
  * @param sink Pointer to a Logcie_Sink structure.
  */
 LOGCIE_DEF void logcie_add_sink(Logcie_Sink *sink);
+
+/**
+ * @brief Removes a sink from the logger by pointer.
+ * @param sink Pointer to the sink to remove.
+ * @return 1 if sink was found and removed, 0 otherwise.
+ * @note The sink memory is not freed by this function. Caller is responsible.
+ */
+LOGCIE_DEF uint8_t logcie_remove_sink(Logcie_Sink *sink);
+
+/**
+ * @brief Removes a sink from the logger by index.
+ * @param index Zero-based index of the sink to remove.
+ * @return 1 if sink was found and removed, 0 otherwise.
+ * @note The sink memory is not freed by this function. Caller is responsible.
+ */
+LOGCIE_DEF uint8_t logcie_remove_sink_by_index(size_t index);
+
+/**
+ * @brief Removes and frees a sink from the logger (if it was dynamically allocated).
+ * @param sink Pointer to the sink to remove and free.
+ * @return 1 if sink was found and removed, 0 otherwise.
+ * @note Only use this if the sink was allocated with malloc().
+ */
+LOGCIE_DEF uint8_t logcie_remove_and_free_sink(Logcie_Sink *sink);
+
+/**
+ * @brief Removes all sinks except the default stdout sink.
+ * @note Sink memory is not freed. Caller is responsible for cleanup.
+ */
+LOGCIE_DEF void logcie_remove_all_sinks(void);
+
+/**
+ * @brief Removes a sink and closes its file stream if it's not stdout/stderr.
+ * @param sink Pointer to the sink to remove.
+ * @return 1 if sink was found and removed, 0 otherwise.
+ */
+LOGCIE_DEF uint8_t logcie_remove_sink_and_close(Logcie_Sink *sink);
 
 /**
  * @brief Built-in NOT filter. Inverts result of provided filter.
@@ -386,6 +517,7 @@ typedef struct Logcie_Logger {
   Logcie_Sink **sinks;
   size_t sinks_len;
   size_t sinks_cap;
+  uint8_t *is_active;
 } Logcie_Logger;
 
 // INFO: By default there is one default sink to allow logging right
@@ -393,7 +525,8 @@ typedef struct Logcie_Logger {
 static Logcie_Logger logcie = {
   .sinks_cap = 1,
   .sinks_len = 1,
-  .sinks = &default_stdout_sink_ptr
+  .sinks = &default_stdout_sink_ptr,
+  .is_active = NULL,
 };
 
 // WARN: This should be called once
@@ -402,6 +535,18 @@ static void _logcie_reset(void) {
   logcie.sinks_cap = 8;
   logcie.sinks_len = 0;
   logcie.sinks = malloc(sizeof(*logcie.sinks) * logcie.sinks_cap);
+}
+
+size_t logcie_get_sink_count(void) {
+  return logcie.sinks_len;
+}
+
+Logcie_Sink *logcie_get_sink(size_t index) {
+  if (index == 0 || index > logcie.sinks_len) {
+    return NULL;
+  }
+
+  return logcie.sinks[index];
 }
 
 void logcie_add_sink(Logcie_Sink *sink) {
@@ -421,6 +566,67 @@ void logcie_add_sink(Logcie_Sink *sink) {
 
   logcie.sinks[logcie.sinks_len] = sink;
   logcie.sinks_len++;
+}
+
+uint8_t logcie_remove_sink(Logcie_Sink *sink) {
+  if (sink == &default_stdout_sink) {
+    return 0; // unreacheble
+  }
+
+  for (size_t i = 0; i < logcie.sinks_len; i++) {
+    if (logcie.sinks[i] == sink) {
+      return logcie_remove_sink_by_index(i);
+    }
+  }
+
+  return 0;
+}
+
+uint8_t logcie_remove_sink_by_index(size_t index) {
+  if (index >= logcie.sinks_len) {
+    return 0;
+  }
+
+  if (logcie.sinks_cap == 1 && index == 0) {
+    return 0;
+  }
+
+  for (size_t i = index; i < logcie.sinks_len; i++) {
+    logcie.sinks[i] = logcie.sinks[i + 1];
+  }
+
+  logcie.sinks_len--;
+  return 1;
+}
+
+uint8_t logcie_remove_and_free_sink(Logcie_Sink *sink) {
+  if (logcie_remove_sink(sink)){
+    free(sink);
+    return 0;
+  }
+
+  return 1;
+}
+
+void logcie_remove_all_sinks(void) {
+  if (logcie.sinks_cap > 1) {
+    free(logcie.sinks);
+    logcie.sinks_cap = 1;
+    logcie.sinks_len = 1;
+    logcie.sinks = &default_stdout_sink_ptr;
+    return;
+  }
+}
+
+LOGCIE_DEF uint8_t logcie_remove_sink_and_close(Logcie_Sink *sink) {
+  uint8_t is_file = sink->sink != stdout && sink->sink != stderr && sink->sink != NULL;
+
+  if (logcie_remove_sink(sink) && is_file) {
+    fclose(sink->sink);
+    return 1;
+  }
+
+  return 0;
 }
 
 size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
