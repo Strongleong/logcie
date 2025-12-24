@@ -136,54 +136,63 @@ typedef struct Logcie_NotFilterContext {
 // Helper macro for constructing a log message
 #define LOGCIE_CREATE_LOG(lvl, txt, f, l) (Logcie_Log) { .level = lvl, .msg = txt, .time = time(NULL), .module = logcie_module, .location = {.file = f, .line = l }}
 
+#define PRINTF_TYPECHECK(a, b)
+
+#if defined __has_attribute
+#  if __has_attribute(__format__)
+#    undef PRINTF_TYPECHECK
+#    define PRINTF_TYPECHECK(a, b) __attribute__((__format__(__printf__, a, b)))
+#  endif
+#endif
+
 /**
  * @brief Convenience macros for each log level.
  * These use __FILE__ and __LINE__ to capture call site.
  */
 #if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 202311L)
-# define LOGCIE_TRACE(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE,   msg, __FILE__, __LINE__) __VA_OPT__(,) __VA_ARGS__)
-# define LOGCIE_DEBUG(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG,   msg, __FILE__, __LINE__) __VA_OPT__(,) __VA_ARGS__)
-# define LOGCIE_VERBOSE(msg, ...) logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__) __VA_OPT__(,) __VA_ARGS__)
-# define LOGCIE_INFO(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO,    msg, __FILE__, __LINE__) __VA_OPT__(,) __VA_ARGS__)
-# define LOGCIE_WARN(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN,    msg, __FILE__, __LINE__) __VA_OPT__(,) __VA_ARGS__)
-# define LOGCIE_ERROR(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR,   msg, __FILE__, __LINE__) __VA_OPT__(,) __VA_ARGS__)
-# define LOGCIE_FATAL(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL,   msg, __FILE__, __LINE__) __VA_OPT__(,) __VA_ARGS__)
+# define LOGCIE_TRACE(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE,   msg, __FILE__, __LINE__), msg, __VA_OPT__(,) __VA_ARGS__)
+# define LOGCIE_DEBUG(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG,   msg, __FILE__, __LINE__), msg, __VA_OPT__(,) __VA_ARGS__)
+# define LOGCIE_VERBOSE(msg, ...) logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__), msg, __VA_OPT__(,) __VA_ARGS__)
+# define LOGCIE_INFO(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO,    msg, __FILE__, __LINE__), msg, __VA_OPT__(,) __VA_ARGS__)
+# define LOGCIE_WARN(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN,    msg, __FILE__, __LINE__), msg, __VA_OPT__(,) __VA_ARGS__)
+# define LOGCIE_ERROR(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR,   msg, __FILE__, __LINE__), msg, __VA_OPT__(,) __VA_ARGS__)
+# define LOGCIE_FATAL(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL,   msg, __FILE__, __LINE__), msg, __VA_OPT__(,) __VA_ARGS__)
 #else
 # if !defined(LOGCIE_PEDANTIC) && (defined(__GNUC__) || defined (__clang__))
-#  define LOGCIE_TRACE(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE,   msg, __FILE__, __LINE__), ##__VA_ARGS__)
-#  define LOGCIE_DEBUG(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG,   msg, __FILE__, __LINE__), ##__VA_ARGS__)
-#  define LOGCIE_VERBOSE(msg, ...) logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__), ##__VA_ARGS__)
-#  define LOGCIE_INFO(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO,    msg, __FILE__, __LINE__), ##__VA_ARGS__)
-#  define LOGCIE_WARN(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN,    msg, __FILE__, __LINE__), ##__VA_ARGS__)
-#  define LOGCIE_ERROR(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR,   msg, __FILE__, __LINE__), ##__VA_ARGS__)
-#  define LOGCIE_FATAL(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL,   msg, __FILE__, __LINE__), ##__VA_ARGS__)
+#  define LOGCIE_TRACE(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE,   msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
+#  define LOGCIE_DEBUG(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG,   msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
+#  define LOGCIE_VERBOSE(msg, ...) logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
+#  define LOGCIE_INFO(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO,    msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
+#  define LOGCIE_WARN(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN,    msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
+#  define LOGCIE_ERROR(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR,   msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
+#  define LOGCIE_FATAL(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL,   msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
 # else
-#  define LOGCIE_TRACE(msg)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE,   msg, __FILE__, __LINE__))
-#  define LOGCIE_DEBUG(msg)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG,   msg, __FILE__, __LINE__))
-#  define LOGCIE_VERBOSE(msg) logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__))
-#  define LOGCIE_INFO(msg)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO,    msg, __FILE__, __LINE__))
-#  define LOGCIE_WARN(msg)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN,    msg, __FILE__, __LINE__))
-#  define LOGCIE_ERROR(msg)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR,   msg, __FILE__, __LINE__))
-#  define LOGCIE_FATAL(msg)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL,   msg, __FILE__, __LINE__))
+#  define LOGCIE_TRACE(msg)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE,   msg, __FILE__, __LINE__), msg)
+#  define LOGCIE_DEBUG(msg)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG,   msg, __FILE__, __LINE__), msg)
+#  define LOGCIE_VERBOSE(msg) logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__), msg)
+#  define LOGCIE_INFO(msg)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO,    msg, __FILE__, __LINE__), msg)
+#  define LOGCIE_WARN(msg)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN,    msg, __FILE__, __LINE__), msg)
+#  define LOGCIE_ERROR(msg)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR,   msg, __FILE__, __LINE__), msg)
+#  define LOGCIE_FATAL(msg)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL,   msg, __FILE__, __LINE__), msg)
 #  define LOGCIE_VA_LOGS
 # endif
 #endif
 
 #ifdef LOGCIE_VA_LOGS
-#  define LOGCIE_TRACE_VA(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE,   msg, __FILE__, __LINE__), __VA_ARGS__)
-#  define LOGCIE_DEBUG_VA(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG,   msg, __FILE__, __LINE__), __VA_ARGS__)
-#  define LOGCIE_VERBOSE_VA(msg, ...) logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__), __VA_ARGS__)
-#  define LOGCIE_INFO_VA(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO,    msg, __FILE__, __LINE__), __VA_ARGS__)
-#  define LOGCIE_WARN_VA(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN,    msg, __FILE__, __LINE__), __VA_ARGS__)
-#  define LOGCIE_ERROR_VA(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR,   msg, __FILE__, __LINE__), __VA_ARGS__)
-#  define LOGCIE_FATAL_VA(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL,   msg, __FILE__, __LINE__), __VA_ARGS__)
+#  define LOGCIE_TRACE_VA(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE,   msg, __FILE__, __LINE__), msg, __VA_ARGS__)
+#  define LOGCIE_DEBUG_VA(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG,   msg, __FILE__, __LINE__), msg, __VA_ARGS__)
+#  define LOGCIE_VERBOSE_VA(msg, ...) logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
+#  define LOGCIE_INFO_VA(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO,    msg, __FILE__, __LINE__), msg, __VA_ARGS__)
+#  define LOGCIE_WARN_VA(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN,    msg, __FILE__, __LINE__), msg, __VA_ARGS__)
+#  define LOGCIE_ERROR_VA(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR,   msg, __FILE__, __LINE__), msg, __VA_ARGS__)
+#  define LOGCIE_FATAL_VA(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL,   msg, __FILE__, __LINE__), msg, __VA_ARGS__)
 #endif
 
 /**
  * @brief Emit a log message using the provided log metadata and arguments.
  * @note This function is invoked internally by macros like LOGCIE_INFO.
  */
-LOGCIE_DEF size_t logcie_log(Logcie_Log log, ...);
+LOGCIE_DEF size_t logcie_log(Logcie_Log log, const char *fmt, ...) PRINTF_TYPECHECK(2, 3);
 
 /**
  * @brief Adds a new sink to the logger.
@@ -414,9 +423,11 @@ void logcie_add_sink(Logcie_Sink *sink) {
   logcie.sinks_len++;
 }
 
-size_t logcie_log(Logcie_Log log, ...) {
+size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
   va_list args;
-  va_start(args, log);
+  va_start(args, fmt);
+
+  log.msg = fmt;
 
   for (size_t i = 0; i < logcie.sinks_len; i++) {
     Logcie_Sink *sink = logcie.sinks[i];
