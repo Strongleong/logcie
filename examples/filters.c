@@ -3,8 +3,8 @@
 #define LOGCIE_IMPLEMENTATION
 #include <logcie.h>
 
-static Logcie_CombinedFilterContext ctx_and;
-static Logcie_NotFilterContext ctx_not;
+static Logcie_CombinedFilterContext ctx_and = {0};
+static Logcie_NotFilterContext      ctx_not = {0};
 
 uint8_t min_info_filter(Logcie_Sink *sink, Logcie_Log *log) {
   (void)sink;

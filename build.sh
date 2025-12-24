@@ -84,10 +84,10 @@ if [ ! -d "$OUTDIR" ]; then
   mkdir -p "$OUTDIR";
 fi
 
-examples=$(find ./examples -name '*.c')
+sources=$(find . -name '*.c')
 
-for example in $examples; do
-  CMD="$CC $CFLAGS $CLIBS -o $OUTDIR/$(basename ${example%.*}) $example"
+for source in $sources; do
+  CMD="$CC $CFLAGS $CLIBS -o $OUTDIR/$(basename ${source%.*}) $source"
 
   if $VERBOSE; then
     echo $CMD

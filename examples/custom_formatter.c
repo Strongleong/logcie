@@ -26,7 +26,7 @@ int main(void) {
 
   logcie_add_sink(&my_sink);
 
-  logcie_module = "MainModule";
+  static const char *logcie_module = "MainModule";
   LOGCIE_INFO("Hello %s!", "World");
   LOGCIE_WARN("Something seems wrong: code %d", 42);
 
