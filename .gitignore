@@ -2,4 +2,3 @@ compile_commands.json
 out
 out.log
 .cache
-.clangd
