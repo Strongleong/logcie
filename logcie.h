@@ -267,6 +267,16 @@ typedef struct Logcie_NotFilterContext {
 
 /**
  * @brief Emit a log message using the provided log metadata and arguments.
+ *
+ * This is the core logging function that processes log messages through all
+ * registered sinks. Each sink applies its own filtering and formatting rules.
+ * This function is typically called via the LOGCIE_* macros and should not
+ * be called directly in most cases.
+ *
+ * @param log Log metadata structure containing level, timestamp, location, etc.
+ * @param fmt Format string for the log message (supports printf-style formatting)
+ * @param ... Variable arguments for format string placeholders
+ * @return Always returns 0 (reserved for future use)
  * @note This function is invoked internally by macros like LOGCIE_INFO.
  */
 LOGCIE_DEF size_t logcie_log(Logcie_Log log, const char *fmt, ...) PRINTF_TYPECHECK(2, 3);
@@ -287,92 +297,193 @@ LOGCIE_DEF size_t logcie_get_sink_count(void);
  * Sinks are stored in the order they were added. The default stdout sink
  * is always at index 0 unless logcie_reset() has been called.
  *
- * @param index Zero-based index of the sink to retrieve
+ * @param index Zero-based index of the sink to retrieve (0 = default stdout sink)
  * @return Pointer to the Logcie_Sink, or NULL if index is invalid
  */
 LOGCIE_DEF Logcie_Sink *logcie_get_sink(size_t index);
 
 /**
  * @brief Adds a new sink to the logger.
- * @param sink Pointer to a Logcie_Sink structure.
+ *
+ * The sink will receive all log messages that pass its minimum level and
+ * filter criteria. Multiple sinks can be active simultaneously with different
+ * configurations.
+ *
+ * @param sink Pointer to a Logcie_Sink structure to add
+ * @note If sink->sink is NULL and __L_ATTR_CONSTRUCT is not defined,
+ *       it will be set to stdout automatically
  */
 LOGCIE_DEF void logcie_add_sink(Logcie_Sink *sink);
 
 /**
  * @brief Removes a sink from the logger by pointer.
- * @param sink Pointer to the sink to remove.
- * @return 1 if sink was found and removed, 0 otherwise.
+ *
+ * Searches for the sink by pointer equality and removes it from the sink list.
+ * The sink structure is not freed; caller must manage memory.
+ *
+ * @param sink Pointer to the sink to remove
+ * @return 1 if sink was found and removed, 0 otherwise
  * @note The sink memory is not freed by this function. Caller is responsible.
+ * @note Cannot remove the default stdout sink (always returns 0 for it)
  */
 LOGCIE_DEF uint8_t logcie_remove_sink(Logcie_Sink *sink);
 
 /**
  * @brief Removes a sink from the logger by index.
- * @param index Zero-based index of the sink to remove.
- * @return 1 if sink was found and removed, 0 otherwise.
+ *
+ * Removes the sink at the specified index. Indices are 0-based and
+ * correspond to the order sinks were added.
+ *
+ * @param index Zero-based index of the sink to remove
+ * @return 1 if sink was found and removed, 0 otherwise
  * @note The sink memory is not freed by this function. Caller is responsible.
+ * @note Index 0 is the default stdout sink and cannot be removed
  */
 LOGCIE_DEF uint8_t logcie_remove_sink_by_index(size_t index);
 
 /**
  * @brief Removes and frees a sink from the logger (if it was dynamically allocated).
- * @param sink Pointer to the sink to remove and free.
- * @return 1 if sink was found and removed, 0 otherwise.
- * @note Only use this if the sink was allocated with malloc().
+ *
+ * Combines logcie_remove_sink() with free() for convenience when working
+ * with heap-allocated sinks.
+ *
+ * @param sink Pointer to the sink to remove and free
+ * @return 1 if sink was found and removed, 0 otherwise
+ * @note Only use this if the sink was allocated with malloc() or similar.
+ * @note Does not close file streams. Use logcie_remove_sink_and_close() for that.
  */
 LOGCIE_DEF uint8_t logcie_remove_and_free_sink(Logcie_Sink *sink);
 
 /**
  * @brief Removes all sinks except the default stdout sink.
+ *
+ * Resets the logger to its initial state with only the default stdout sink.
+ * Useful for cleanup or reconfiguration scenarios.
+ *
  * @note Sink memory is not freed. Caller is responsible for cleanup.
+ * @note File streams are not closed. Caller must close them separately.
  */
 LOGCIE_DEF void logcie_remove_all_sinks(void);
 
 /**
  * @brief Removes a sink and closes its file stream if it's not stdout/stderr.
- * @param sink Pointer to the sink to remove.
- * @return 1 if sink was found and removed, 0 otherwise.
+ *
+ * Convenience function that removes a sink and also closes the associated
+ * FILE* stream if it's a regular file (not stdout, stderr, or NULL).
+ *
+ * @param sink Pointer to the sink to remove
+ * @return 1 if sink was found and removed, 0 otherwise
+ * @note Does not free the sink structure itself, only closes the file stream
+ * @note stdout and stderr are not closed (they belong to the system)
  */
 LOGCIE_DEF uint8_t logcie_remove_sink_and_close(Logcie_Sink *sink);
 
 /**
  * @brief Built-in NOT filter. Inverts result of provided filter.
+ *
+ * This function implements logical NOT operation for filters. It returns
+ * the opposite of what the wrapped filter returns.
+ *
+ * @param sink The sink being evaluated (passed through to wrapped filter)
+ * @param log The log message being evaluated (passed through to wrapped filter)
+ * @return 1 if wrapped filter returns 0, 0 if wrapped filter returns 1
+ * @note Must be configured with logcie_set_filter_not() before use
  */
 LOGCIE_DEF uint8_t logcie_filter_not(Logcie_Sink *sink, Logcie_Log *log);
 
 /**
  * @brief Built-in AND filter. Combines two filters with logical AND.
+ *
+ * This function implements logical AND operation for filters. It returns
+ * 1 only if both wrapped filters return 1.
+ *
+ * @param sink The sink being evaluated (passed through to wrapped filters)
+ * @param log The log message being evaluated (passed through to wrapped filters)
+ * @return 1 if both filters return 1, 0 otherwise
+ * @note Must be configured with logcie_set_filter_and() before use
  */
 LOGCIE_DEF uint8_t logcie_filter_and(Logcie_Sink *sink, Logcie_Log *log);
 
 /**
  * @brief Built-in OR filter. Combines two filters with logical OR.
+ *
+ * This function implements logical OR operation for filters. It returns
+ * 1 if either (or both) of the wrapped filters return 1.
+ *
+ * @param sink The sink being evaluated (passed through to wrapped filters)
+ * @param log The log message being evaluated (passed through to wrapped filters)
+ * @return 1 if either filter returns 1, 0 if both return 0
+ * @note Must be configured with logcie_set_filter_or() before use
  */
 LOGCIE_DEF uint8_t logcie_filter_or(Logcie_Sink *sink, Logcie_Log *log);
 
 /**
  * @brief Sets a NOT filter on a sink. Caller must provide context struct.
+ *
+ * Configures a sink to use logical NOT filtering with the provided filter
+ * function. The context structure must remain valid while the filter is active.
+ *
+ * @param sink Sink to configure with NOT filter
+ * @param a Filter function to negate
+ * @param ctx Context structure to store filter reference (must remain valid)
+ * @note ctx should typically be static or heap-allocated
  */
 void logcie_set_filter_not(Logcie_Sink *sink, Logcie_FilterFn *a, Logcie_NotFilterContext *ctx);
 
 /**
  * @brief Sets an AND filter on a sink. Caller must provide context struct.
+ *
+ * Configures a sink to use logical AND filtering with the provided filter
+ * functions. The context structure must remain valid while the filter is active.
+ *
+ * @param sink Sink to configure with AND filter
+ * @param a First filter function
+ * @param b Second filter function
+ * @param ctx Context structure to store filter references (must remain valid)
+ * @note ctx should typically be static or heap-allocated
  */
 void logcie_set_filter_and(Logcie_Sink *sink, Logcie_FilterFn *a, Logcie_FilterFn *b, Logcie_CombinedFilterContext *ctx);
 
 /**
  * @brief Sets an OR filter on a sink. Caller must provide context struct.
+ *
+ * Configures a sink to use logical OR filtering with the provided filter
+ * functions. The context structure must remain valid while the filter is active.
+ *
+ * @param sink Sink to configure with OR filter
+ * @param a First filter function
+ * @param b Second filter function
+ * @param ctx Context structure to store filter references (must remain valid)
+ * @note ctx should typically be static or heap-allocated
  */
 void logcie_set_filter_or(Logcie_Sink *sink, Logcie_FilterFn *a, Logcie_FilterFn *b, Logcie_CombinedFilterContext *ctx);
 
 /**
  * @brief Default formatter using printf-style formatting and $ tokens.
+ *
+ * This is the built-in formatter that provides rich formatting capabilities
+ * using $ tokens. It supports timestamps, colors, file locations, modules,
+ * and custom formatting.
+ *
+ * @param sink The sink to write formatted output to
+ * @param log Log metadata and message to format
+ * @param args Variable argument list for message formatting
+ * @return Number of characters written to the sink
+ * @see Format Tokens in README for complete $ token reference
  */
 LOGCIE_DEF size_t logcie_printf_formatter(Logcie_Sink *sink, Logcie_Log log, va_list *args);
 
 /**
  * @brief Allows customization of log level colors. Must be array of size Count_LOGCIE_LEVEL.
- * @param colors Array of strings or NULL to reset to default.
+ *
+ * Override the default ANSI color codes for each log level. The array must
+ * contain exactly Count_LOGCIE_LEVEL (7) elements. Pass NULL to reset to defaults.
+ *
+ * @param colors Array of ANSI color code strings, one per log level in order:
+ *               [TRACE, DEBUG, VERBOSE, INFO, WARN, ERROR, FATAL]
+ *               or NULL to reset to defaults
+ * @note Colors are applied globally to all sinks using the default formatter
+ * @note Custom formatters may ignore these colors
  */
 LOGCIE_DEF void logcie_set_colors(const char **colors);
 
