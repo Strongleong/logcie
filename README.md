@@ -27,8 +27,6 @@
 - [Limitations](#limitations)
 - [License](#license)
 
-> ⚠️ Note: This library is under active development. APIs and behaviors may change.
-
 ## Quick Start
 
 ```c
@@ -98,7 +96,9 @@ You can add additional sinks for files, network sockets, or custom destinations.
 
 ### Default sink
 
-By default logcie automatically creates default sink, so you can start logging without unnececary configurations.
+Logcie automatically creates a default stdout sink so you can start logging immediately.
+However, when you add your first custom sink using logcie_add_sink(), the default sink is automatically removed.
+This design choice ensures you have full control over sink configuration once you start customizing.
 
 This is how default sinks looks like:
 
@@ -111,7 +111,42 @@ static Logcie_Sink default_stdout_sink = {
 };
 ```
 
-When you create your first sink, default one is automatically removed.
+Important behaviors to understand:
+ - Initial state: By default, one stdout sink exists at index 0
+ - First sink addition: When you add your first custom sink, the default sink is removed
+ - Restoring defaults: Use logcie_remove_all_sinks() to return to the initial default configuration
+
+Example:
+```c
+// Start with default stdout sink
+LOGCIE_INFO("This goes to default stdout");
+
+// Add a file sink - default sink is now REMOVED!
+Logcie_Sink file_sink = { /* ... */ };
+logcie_add_sink(&file_sink);
+
+// Only file_sink receives this message
+LOGCIE_INFO("This goes only to file");
+
+// Restore default configuration
+logcie_remove_all_sinks();
+LOGCIE_INFO("Back to default stdout");
+```
+
+If you want to keep both the default stdout sink and add additional sinks, you must re-add it explicitly:
+
+```c
+// Get default sink before it's removed
+Logcie_Sink *default_sink = logcie_get_sink(0);
+
+// Add your custom sink (default sink will be removed)
+Logcie_Sink file_sink = { /* ... */ };
+logcie_add_sink(&file_sink);
+
+// Re-add default sink if you want both
+logcie_add_sink(default_sink);
+// Now both sinks receive messages
+```
 
 ### Creating a Custom Sink
 
@@ -168,6 +203,35 @@ LOGCIE_INFO("Connection established to %s", hostname);
 
 The module name will appear in logs when using the `$M` format token.
 
+### Memory Management Notes
+
+Since logcie_add_sink() stores the pointer to your sink structure (not a copy), you must ensure:
+  - Stack-allocated sinks: Must not go out of scope while registered
+  - Heap-allocated sinks: Must be freed only after removal
+  - Modification: You can modify sink properties after adding (changes take effect immediately)
+
+### C++ Compatibility
+
+Logcie supports C++ with minor adjustments:
+
+```c
+// In C++ files, define logcie_module differently:
+extern "C" {
+    const char *logcie_module = "module_name";
+}
+
+// Or if including in multiple files, use extern:
+// In header:
+extern "C" {
+    extern const char *logcie_module;
+}
+
+// In one source file:
+extern "C" {
+    const char *logcie_module = "module_name";
+}
+```
+
 ## Format Tokens
 
 Format strings use `$` tokens to insert log metadata. The default formatter supports the following tokens:
@@ -185,6 +249,7 @@ Format strings use `$` tokens to insert log metadata. The default formatter supp
 | `$d`    | Date (YYYY-MM-DD)                  | "2025-12-24"             |
 | `$t`    | Time (HH:MM:SS)                    | "14:30:15"               |
 | `$z`    | Timezone offset                    | "+3"                     |
+| `$<n`   | Pads with n spaces                 | "    "                   |
 | `$$`    | Literal dollar sign                | "$"                      |
 
 ### Format Examples
@@ -294,6 +359,27 @@ The formatter should:
 You don't *need* to write logs somewhere in formatter.
 For example: you can send logs to remote API, or collect statistics.
 
+### Internal Helper Functions
+
+When LOGCIE_IMPLEMENTATION is defined, the following internal helper functions become available:
+
+| Function                         | Description                                 |
+| --------                         | -----------                                 |
+| `get_logcie_level_label()`       | Returns lowercase level name (e.g., "info") |
+| `get_logcie_level_label_upper()` | Returns uppercase level name (e.g., "INFO") |
+| `get_logcie_level_color()`       | Returns ANSI color code for given level     |
+
+These functions are declared as static inline and are primarily intended for use within custom formatters. They can only be used in translation units where LOGCIE_IMPLEMENTATION is defined.
+
+Example usage in custom formatters:
+
+```c
+size_t my_formatter(Logcie_Sink *sink, Logcie_Log log, va_list *args) {
+    fprintf(sink->sink, "[%s] ", get_logcie_level_label_upper(log.level));
+    // ... rest of formatter
+}
+```
+
 ## API Reference
 
 ### Core Functions
@@ -307,7 +393,7 @@ For example: you can send logs to remote API, or collect statistics.
 | `logcie_remove_sink()`           | Removes a sink from the logger by pointer.                                  |
 | `logcie_remove_sink_by_index()`  | Removes a sink from the logger by index.                                    |
 | `logcie_remove_and_free_sink()`  | Removes and frees a sink from the logger (if it was dynamically allocated). |
-| `logcie_remove_all_sinks(()`     | Set custom colors for log levels                                            |
+| `logcie_remove_all_sinks()`      | Set custom colors for log levels                                            |
 | `logcie_remove_sink_and_close()` | Removes a sink and closes its file stream if it's not stdout/stderr         |
 | `logcie_set_colors()`            | Allows customization of log level colors. Must                              |
 
@@ -439,8 +525,7 @@ int main() {
 
 ## Limitations
 
-- **Not thread-safe** - Concurrent calls to logging functions from multiple threads may interleave output. Thread safety and multithreading is planned for version 2.0.0
-- **No sink removal** - Once added, sinks cannot be removed (though they can be disabled with filters)
+- **Not thread-safe** - Concurrent calls to logging functions from multiple threads may interleave output. Thread safety and multithreading is planned for version 1.0.0
 - **Memory allocation** - The sink array uses `malloc()`/`realloc()` for dynamic growth
 - **No built-in log rotation** - File management must be handled by the application (or just use `logrotate`)
 - **Custom formatters require `va_list` handling** - Advanced usage requires understanding of variadic arguments

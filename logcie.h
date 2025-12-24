@@ -1,10 +1,14 @@
 /*
- * Logcie v0.2.0 - Logging Library (Single Header)
+ * Logcie v0.9.0 - Logging Library (Single Header)
  *
  * Description:
  *   Logcie is a lightweight, modular, single-header logging library written in C.
  *   It supports multiple log levels, ANSI color output, flexible formatting, and
  *   customizable filters and sinks for advanced logging use cases.
+ *
+ *   This library is NOT thread-safe in version 1.0.
+ *       Concurrent calls from multiple threads may interleave output.
+ *       Thread safety is planned for version 2.0.
  *
  * Usage:
  *   #define LOGCIE_IMPLEMENTATION
@@ -22,8 +26,8 @@
 #endif
 
 // Versioning macros
-#define LOGCIE_VERSION_MAJOR         1
-#define LOGCIE_VERSION_MINOR         0
+#define LOGCIE_VERSION_MAJOR         0
+#define LOGCIE_VERSION_MINOR         9
 #define LOGCIE_VERSION_RELEASE       0
 #define LOGCIE_VERSION_NUMBER        (LOGCIE_VERSION_MAJOR * 100 * 100 + LOGCIE_VERSION_MINOR * 100 + LOGCIE_VERSION_RELEASE)
 #define LOGCIE_VERSION_FULL          LOGCIE_VERSION_MAJOR.LOGCIE_VERSION_MINOR.LOGCIE_VERSION_RELEASE
@@ -82,6 +86,9 @@ typedef enum Logcie_LogLevel {
  * with the specified module name, which can be displayed using $M in format strings
  * or can be useid in filters.
  *
+ * For C++, we need a different approach
+ * Users should define: const char *logcie_module = "module";
+ *
  * Example usage:
  * @code
  * static const char *logcie_module = "network";
@@ -129,6 +136,22 @@ typedef uint8_t(Logcie_FilterFn)(Logcie_Sink *sink, Logcie_Log *log);
  * A sink defines where log messages are written and how they are formatted.
  * Multiple sinks can be active simultaneously, each with different formatting
  * and filtering rules.
+ *
+ * Here is the list of all formatting tokens:
+ *
+ * `$m` - Log message with printf formatting
+ * `$f` - Source file name
+ * `$x` - Line number
+ * `$M` - Module name
+ * `$l` - Log level (lowercase)
+ * `$L` - Log level (uppercase)
+ * `$c` - ANSI color code for log level
+ * `$r` - ANSI reset color code
+ * `$d` - Date (YYYY-MM-DD)
+ * `$t` - Time (HH:MM:SS)
+ * `$z` - Timezone offset
+ * `$<n - Pads with n spaces
+ * `$$` - Literal dollar sign
  *
  * @field sink        Output file stream (stdout, file, etc.)
  * @field min_level   Minimum log level to emit (messages below this are ignored)
@@ -310,10 +333,11 @@ LOGCIE_DEF Logcie_Sink *logcie_get_sink(size_t index);
  * configurations.
  *
  * @param sink Pointer to a Logcie_Sink structure to add
+ * @return 1 if sink was added, 0 otherwise
  * @note If sink->sink is NULL and __L_ATTR_CONSTRUCT is not defined,
  *       it will be set to stdout automatically
  */
-LOGCIE_DEF void logcie_add_sink(Logcie_Sink *sink);
+LOGCIE_DEF uint8_t logcie_add_sink(Logcie_Sink *sink);
 
 /**
  * @brief Removes a sink from the logger by pointer.
@@ -516,6 +540,10 @@ static const char *default_module = "Logcie";
 #define _LOGCIE_DEBUG_ASSERT(bool, msg)
 #endif
 
+#ifndef _LOGCIE_ARR_LEN
+#define _LOGCIE_ARR_LEN(array) ((int)sizeof(array) / (int)sizeof((array)[0]))
+#endif
+
 static const char *logcie_level_label[] = {
     [LOGCIE_LEVEL_TRACE]   = "trace",
     [LOGCIE_LEVEL_DEBUG]   = "debug",
@@ -562,6 +590,10 @@ static const char **logcie_level_color = logcie_default_level_color;
 
 void logcie_set_colors(const char **colors) {
   if (colors) {
+    // If compiled with -fsanitize=address and colors array is wrong it will crash
+    // If it is compiled without -fsanitize=address then color would be NULL (I hope)
+    const char *color = colors[Count_LOGCIE_LEVEL - 1];
+    _LOGCIE_ASSERT(color != NULL, "Size of array of colors in logcie_set_colors is not equal to Count_LOGCIE_LEVEL");
     logcie_level_color = colors;
   } else {
     logcie_level_color = logcie_default_level_color;
@@ -632,7 +664,6 @@ typedef struct Logcie_Logger {
   Logcie_Sink **sinks;
   size_t        sinks_len;
   size_t        sinks_cap;
-  uint8_t      *is_active;
 } Logcie_Logger;
 
 // INFO: By default there is one default sink to allow logging right
@@ -641,7 +672,6 @@ static Logcie_Logger logcie = {
     .sinks_cap = 1,
     .sinks_len = 1,
     .sinks     = &default_stdout_sink_ptr,
-    .is_active = NULL,
 };
 
 // WARN: This should be called once
@@ -657,14 +687,18 @@ size_t logcie_get_sink_count(void) {
 }
 
 Logcie_Sink *logcie_get_sink(size_t index) {
-  if (index == 0 || index > logcie.sinks_len) {
+  if (index >= logcie.sinks_len) {
     return NULL;
   }
 
   return logcie.sinks[index];
 }
 
-void logcie_add_sink(Logcie_Sink *sink) {
+uint8_t logcie_add_sink(Logcie_Sink *sink) {
+  if (sink == NULL) {
+    return 0;
+  }
+
 #ifndef __L_ATTR_CONSTRUCT
   if (sink->sink == NULL)
     sink->sink = stdout;
@@ -681,11 +715,13 @@ void logcie_add_sink(Logcie_Sink *sink) {
 
   logcie.sinks[logcie.sinks_len] = sink;
   logcie.sinks_len++;
+
+  return 1;
 }
 
 uint8_t logcie_remove_sink(Logcie_Sink *sink) {
   if (sink == &default_stdout_sink) {
-    return 0;  // unreacheble
+    return 0;  // unreachable
   }
 
   for (size_t i = 0; i < logcie.sinks_len; i++) {
@@ -717,10 +753,10 @@ uint8_t logcie_remove_sink_by_index(size_t index) {
 uint8_t logcie_remove_and_free_sink(Logcie_Sink *sink) {
   if (logcie_remove_sink(sink)) {
     free(sink);
-    return 0;
+    return 1;
   }
 
-  return 1;
+  return 0;
 }
 
 void logcie_remove_all_sinks(void) {
@@ -752,6 +788,7 @@ size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
 
   for (size_t i = 0; i < logcie.sinks_len; i++) {
     Logcie_Sink *sink = logcie.sinks[i];
+    _LOGCIE_ASSERT(sink->sink, "Sink have nowhere to output");
 
     if (log.level < sink->min_level) {
       continue;
@@ -774,7 +811,10 @@ size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
 }
 
 size_t logcie_printf_formatter(Logcie_Sink *sink, Logcie_Log log, va_list *args) {
+  _LOGCIE_ASSERT(sink, "Sink passed in logcie_printf_formatter is NULL");
+
   size_t      output_len = 0;
+  size_t      last_len   = 0;
   const char *fmt        = sink->fmt;
 
   struct tm local_tm = *localtime(&log.time);
@@ -798,46 +838,65 @@ size_t logcie_printf_formatter(Logcie_Sink *sink, Logcie_Log log, va_list *args)
 
     switch (*fmt) {
       case '$':
-        output_len += fprintf(sink->sink, "$");
+        last_len = fprintf(sink->sink, "$");
         break;
       case 'm':
-        output_len += vfprintf(sink->sink, log.msg, *args);
+        last_len = vfprintf(sink->sink, log.msg, *args);
         break;
       case 'l':
-        output_len += fprintf(sink->sink, "%-5s", get_logcie_level_label(log.level));
+        last_len = fprintf(sink->sink, "%s", get_logcie_level_label(log.level));
         break;
       case 'L':
-        output_len += fprintf(sink->sink, "%-5s", get_logcie_level_label_upper(log.level));
+        last_len = fprintf(sink->sink, "%s", get_logcie_level_label_upper(log.level));
         break;
       case 'c':
-        output_len += fprintf(sink->sink, "%s", get_logcie_level_color(log.level));
+        last_len = fprintf(sink->sink, "%s", get_logcie_level_color(log.level));
         break;
       case 'r':
-        output_len += fprintf(sink->sink, LOGCIE_COLOR_RESET);
+        last_len = fprintf(sink->sink, LOGCIE_COLOR_RESET);
         break;
       case 'd':
-        output_len += fprintf(sink->sink, "%d-%02d-%02d", local_tm.tm_year + 1900, local_tm.tm_mon + 1, local_tm.tm_mday);
+        last_len = fprintf(sink->sink, "%d-%02d-%02d", local_tm.tm_year + 1900, local_tm.tm_mon + 1, local_tm.tm_mday);
         break;
       case 't':
-        output_len += fprintf(sink->sink, "%02d:%02d:%02d", local_hours, local_tm.tm_min, local_tm.tm_sec);
+        last_len = fprintf(sink->sink, "%02d:%02d:%02d", local_hours, local_tm.tm_min, local_tm.tm_sec);
         break;
       case 'z':
-        output_len += fprintf(sink->sink, "%+d", timediff);
+        last_len = fprintf(sink->sink, "%+d", timediff);
         break;
       case 'f':
-        output_len += fprintf(sink->sink, "%s", log.location.file);
+        last_len = fprintf(sink->sink, "%s", log.location.file);
         break;
       case 'x':
-        output_len += fprintf(sink->sink, "%u", log.location.line);
+        last_len = fprintf(sink->sink, "%u", log.location.line);
         break;
       case 'M':
-        output_len += fprintf(sink->sink, "%s", log.module ? log.module : default_module);
+        last_len = fprintf(sink->sink, "%s", log.module ? log.module : default_module);
         break;
+      case '<': {
+        fmt++;
+        uint16_t target = 0;
+
+        while (*fmt >= '0' && *fmt <= '9') {
+          target = target * 10 + (*fmt - '0');
+          fmt++;
+        }
+
+        int16_t pad = target - last_len;
+
+        if (pad > 0) {
+          last_len = fprintf(sink->sink, "%*s", pad, "");
+        }
+
+        fmt--;
+        break;
+      }
       default:
         fprintf(stderr, "%sWARN: unknown format sequence '$%c'. Skipping...\n" LOGCIE_COLOR_RESET, get_logcie_level_color(LOGCIE_LEVEL_WARN), *fmt);
         break;
     }
 
+    output_len += last_len;
     fmt++;
   }
 
