@@ -1,5 +1,5 @@
 #define LOGCIE_IMPLEMENTATION
-#include "logcie.h"
+#include <logcie.h>
 
 int main(void) {
     // Simple logs

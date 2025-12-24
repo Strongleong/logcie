@@ -2,7 +2,7 @@
 #include <time.h>
 
 #define LOGCIE_IMPLEMENTATION
-#include "logcie.h"
+#include <logcie.h>
 
 size_t my_simple_formatter(Logcie_Sink *sink, Logcie_Log log, va_list *args) {
     char time_buf[9];

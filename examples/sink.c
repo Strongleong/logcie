@@ -1,7 +1,7 @@
 #include <stdio.h>
 
 #define LOGCIE_IMPLEMENTATION
-#include "logcie.h"
+#include <logcie.h>
 
 static const char *logcie_module = "main";
 

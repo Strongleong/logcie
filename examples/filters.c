@@ -1,7 +1,7 @@
 #include <string.h>
 
 #define LOGCIE_IMPLEMENTATION
-#include "logcie.h"
+#include <logcie.h>
 
 static Logcie_CombinedFilterContext ctx_and;
 static Logcie_NotFilterContext ctx_not;
