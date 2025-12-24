@@ -1,13 +1,14 @@
 # Logcie
 
-**Logcie** is a lightweight, single-header logging library for C with a modular design that supports multiple output sinks, customizable formatting, and flexible filtering.
+**Logcie** is a lightweight, single-header logging library for C with a modular design
+that supports multiple output sinks, customizable formatting, and flexible filtering.
 
 ## Features
 
 - Multiple log levels
 - ANSI color support
 - Fully customizable output format
-- Filters (with combinators like AND/OR/NOT)
+- Filters support
 - Support for multiple sinks (stdout, file, etc.)
 - c11/c99 compatible (with -pedantic file)
 
@@ -267,7 +268,8 @@ Format strings use `$` tokens to insert log metadata. The default formatter supp
 
 ## Filters
 
-Filters allow you to control which log messages are emitted to a sink. You can create custom filter functions and combine them using built-in logical operators.
+Filters allow you to control which log messages are emitted to a sink.
+You can create custom filter functions and logs will flow through them before going to formatter.
 
 ### Custom Filter Function
 
@@ -284,38 +286,6 @@ uint8_t filter_by_level_range(Logcie_Sink *sink, Logcie_Log *log) {
     return log->level >= LOGCIE_LEVEL_INFO && log->level <= LOGCIE_LEVEL_ERROR;
 }
 ```
-
-### Combining Filters
-
-Logcie provides built-in functions to combine filters with logical operators:
-
-```c
-// Static context allocation
-static Logcie_CombinedFilterContext and_ctx;
-static Logcie_NotFilterContext not_ctx;
-
-// Create a sink
-Logcie_Sink filtered_sink = {
-    .sink = stdout,
-    .min_level = LOGCIE_LEVEL_TRACE,
-    .fmt = "$L: $m",
-    .formatter = logcie_printf_formatter
-};
-
-// Apply an AND filter (both conditions must be true)
-logcie_set_filter_and(&filtered_sink, filter_by_module, filter_by_level_range, &and_ctx);
-
-// Apply a NOT filter (invert the result)
-logcie_set_filter_not(&filtered_sink, filter_by_module, &not_ctx);
-```
-
-### Built-in Filter Combinators
-
-| Function                  | Description                | Context Type                   |
-| ----------                | -------------              | --------------                 |
-| `logcie_set_filter_and()` | Logical AND of two filters | `Logcie_CombinedFilterContext` |
-| `logcie_set_filter_or()`  | Logical OR of two filters  | `Logcie_CombinedFilterContext` |
-| `logcie_set_filter_not()` | Logical NOT of a filter    | `Logcie_NotFilterContext`      |
 
 ## Customization
 
@@ -402,17 +372,6 @@ size_t my_formatter(Logcie_Sink *sink, Logcie_Log log, va_list *args) {
 | Function                    | Description                                              |
 | ----------                  | -------------                                            |
 | `logcie_printf_formatter()` | Default formatter using `$` tokens and printf formatting |
-
-### Filter Functions
-
-| Function                  | Description                    |
-| ----------                | -------------                  |
-| `logcie_filter_and()`     | Logical AND filter combinator  |
-| `logcie_filter_or()`      | Logical OR filter combinator   |
-| `logcie_filter_not()`     | Logical NOT filter combinator  |
-| `logcie_set_filter_and()` | Configure AND filter on a sink |
-| `logcie_set_filter_or()`  | Configure OR filter on a sink  |
-| `logcie_set_filter_not()` | Configure NOT filter on a sink |
 
 ### Log Level Macros
 
