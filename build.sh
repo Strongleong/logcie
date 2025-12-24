@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 set -e
 set -o errexit -o pipefail -o noclobber -o nounset
