@@ -236,13 +236,15 @@ typedef struct Logcie_NotFilterContext {
                                                                                         .line = l } \
   }
 
-#define PRINTF_TYPECHECK(a, b)
+#ifndef PRINTF_TYPECHECK
+  #define PRINTF_TYPECHECK(a, b)
 
-#if defined __has_attribute
-#if __has_attribute(__format__)
-#undef PRINTF_TYPECHECK
-#define PRINTF_TYPECHECK(a, b) __attribute__((__format__(__printf__, a, b)))
-#endif
+  #if defined __has_attribute
+    #if __has_attribute(__format__)
+      #undef PRINTF_TYPECHECK
+      #define PRINTF_TYPECHECK(a, b) __attribute__((__format__(__printf__, a, b)))
+    #endif
+  #endif
 #endif
 
 /**
@@ -882,7 +884,7 @@ size_t logcie_printf_formatter(Logcie_Sink *sink, Logcie_Log log, va_list *args)
           fmt++;
         }
 
-        int16_t pad = target - last_len;
+        int16_t pad = target - last_len - 1;
 
         if (pad > 0) {
           last_len = fprintf(sink->sink, "%*s", pad, "");
