@@ -1,8 +1,32 @@
+#include <stdint.h>
 #include <stdio.h>
+#include <stdnoreturn.h>
 #include <string.h>
 
 #define LOGCIE_IMPLEMENTATION
 #include <logcie.h>
+
+// Imagine if this is backend for web application, ok, yes?
+
+typedef struct User {
+  uint32_t    id;
+  const char *name;
+  uint8_t     is_invisible;
+} User;
+
+static User normal_user = (User){
+    .id           = 1,
+    .name         = "John",
+    .is_invisible = 0,
+};
+
+static User invisible_user = (User){
+    .id           = 2,
+    .name         = "Dave",
+    .is_invisible = 1,
+};
+
+static User *current_user;
 
 // Set module name for this file
 static const char *logcie_module = "main";
@@ -19,38 +43,52 @@ uint8_t filter_exclude_file(Logcie_Sink *sink, Logcie_Log *log) {
   return strstr(log->location.file, "noisy.c") == NULL;
 }
 
+uint8_t file_filter(Logcie_Sink *sink, Logcie_Log *log) {
+  return filter_important_only(sink, log) && filter_exclude_file(sink, log);
+}
+
+uint8_t console_filter(Logcie_Sink *sink, Logcie_Log *log) {
+  (void) sink; (void) log;
+  return current_user ? !current_user->is_invisible : 1;
+}
+
 int main() {
   FILE *logfile = fopen("app.log", "w");
 
-  Logcie_Sink file_sink = (Logcie_Sink){.sink = logfile, .min_level = LOGCIE_LEVEL_INFO, .fmt = "$d $t [$M::$L] $m\n", .formatter = logcie_printf_formatter, .filter = NULL, .userdata = NULL};
+  Logcie_Sink file_sink = (Logcie_Sink){
+      .sink      = logfile,
+      .min_level = LOGCIE_LEVEL_VERBOSE,
+      .fmt       = "$d $t $f:$x [$M::$L] $m",
+      .formatter = logcie_printf_formatter,
+      .filter    = file_filter,
+  };
 
   logcie_add_sink(&file_sink);
 
   // Create and add a filtered console sink (stack allocated)
-  Logcie_Sink console_sink = {.sink = stdout, .min_level = LOGCIE_LEVEL_VERBOSE, .fmt = "$c[$L]$r $t - $m\n", .formatter = logcie_printf_formatter, .filter = NULL, .userdata = NULL};
+  Logcie_Sink console_sink = {
+      .sink      = stdout,
+      .min_level = LOGCIE_LEVEL_INFO,
+      .fmt       = "$c[$L]$r $t - $m",
+      .formatter = logcie_printf_formatter,
+      .filter    = console_filter,
+  };
 
   logcie_add_sink(&console_sink);
-
-  // Create filter contexts
-  static Logcie_CombinedFilterContext and_ctx;
-
-  // Apply combined filter to console sink
-  logcie_set_filter_and(&console_sink, filter_important_only, filter_exclude_file, &and_ctx);
 
   // Log some messages
   LOGCIE_INFO("Application starting");
   LOGCIE_VERBOSE("Initializing subsystems");
   LOGCIE_WARN("This is an important warning about memory");
-  LOGCIE_DEBUG("Debug data: x=%d, y=%d", 10, 20);
+  LOGCIE_DEBUG("Active sinks: %zu", logcie_get_sink_count());
 
-  // Check sink count
-  printf("Active sinks: %zu\n", logcie_get_sink_count());
+  // A another user logs in
+  current_user = &normal_user;
+  LOGCIE_INFO("User %s(%u) logged in", current_user->name, current_user->id);
 
-  // Get and inspect first user-added sink
-  Logcie_Sink *first_sink = logcie_get_sink(1);  // Index 0 is default stdout
-  if (first_sink) {
-    printf("First user sink min_level: %d\n", first_sink->min_level);
-  }
+  // Another user logs in
+  current_user = &invisible_user;
+  LOGCIE_INFO("User %s(%u) logged in", current_user->name, current_user->id);
 
   // Remove file sink and clean up
   logcie_remove_sink_and_close(&file_sink);
@@ -61,7 +99,7 @@ int main() {
   // Remove all sinks (back to default only)
   logcie_remove_all_sinks();
 
-  LOGCIE_INFO("Back to default sink configuration");
+  LOGCIE_INFO("Shutdown");
 
   return 0;
 }

@@ -153,20 +153,18 @@ typedef uint8_t(Logcie_FilterFn)(Logcie_Sink *sink, Logcie_Log *log);
  * `$<n - Pads with n spaces
  * `$$` - Literal dollar sign
  *
- * @field sink        Output file stream (stdout, file, etc.)
- * @field min_level   Minimum log level to emit (messages below this are ignored)
- * @field fmt         Format string using $ tokens for customization
- * @field formatter   Function pointer to format and write log messages
- * @field filter      Optional filter function to selectively output messages
- * @field userdata    User-provided context data for custom filters
+ * @field sink          Output file stream (stdout, file, etc.)
+ * @field min_level     Minimum log level to emit (messages below this are ignored)
+ * @field fmt           Format string using $ tokens for customization
+ * @field formatter     Function pointer to format and write log messages
+ * @field filter        Optional filter function to selectively output messages
  */
 struct Logcie_Sink {
-  FILE               *sink;       ///< Output file stream (stdout, file, etc.)
-  Logcie_LogLevel     min_level;  ///< Minimum log level to emit
-  const char         *fmt;        ///< Format string using $ tokens
-  Logcie_FormatterFn *formatter;  ///< Formatter function
-  Logcie_FilterFn    *filter;     ///< Optional filter function
-  void               *userdata;   ///< User data/context for filters
+  FILE                 *sink;         ///< Output file stream (stdout, file, etc.)
+  Logcie_LogLevel       min_level;    ///< Minimum log level to emit
+  const char           *fmt;          ///< Format string using $ tokens
+  Logcie_FormatterFn   *formatter;    ///< Formatter function
+  Logcie_FilterFn      *filter;       ///< Optional filter function
 };
 
 /**
@@ -203,48 +201,28 @@ struct Logcie_Log {
   Logcie_LogLocation location;
 };
 
-/**
- * @brief Context structure for logical AND/OR filter combinations.
- *
- * Used with logcie_set_filter_and() and logcie_set_filter_or() to store
- * references to the two filter functions being combined.
- *
- * @field a    First filter function
- * @field b    Second filter function
- */
-typedef struct Logcie_CombinedFilterContext {
-  Logcie_FilterFn *a;
-  Logcie_FilterFn *b;
-} Logcie_CombinedFilterContext;
-
-/**
- * @brief Context structure for logical NOT filter.
- *
- * Used with logcie_set_filter_not() to store reference to the filter
- * function being negated.
- *
- * @field a    Filter function to negate
- */
-typedef struct Logcie_NotFilterContext {
-  Logcie_FilterFn *a;
-} Logcie_NotFilterContext;
-
 // Helper macro for constructing a log message
-#define LOGCIE_CREATE_LOG(lvl, txt, f, l)                                                           \
-  (Logcie_Log) {                                                                                    \
-    .level = lvl, .msg = txt, .time = time(NULL), .module = logcie_module, .location = {.file = f,  \
-                                                                                        .line = l } \
+#define LOGCIE_CREATE_LOG(lvl, txt, f, l) \
+  (Logcie_Log) {                          \
+    .level    = lvl,                      \
+    .msg      = txt,                      \
+    .time     = time(NULL),               \
+    .module   = logcie_module,            \
+    .location = {                         \
+      .file = f,                          \
+      .line = l,                          \
+    }                                     \
   }
 
 #ifndef PRINTF_TYPECHECK
-  #define PRINTF_TYPECHECK(a, b)
+#define PRINTF_TYPECHECK(a, b)
 
-  #if defined __has_attribute
-    #if __has_attribute(__format__)
-      #undef PRINTF_TYPECHECK
-      #define PRINTF_TYPECHECK(a, b) __attribute__((__format__(__printf__, a, b)))
-    #endif
-  #endif
+#if defined __has_attribute
+#if __has_attribute(__format__)
+#undef PRINTF_TYPECHECK
+#define PRINTF_TYPECHECK(a, b) __attribute__((__format__(__printf__, a, b)))
+#endif
+#endif
 #endif
 
 /**
@@ -405,86 +383,6 @@ LOGCIE_DEF void logcie_remove_all_sinks(void);
 LOGCIE_DEF uint8_t logcie_remove_sink_and_close(Logcie_Sink *sink);
 
 /**
- * @brief Built-in NOT filter. Inverts result of provided filter.
- *
- * This function implements logical NOT operation for filters. It returns
- * the opposite of what the wrapped filter returns.
- *
- * @param sink The sink being evaluated (passed through to wrapped filter)
- * @param log The log message being evaluated (passed through to wrapped filter)
- * @return 1 if wrapped filter returns 0, 0 if wrapped filter returns 1
- * @note Must be configured with logcie_set_filter_not() before use
- */
-LOGCIE_DEF uint8_t logcie_filter_not(Logcie_Sink *sink, Logcie_Log *log);
-
-/**
- * @brief Built-in AND filter. Combines two filters with logical AND.
- *
- * This function implements logical AND operation for filters. It returns
- * 1 only if both wrapped filters return 1.
- *
- * @param sink The sink being evaluated (passed through to wrapped filters)
- * @param log The log message being evaluated (passed through to wrapped filters)
- * @return 1 if both filters return 1, 0 otherwise
- * @note Must be configured with logcie_set_filter_and() before use
- */
-LOGCIE_DEF uint8_t logcie_filter_and(Logcie_Sink *sink, Logcie_Log *log);
-
-/**
- * @brief Built-in OR filter. Combines two filters with logical OR.
- *
- * This function implements logical OR operation for filters. It returns
- * 1 if either (or both) of the wrapped filters return 1.
- *
- * @param sink The sink being evaluated (passed through to wrapped filters)
- * @param log The log message being evaluated (passed through to wrapped filters)
- * @return 1 if either filter returns 1, 0 if both return 0
- * @note Must be configured with logcie_set_filter_or() before use
- */
-LOGCIE_DEF uint8_t logcie_filter_or(Logcie_Sink *sink, Logcie_Log *log);
-
-/**
- * @brief Sets a NOT filter on a sink. Caller must provide context struct.
- *
- * Configures a sink to use logical NOT filtering with the provided filter
- * function. The context structure must remain valid while the filter is active.
- *
- * @param sink Sink to configure with NOT filter
- * @param a Filter function to negate
- * @param ctx Context structure to store filter reference (must remain valid)
- * @note ctx should typically be static or heap-allocated
- */
-void logcie_set_filter_not(Logcie_Sink *sink, Logcie_FilterFn *a, Logcie_NotFilterContext *ctx);
-
-/**
- * @brief Sets an AND filter on a sink. Caller must provide context struct.
- *
- * Configures a sink to use logical AND filtering with the provided filter
- * functions. The context structure must remain valid while the filter is active.
- *
- * @param sink Sink to configure with AND filter
- * @param a First filter function
- * @param b Second filter function
- * @param ctx Context structure to store filter references (must remain valid)
- * @note ctx should typically be static or heap-allocated
- */
-void logcie_set_filter_and(Logcie_Sink *sink, Logcie_FilterFn *a, Logcie_FilterFn *b, Logcie_CombinedFilterContext *ctx);
-
-/**
- * @brief Sets an OR filter on a sink. Caller must provide context struct.
- *
- * Configures a sink to use logical OR filtering with the provided filter
- * functions. The context structure must remain valid while the filter is active.
- *
- * @param sink Sink to configure with OR filter
- * @param a First filter function
- * @param b Second filter function
- * @param ctx Context structure to store filter references (must remain valid)
- * @note ctx should typically be static or heap-allocated
- */
-void logcie_set_filter_or(Logcie_Sink *sink, Logcie_FilterFn *a, Logcie_FilterFn *b, Logcie_CombinedFilterContext *ctx);
-
-/**
  * @brief Default formatter using printf-style formatting and $ tokens.
  *
  * This is the built-in formatter that provides rich formatting capabilities
@@ -626,41 +524,6 @@ __attribute__((constructor)) void init_default_stdout_sink(void) {
   default_stdout_sink.sink = stdout;
 }
 #endif
-
-uint8_t logcie_filter_not(Logcie_Sink *sink, Logcie_Log *log) {
-  Logcie_NotFilterContext *ctx = (Logcie_NotFilterContext *)sink->userdata;
-  return !ctx->a(sink, log);
-}
-
-uint8_t logcie_filter_and(Logcie_Sink *sink, Logcie_Log *log) {
-  Logcie_CombinedFilterContext *ctx = (Logcie_CombinedFilterContext *)sink->userdata;
-  return ctx->a(sink, log) && ctx->b(sink, log);
-}
-
-uint8_t logcie_filter_or(Logcie_Sink *sink, Logcie_Log *log) {
-  Logcie_CombinedFilterContext *ctx = (Logcie_CombinedFilterContext *)sink->userdata;
-  return ctx->a(sink, log) || ctx->b(sink, log);
-}
-
-void logcie_set_filter_not(Logcie_Sink *sink, Logcie_FilterFn *a, Logcie_NotFilterContext *ctx) {
-  ctx->a         = a;
-  sink->filter   = logcie_filter_not;
-  sink->userdata = ctx;
-}
-
-void logcie_set_filter_and(Logcie_Sink *sink, Logcie_FilterFn *a, Logcie_FilterFn *b, Logcie_CombinedFilterContext *ctx) {
-  ctx->a         = a;
-  ctx->b         = b;
-  sink->filter   = logcie_filter_and;
-  sink->userdata = ctx;
-}
-
-void logcie_set_filter_or(Logcie_Sink *sink, Logcie_FilterFn *a, Logcie_FilterFn *b, Logcie_CombinedFilterContext *ctx) {
-  ctx->a         = a;
-  ctx->b         = b;
-  sink->filter   = logcie_filter_or;
-  sink->userdata = ctx;
-}
 
 typedef struct Logcie_Logger {
   Logcie_Sink **sinks;

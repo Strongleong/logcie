@@ -1,10 +1,8 @@
+#include <stdint.h>
 #include <string.h>
 
 #define LOGCIE_IMPLEMENTATION
 #include <logcie.h>
-
-static Logcie_CombinedFilterContext ctx_and = {0};
-static Logcie_NotFilterContext      ctx_not = {0};
 
 uint8_t min_info_filter(Logcie_Sink *sink, Logcie_Log *log) {
   (void)sink;
@@ -16,6 +14,10 @@ uint8_t module_filter(Logcie_Sink *sink, Logcie_Log *log) {
   return log->module && strcmp(log->module, "module") == 0;
 }
 
+uint8_t common_filter(Logcie_Sink *sink, Logcie_Log *log) {
+  return min_info_filter(sink, log) && module_filter(sink, log);
+}
+
 void module(void) {
   static const char *logcie_module = "module";
   LOGCIE_DEBUG("debug from module - should appear only in module logger");
@@ -24,29 +26,28 @@ void module(void) {
 
 int main(void) {
   Logcie_Sink info_sink = {
-      .min_level = LOGCIE_LEVEL_TRACE,
-      .sink      = stdout,
-      .fmt       = "$c$L (Info)$r $m",
-      .formatter = logcie_printf_formatter,
-      .filter    = min_info_filter,  // Use info filter
+    .min_level = LOGCIE_LEVEL_TRACE,
+    .sink      = stdout,
+    .fmt       = "$c$L (Info)$r $m",
+    .formatter = logcie_printf_formatter,
+    .filter    = min_info_filter,  // Use info filter
   };
 
   Logcie_Sink module_sink = {
-      .min_level = LOGCIE_LEVEL_TRACE,
-      .sink      = stdout,
-      .fmt       = "$c$L (Module)$r $m",
-      .formatter = logcie_printf_formatter,
-      .filter    = module_filter,  // Use module filter
+    .min_level = LOGCIE_LEVEL_TRACE,
+    .sink      = stdout,
+    .fmt       = "$c$L (Module)$r $m",
+    .formatter = logcie_printf_formatter,
+    .filter    = module_filter,  // Use module filter
   };
 
   Logcie_Sink common_sink = {
-      .min_level = LOGCIE_LEVEL_TRACE,
-      .sink      = stdout,
-      .fmt       = "$c$L (Common)$r $m",
-      .formatter = logcie_printf_formatter,
+    .min_level = LOGCIE_LEVEL_TRACE,
+    .sink      = stdout,
+    .fmt       = "$c$L (Common)$r $m",
+    .formatter = logcie_printf_formatter,
+    .filter    = common_filter,
   };
-
-  logcie_set_filter_and(&common_sink, min_info_filter, module_filter, &ctx_and);
 
   logcie_add_sink(&info_sink);
   logcie_add_sink(&module_sink);
@@ -58,7 +59,7 @@ int main(void) {
   LOGCIE_INFO("info log - should appear only in info logger");
 
   LOGCIE_INFO("you can set filters runtime");
-  logcie_set_filter_not(&module_sink, min_info_filter, &ctx_not);
+  module_sink.filter = min_info_filter;
   LOGCIE_TRACE("now this should appear in module logger");
 
   module();
