@@ -1,0 +1,14 @@
+BasedOnStyle: Google
+IndentWidth: 2
+UseTab: Never
+ColumnLimit: 0
+AlignConsecutiveAssignments: true
+AlignConsecutiveMacros: true
+AlignConsecutiveDeclarations: true
+BreakBeforeBraces: Attach
+AllowAllParametersOfDeclarationOnNextLine: true
+BinPackArguments: false
+BinPackParameters: false
+AllowShortFunctionsOnASingleLine: None
+PointerAlignment: Right
+SpaceBeforeParens: ControlStatements
