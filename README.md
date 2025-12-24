@@ -13,7 +13,7 @@ It provides:
 
 ---
 
-## 🔧 Installation
+## Installation
 
 Copy `logcie.h` to your project and include it:
 
@@ -30,7 +30,7 @@ In other translation units (files), use:
 
 ---
 
-## 🪵 Logging Usage
+## Logging Usage
 
 Logcie provides macros for common log levels:
 
@@ -54,7 +54,7 @@ You can also use `LOGCIE_TRACE_VA` style macros if variadic support is limited.
 
 ---
 
-## 🎨 Formatting Output
+## Formatting Output
 
 Each `Logcie_Sink` allows a format string using special `$` tokens:
 
@@ -88,7 +88,7 @@ logcie_add_sink(&sink);
 
 ---
 
-## 🧪 Filters
+## Filters
 
 Filters allow fine-grained control over which logs are emitted to a sink. You can:
 - Write custom filters
@@ -116,7 +116,7 @@ logcie_set_filter_not(&sink, module_filter, &not_ctx);
 
 ---
 
-## 🎨 Custom Log Level Colors
+## Custom Log Level Colors
 
 Override the default ANSI colors per log level:
 
@@ -141,7 +141,7 @@ logcie_set_colors(NULL);
 
 ---
 
-## 📚 Example
+## Example
 
 ```c
 #define LOGCIE_IMPLEMENTATION
@@ -157,7 +157,7 @@ You can find more examples at [./examples/](./examples/)
 
 ---
 
-## 🧱 TODOs & Limitations
+## TODOs & Limitations
 
 - No built-in thread safety yet
 - No sink destruction API
@@ -166,6 +166,6 @@ You can find more examples at [./examples/](./examples/)
 
 ---
 
-## 📜 License
+## License
 
 MIT License © 2025 [Nikita (Strongleong) Chulkov](mailto:nikita_chul@mail.ru)
