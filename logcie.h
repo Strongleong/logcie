@@ -94,10 +94,16 @@ typedef enum Logcie_LogLevel {
  * static const char *logcie_module = "network";
  * @endcode
  */
-#if defined(__has_attribute) && __has_attribute(unused)
-static const char __attribute__((unused)) * logcie_module;
+#ifdef __cplusplus
+#define LOGCIE_MODULE_DEF extern
 #else
-static const char *logcie_module;
+#define LOGCIE_MODULE_DEF static
+#endif
+
+#if defined(__has_attribute) && __has_attribute(unused)
+LOGCIE_MODULE_DEF const char __attribute__((unused)) * logcie_module;
+#else
+LOGCIE_MODULE_DEF const char *logcie_module;
 #endif
 
 typedef struct Logcie_Sink Logcie_Sink;
@@ -160,11 +166,11 @@ typedef uint8_t(Logcie_FilterFn)(Logcie_Sink *sink, Logcie_Log *log);
  * @field filter        Optional filter function to selectively output messages
  */
 struct Logcie_Sink {
-  FILE                 *sink;         ///< Output file stream (stdout, file, etc.)
-  Logcie_LogLevel       min_level;    ///< Minimum log level to emit
-  const char           *fmt;          ///< Format string using $ tokens
-  Logcie_FormatterFn   *formatter;    ///< Formatter function
-  Logcie_FilterFn      *filter;       ///< Optional filter function
+  FILE               *sink;       ///< Output file stream (stdout, file, etc.)
+  Logcie_LogLevel     min_level;  ///< Minimum log level to emit
+  const char         *fmt;        ///< Format string using $ tokens
+  Logcie_FormatterFn *formatter;  ///< Formatter function
+  Logcie_FilterFn    *filter;     ///< Optional filter function
 };
 
 /**
@@ -445,13 +451,13 @@ static const char *default_module = "Logcie";
 #endif
 
 static const char *logcie_level_label[] = {
-    [LOGCIE_LEVEL_TRACE]   = "trace",
-    [LOGCIE_LEVEL_DEBUG]   = "debug",
-    [LOGCIE_LEVEL_VERBOSE] = "verb",
-    [LOGCIE_LEVEL_INFO]    = "info",
-    [LOGCIE_LEVEL_WARN]    = "warn",
-    [LOGCIE_LEVEL_ERROR]   = "error",
-    [LOGCIE_LEVEL_FATAL]   = "fatal",
+    "trace",
+    "debug",
+    "verb",
+    "info",
+    "warn",
+    "error",
+    "fatal",
 };
 
 static inline const char *get_logcie_level_label(Logcie_LogLevel level) {
@@ -461,13 +467,13 @@ static inline const char *get_logcie_level_label(Logcie_LogLevel level) {
 }
 
 static const char *logcie_level_label_upper[] = {
-    [LOGCIE_LEVEL_TRACE]   = "TRACE",
-    [LOGCIE_LEVEL_DEBUG]   = "DEBUG",
-    [LOGCIE_LEVEL_VERBOSE] = "VERB",
-    [LOGCIE_LEVEL_INFO]    = "INFO",
-    [LOGCIE_LEVEL_WARN]    = "WARN",
-    [LOGCIE_LEVEL_ERROR]   = "ERROR",
-    [LOGCIE_LEVEL_FATAL]   = "FATAL",
+    "TRACE",
+    "DEBUG",
+    "VERB",
+    "INFO",
+    "WARN",
+    "ERROR",
+    "FATAL",
 };
 
 static inline const char *get_logcie_level_label_upper(Logcie_LogLevel level) {
@@ -477,13 +483,13 @@ static inline const char *get_logcie_level_label_upper(Logcie_LogLevel level) {
 }
 
 static const char *logcie_default_level_color[] = {
-    [LOGCIE_LEVEL_TRACE]   = LOGCIE_COLOR_GRAY,
-    [LOGCIE_LEVEL_DEBUG]   = LOGCIE_COLOR_GRAY,
-    [LOGCIE_LEVEL_VERBOSE] = LOGCIE_COLOR_GRAY,
-    [LOGCIE_LEVEL_INFO]    = LOGCIE_COLOR_BLUE,
-    [LOGCIE_LEVEL_WARN]    = LOGCIE_COLOR_YELLOW,
-    [LOGCIE_LEVEL_ERROR]   = LOGCIE_COLOR_RED,
-    [LOGCIE_LEVEL_FATAL]   = LOGCIE_COLOR_BRIGHT_RED,
+    LOGCIE_COLOR_GRAY,
+    LOGCIE_COLOR_GRAY,
+    LOGCIE_COLOR_GRAY,
+    LOGCIE_COLOR_BLUE,
+    LOGCIE_COLOR_YELLOW,
+    LOGCIE_COLOR_RED,
+    LOGCIE_COLOR_BRIGHT_RED,
 };
 
 static const char **logcie_level_color = logcie_default_level_color;
@@ -507,10 +513,11 @@ static inline const char *get_logcie_level_color(Logcie_LogLevel level) {
 }
 
 static Logcie_Sink default_stdout_sink = {
-    .min_level = LOGCIE_LEVEL_TRACE,
     .sink      = NULL,
-    .fmt       = "$c$L$r " LOGCIE_COLOR_GRAY "$f$x$r: $m",
+    .min_level = LOGCIE_LEVEL_TRACE,
+    .fmt       = "$c$L$r " LOGCIE_COLOR_GRAY "$f:$x$r: $m",
     .formatter = logcie_printf_formatter,
+    .filter    = NULL,
 };
 
 static Logcie_Sink *default_stdout_sink_ptr = &default_stdout_sink;
@@ -534,9 +541,9 @@ typedef struct Logcie_Logger {
 // INFO: By default there is one default sink to allow logging right
 //       after includnig logcie without initializing anything
 static Logcie_Logger logcie = {
-    .sinks_cap = 1,
-    .sinks_len = 1,
     .sinks     = &default_stdout_sink_ptr,
+    .sinks_len = 1,
+    .sinks_cap = 1,
 };
 
 // WARN: This should be called once
@@ -544,7 +551,7 @@ static void _logcie_reset(void) {
   /* _LOGCIE_ASSERT(logcie.sinks == NULL, "Badly bad stuff"); */
   logcie.sinks_cap = 8;
   logcie.sinks_len = 0;
-  logcie.sinks     = malloc(sizeof(*logcie.sinks) * logcie.sinks_cap);
+  logcie.sinks     = (Logcie_Sink **)malloc(sizeof(*logcie.sinks) * logcie.sinks_cap);
 }
 
 size_t logcie_get_sink_count(void) {
@@ -575,7 +582,7 @@ uint8_t logcie_add_sink(Logcie_Sink *sink) {
 
   if (logcie.sinks_cap == logcie.sinks_len) {
     logcie.sinks_cap *= 2;
-    logcie.sinks = realloc(logcie.sinks, sizeof(*logcie.sinks) * logcie.sinks_cap);
+    logcie.sinks = (Logcie_Sink **)realloc(logcie.sinks, sizeof(*logcie.sinks) * logcie.sinks_cap);
   }
 
   logcie.sinks[logcie.sinks_len] = sink;
