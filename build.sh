@@ -4,9 +4,11 @@ set -e
 set -o errexit -o pipefail -o noclobber -o nounset
 
 CFLAGS="-Wall -Wextra -std=c99"
+CPPFLAGS="-Wall -Wextra"
 CLIBS="-I."
 CDEBUG="-ggdb -fsanitize=address -fno-omit-frame-pointer -D_LOGCIE_DEBUG -O0"
 CC="gcc"
+CPP="c++"
 OUTDIR="./out"
 VERBOSE=true
 BEAR=false
@@ -84,10 +86,23 @@ if [ ! -d "$OUTDIR" ]; then
   mkdir -p "$OUTDIR";
 fi
 
-sources=$(find . -name '*.c')
+c_sources=$(find . -name '*.c')
+cpp_sources=$(find . -name '*.cpp')
 
-for source in $sources; do
+for source in $c_sources; do
   CMD="$CC $CFLAGS $CLIBS -o $OUTDIR/$(basename ${source%.*}) $source"
+
+  if $VERBOSE; then
+    echo $CMD
+  fi
+
+  if $COMPILE; then
+    $CMD &
+  fi
+done
+
+for source in $cpp_sources; do
+  CMD="$CPP $CPPFLAGS $CLIBS -o $OUTDIR/$(basename ${source%.*}) $source"
 
   if $VERBOSE; then
     echo $CMD
