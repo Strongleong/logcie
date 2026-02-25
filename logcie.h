@@ -778,6 +778,7 @@ size_t logcie_printf_formatter(Logcie_Sink *sink, Logcie_Log log, va_list *args)
 }
 
 // TODO: Align output up to delimiter
+// TODO: Abiblity to accept custom stuff in logging (logging arrays)
 
 #endif /* end of include guard: LOGCIE_IMPLEMENTATION */
 
