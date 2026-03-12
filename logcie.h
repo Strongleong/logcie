@@ -43,6 +43,10 @@
 #define LOGCIE_COLOR_BRIGHT_RED "\x1b[31;1m"
 #define LOGCIE_COLOR_RESET      "\x1b[0m"
 
+#ifndef LOGCIE_DEFAULT_SINK_FORMAT
+#define LOGCIE_DEFAULT_SINK_FORMAT "$c$L$r " LOGCIE_COLOR_GRAY "$f:$x$r: $m"
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -515,7 +519,7 @@ static inline const char *get_logcie_level_color(Logcie_LogLevel level) {
 static Logcie_Sink default_stdout_sink = {
     .sink      = NULL,
     .min_level = LOGCIE_LEVEL_TRACE,
-    .fmt       = "$c$L$r " LOGCIE_COLOR_GRAY "$f:$x$r: $m",
+    .fmt       = LOGCIE_DEFAULT_SINK_FORMAT,
     .formatter = logcie_printf_formatter,
     .filter    = NULL,
 };
