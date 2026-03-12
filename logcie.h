@@ -546,14 +546,6 @@ static Logcie_Logger logcie = {
     .sinks_cap = 1,
 };
 
-// WARN: This should be called once
-static void _logcie_reset(void) {
-  /* _LOGCIE_ASSERT(logcie.sinks == NULL, "Badly bad stuff"); */
-  logcie.sinks_cap = 8;
-  logcie.sinks_len = 0;
-  logcie.sinks     = (Logcie_Sink **)malloc(sizeof(*logcie.sinks) * logcie.sinks_cap);
-}
-
 size_t logcie_get_sink_count(void) {
   return logcie.sinks_len;
 }
@@ -577,7 +569,9 @@ uint8_t logcie_add_sink(Logcie_Sink *sink) {
 #endif
 
   if (logcie.sinks_cap == 1) {
-    _logcie_reset();
+    logcie.sinks_cap = 8;
+    logcie.sinks_len = 0;
+    logcie.sinks     = (Logcie_Sink **)malloc(sizeof(*logcie.sinks) * logcie.sinks_cap);
   }
 
   if (logcie.sinks_cap == logcie.sinks_len) {
