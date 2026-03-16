@@ -113,7 +113,7 @@ typedef struct Logcie_Log  Logcie_Log;
 /**
  * @brief Writer function type signature
  *
- * A writer function is responsible for writing formatted log data 
+ * A writer function is responsible for writing formatted log data
  * to a sink. Sink could be anything, from FILE* to a HTTP API endpoint,
  * so this is why it is a customizable function.
  *
@@ -125,7 +125,7 @@ typedef size_t(Logcie_WriterFn)(void *user_data, const char *fmt, ...);
 
 typedef struct Logcie_Writer {
   Logcie_WriterFn *write;
-  void *data;
+  void            *data;
 } Logcie_Writer;
 
 /**
@@ -144,7 +144,7 @@ typedef size_t(Logcie_FormatterFn)(Logcie_Writer *writer, const char *fmt, Logci
 
 typedef struct Logcie_Formatter {
   Logcie_FormatterFn *format;
-  void *data;
+  void               *data;
 } Logcie_Formatter;
 
 /**
@@ -162,7 +162,7 @@ typedef uint8_t(Logcie_FilterFn)(Logcie_Sink *sink, Logcie_Log *log);
 
 typedef struct Logcie_Filter {
   Logcie_FilterFn *filter;
-  void *data;
+  void            *data;
 } Logcie_Filter;
 
 /**
@@ -198,12 +198,12 @@ typedef struct Logcie_Filter {
  * @field filter_data      Custom data for filter
  */
 struct Logcie_Sink {
-  Logcie_LogLevel  min_level;      ///< Minimum log level to emit
-  const char      *fmt;            ///< Format string using $ tokens
+  Logcie_LogLevel min_level;  ///< Minimum log level to emit
+  const char     *fmt;        ///< Format string using $ tokens
 
-  Logcie_Formatter formatter;      ///< Formatter function
-  Logcie_Writer    writer;         ///< Writer function
-  Logcie_Filter    filter;         ///< Optional filter function
+  Logcie_Formatter formatter;  ///< Formatter function
+  Logcie_Writer    writer;     ///< Writer function
+  Logcie_Filter    filter;     ///< Optional filter function
 };
 
 /**
@@ -353,8 +353,6 @@ LOGCIE_DEF Logcie_Sink *logcie_get_sink(size_t index);
  *
  * @param sink Pointer to a Logcie_Sink structure to add
  * @return 1 if sink was added, 0 otherwise
- * @note If sink->sink is NULL and __L_ATTR_CONSTRUCT is not defined,
- *       it will be set to stdout automatically
  */
 LOGCIE_DEF uint8_t logcie_add_sink(Logcie_Sink *sink);
 
@@ -393,7 +391,6 @@ LOGCIE_DEF uint8_t logcie_remove_sink_by_index(size_t index);
  * @param sink Pointer to the sink to remove and free
  * @return 1 if sink was found and removed, 0 otherwise
  * @note Only use this if the sink was allocated with malloc() or similar.
- * @note Does not close file streams. Use logcie_remove_sink_and_close() for that.
  */
 LOGCIE_DEF uint8_t logcie_remove_and_free_sink(Logcie_Sink *sink);
 
@@ -407,19 +404,6 @@ LOGCIE_DEF uint8_t logcie_remove_and_free_sink(Logcie_Sink *sink);
  * @note File streams are not closed. Caller must close them separately.
  */
 LOGCIE_DEF void logcie_remove_all_sinks(void);
-
-/**
- * @brief Removes a sink and closes its file stream if it's not stdout/stderr.
- *
- * Convenience function that removes a sink and also closes the associated
- * FILE* stream if it's a regular file (not stdout, stderr, or NULL).
- *
- * @param sink Pointer to the sink to remove
- * @return 1 if sink was found and removed, 0 otherwise
- * @note Does not free the sink structure itself, only closes the file stream
- * @note stdout and stderr are not closed (they belong to the system)
- */
-LOGCIE_DEF uint8_t logcie_remove_sink_and_close(Logcie_Sink *sink);
 
 /**
  * @brief Default formatter using printf-style formatting and $ tokens.
@@ -557,14 +541,11 @@ static inline const char *get_logcie_level_color(Logcie_LogLevel level) {
 }
 
 static Logcie_Sink default_stdout_sink = {
-    .min_level = LOGCIE_LEVEL_TRACE,
+    .min_level = LOGCIE_LEVEL_TRACE, // NOTE: @filters_lib
     .fmt       = "$c$L$r " LOGCIE_COLOR_GRAY "$f:$x$r: $m",
-    .writer    = {
-      .write = logcie_printf_writer,
-      .data = NULL,
-    },
-    .formatter = { logcie_printf_formatter, NULL },
-    .filter    = NULL,
+    .formatter = {logcie_printf_formatter, NULL},
+    .writer    = {logcie_printf_writer, NULL},
+    .filter    = {NULL, NULL},
 };
 
 static Logcie_Sink *default_stdout_sink_ptr = &default_stdout_sink;
@@ -688,19 +669,6 @@ void logcie_remove_all_sinks(void) {
   }
 }
 
-// TODO: Fix this
-LOGCIE_DEF uint8_t logcie_remove_sink_and_close(Logcie_Sink *sink) {
-  (void) sink;
-  // uint8_t is_file = sink->sink != stdout && sink->sink != stderr && sink->sink != NULL;
-
-  // if (logcie_remove_sink(sink) && is_file) {
-  //   fclose(sink->sink);
-  //   return 1;
-  // }
-
-  return 0;
-}
-
 size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
   va_list args;
   va_start(args, fmt);
@@ -709,20 +677,20 @@ size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
 
   for (size_t i = 0; i < logcie.sinks_len; i++) {
     Logcie_Sink *sink = logcie.sinks[i];
-    _LOGCIE_ASSERT(sink && sink->formatter, "Sink have no formatter");
+    _LOGCIE_ASSERT(sink && sink->formatter.format, "Sink have no formatter");
 
     if (log.level < sink->min_level) {
       continue;
     }
 
-    if (sink->filter && !sink->filter(sink, &log)) {
+    if (sink->filter.filter && !sink->filter.filter(sink, &log)) {
       continue;
     }
 
     va_list args_copy;
     va_copy(args_copy, args);
 
-    sink->formatter(sink->writer, sink->fmt, log, &args_copy);
+    sink->formatter.format(&sink->writer, sink->fmt, log, &args_copy);
 
     va_end(args_copy);
   }
@@ -733,9 +701,10 @@ size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
 
 size_t logcie_printf_formatter(Logcie_Writer *writer, const char *fmt, Logcie_Log log, va_list *args) {
   _LOGCIE_ASSERT(writer, "Sink have no writer");
+  _LOGCIE_ASSERT(writer->data, "printf sink have nowhere to print");
 
-  size_t      output_len = 0;
-  size_t      last_len   = 0;
+  size_t output_len = 0;
+  size_t last_len   = 0;
 
   struct tm local_tm = *localtime(&log.time);
   struct tm utc_tm   = *gmtime(&log.time);
@@ -743,10 +712,9 @@ size_t logcie_printf_formatter(Logcie_Writer *writer, const char *fmt, Logcie_Lo
   int32_t local_hours = local_tm.tm_hour;
   int32_t timediff    = (int32_t)difftime(mktime(&local_tm), mktime(&utc_tm)) / 3600;
 
-
   while (*fmt != '\0') {
     if (*fmt != '$') {
-      output_len += writer->write(writer.data, "%c", *fmt);
+      output_len += writer->write(writer->data, "%c", *fmt);
       fmt++;
       continue;
     }
@@ -827,9 +795,9 @@ size_t logcie_printf_formatter(Logcie_Writer *writer, const char *fmt, Logcie_Lo
 
 // TODO: logcie_writer_flush()???
 
-LOGCIE_DEF size_t logcie_printf_writer(const char *fmt, Logcie_Log log, va_list *args) {
+LOGCIE_DEF size_t logcie_printf_writer(void *user_data, const char *fmt, ...) {
   _LOGCIE_ASSERT(user_data, "Printf writer have nothing to write to");
-  FILE *file = user_data;
+  FILE *file = (FILE *)user_data;
 
   va_list args;
   va_start(args, fmt);

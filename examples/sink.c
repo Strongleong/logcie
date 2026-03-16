@@ -13,12 +13,17 @@ int main(void) {
     logfile = stdout;
   }
 
-  Logcie_Sink file_sink = {0};
-  file_sink.writer_data = logfile;
-  file_sink.writer      = logcie_printf_writer;
-  file_sink.min_level   = LOGCIE_LEVEL_DEBUG;
-  file_sink.fmt         = "$d $t [$L] ($M) $m";  // nice format: date, time, level, module, message
-  file_sink.formatter   = logcie_printf_formatter;
+  Logcie_Sink file_sink = {
+      .min_level = LOGCIE_LEVEL_DEBUG,
+      // nice format: date, time, level, module, message
+      .fmt       = "$d $t [$L] ($M) $m",
+      .writer    = {
+             .write = logcie_printf_writer,
+             .data  = logfile,
+      },
+      .formatter = {logcie_printf_formatter, NULL},
+  };
+
   logcie_add_sink(&file_sink);
 
   LOGCIE_INFO("Starting application");

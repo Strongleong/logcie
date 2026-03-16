@@ -26,30 +26,27 @@ void module(void) {
 
 int main(void) {
   Logcie_Sink info_sink = {
-    .min_level = LOGCIE_LEVEL_TRACE,
-    .writer_data      = stdout,
-    .writer = logcie_printf_writer,
-    .fmt       = "$c$L (Info)$r $m",
-    .formatter = logcie_printf_formatter,
-    .filter    = min_info_filter,  // Use info filter
+      .min_level = LOGCIE_LEVEL_TRACE,
+      .fmt       = "$c$L (Info)$r $m",
+      .writer    = {logcie_printf_writer, stdout},
+      .formatter = {logcie_printf_formatter, NULL},
+      .filter    = {min_info_filter, NULL},  // Use info filter
   };
 
   Logcie_Sink module_sink = {
-    .min_level = LOGCIE_LEVEL_TRACE,
-    .writer_data      = stdout,
-    .writer = logcie_printf_writer,
-    .fmt       = "$c$L (Module)$r $m",
-    .formatter = logcie_printf_formatter,
-    .filter    = module_filter,  // Use module filter
+      .min_level = LOGCIE_LEVEL_TRACE,
+      .fmt       = "$c$L (Module)$r $m",
+      .writer    = {logcie_printf_writer, stdout},
+      .formatter = {logcie_printf_formatter, NULL},
+      .filter    = {module_filter, NULL},
   };
 
   Logcie_Sink common_sink = {
-    .min_level = LOGCIE_LEVEL_TRACE,
-    .writer_data      = stdout,
-    .writer = logcie_printf_writer,
-    .fmt       = "$c$L (Common)$r $m",
-    .formatter = logcie_printf_formatter,
-    .filter    = common_filter,
+      .min_level = LOGCIE_LEVEL_TRACE,
+      .fmt       = "$c$L (Common)$r $m",
+      .writer    = {logcie_printf_writer, stdout},
+      .formatter = {logcie_printf_formatter, NULL},
+      .filter    = {common_filter, NULL},
   };
 
   logcie_add_sink(&info_sink);
@@ -62,7 +59,7 @@ int main(void) {
   LOGCIE_INFO("info log - should appear only in info logger");
 
   LOGCIE_INFO("you can set filters runtime");
-  module_sink.filter = min_info_filter;
+  module_sink.filter.filter = min_info_filter;
   LOGCIE_TRACE("now this should appear in module logger");
 
   module();

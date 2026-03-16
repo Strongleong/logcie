@@ -35,7 +35,7 @@ typedef struct {
     Logcie_LogLevel sink_min_level;
     const char *fmt;
 
-    const char *expected_substr;
+    const char *expected;
 
     Arg arg;
 } Logcie_TestCase;
@@ -82,11 +82,10 @@ static bool run_test(const Logcie_TestCase *tc) {
     logcie_module = tc->module;
 
     Logcie_Sink sink = {
-        .writer = logcie_printf_writer,
-        .writer_data = tmp,
+        .writer = { .write = logcie_printf_writer, tmp, },
         .min_level = tc->sink_min_level,
         .fmt = tc->fmt,
-        .formatter = logcie_printf_formatter
+        .formatter = { .format = logcie_printf_formatter, NULL },
     };
 
     logcie_add_sink(&sink);
@@ -99,12 +98,14 @@ static bool run_test(const Logcie_TestCase *tc) {
     logcie_remove_sink(&sink);
     fclose(tmp);
 
-    if (tc->expected_substr == NULL) {
+    // Removing \n
+    buffer[strlen(buffer) - 1] = '\0';
+
+    if (tc->expected == NULL) {
         return buffer[0] == '\0';
     }
 
-
-    return strstr(buffer, tc->expected_substr) != NULL;
+    return strcmp(buffer, tc->expected) == 0;
 }
 
 static Logcie_TestCase tests[] = {
@@ -115,7 +116,7 @@ static Logcie_TestCase tests[] = {
         .module = "core",
         .sink_min_level = LOGCIE_LEVEL_TRACE,
         .fmt = "$L $m",
-        .expected_substr = "TRACE trace msg"
+        .expected = "TRACE trace msg"
     },
     {
         .name = "DEBUG basic",
@@ -124,7 +125,7 @@ static Logcie_TestCase tests[] = {
         .module = "core",
         .sink_min_level = LOGCIE_LEVEL_TRACE,
         .fmt = "$L $m",
-        .expected_substr = "DEBUG debug msg"
+        .expected = "DEBUG debug msg"
     },
     {
         .name = "VERBOSE basic",
@@ -133,7 +134,7 @@ static Logcie_TestCase tests[] = {
         .module = "core",
         .sink_min_level = LOGCIE_LEVEL_TRACE,
         .fmt = "$L $m",
-        .expected_substr = "VERB verbose msg"
+        .expected = "VERB verbose msg"
     },
     {
         .name = "INFO basic",
@@ -142,7 +143,7 @@ static Logcie_TestCase tests[] = {
         .module = "core",
         .sink_min_level = LOGCIE_LEVEL_TRACE,
         .fmt = "$L $m",
-        .expected_substr = "INFO info msg"
+        .expected = "INFO info msg"
     },
     {
         .name = "WARN basic",
@@ -151,7 +152,7 @@ static Logcie_TestCase tests[] = {
         .module = "core",
         .sink_min_level = LOGCIE_LEVEL_TRACE,
         .fmt = "$L $m",
-        .expected_substr = "WARN warn msg"
+        .expected = "WARN warn msg"
     },
     {
         .name = "ERROR basic",
@@ -160,7 +161,7 @@ static Logcie_TestCase tests[] = {
         .module = "core",
         .sink_min_level = LOGCIE_LEVEL_TRACE,
         .fmt = "$L $m",
-        .expected_substr = "ERROR error msg"
+        .expected = "ERROR error msg"
     },
     {
         .name = "FATAL basic",
@@ -169,7 +170,7 @@ static Logcie_TestCase tests[] = {
         .module = "core",
         .sink_min_level = LOGCIE_LEVEL_TRACE,
         .fmt = "$L $m",
-        .expected_substr = "FATAL fatal msg"
+        .expected = "FATAL fatal msg"
     },
     {
         .name = "TRACE filtered by INFO",
@@ -178,7 +179,7 @@ static Logcie_TestCase tests[] = {
         .module = "core",
         .sink_min_level = LOGCIE_LEVEL_INFO,
         .fmt = "$L $m",
-        .expected_substr = ""
+        .expected = ""
     },
     {
         .name = "INFO passes INFO filter",
@@ -187,7 +188,7 @@ static Logcie_TestCase tests[] = {
         .module = "core",
         .sink_min_level = LOGCIE_LEVEL_INFO,
         .fmt = "$L $m",
-        .expected_substr = "INFO visible"
+        .expected = "INFO visible"
     },
     {
         .name = "Lowercase level token",
@@ -196,7 +197,7 @@ static Logcie_TestCase tests[] = {
         .module = "core",
         .sink_min_level = LOGCIE_LEVEL_TRACE,
         .fmt = "$l $m",
-        .expected_substr = "warn warn msg"
+        .expected = "warn warn msg"
     },
     {
         .name = "Uppercase level token",
@@ -205,7 +206,7 @@ static Logcie_TestCase tests[] = {
         .module = "core",
         .sink_min_level = LOGCIE_LEVEL_TRACE,
         .fmt = "$L $m",
-        .expected_substr = "WARN warn msg"
+        .expected = "WARN warn msg"
     },
     {
         .name = "Module token",
@@ -214,7 +215,7 @@ static Logcie_TestCase tests[] = {
         .module = "network",
         .sink_min_level = LOGCIE_LEVEL_TRACE,
         .fmt = "$M $m",
-        .expected_substr = "network hello"
+        .expected = "network hello"
     },
     {
         .name = "NULL module fallback",
@@ -223,7 +224,7 @@ static Logcie_TestCase tests[] = {
         .module = NULL,
         .sink_min_level = LOGCIE_LEVEL_TRACE,
         .fmt = "$M $m",
-        .expected_substr = "Logcie fallback"
+        .expected = "Logcie fallback"
     },
     {
         .name = "File token",
@@ -232,7 +233,7 @@ static Logcie_TestCase tests[] = {
         .module = "core",
         .sink_min_level = LOGCIE_LEVEL_TRACE,
         .fmt = "$f $m",
-        .expected_substr = "test.c"
+        .expected = "./test.c file test"
     },
     {
         .name = "Line token",
@@ -241,7 +242,7 @@ static Logcie_TestCase tests[] = {
         .module = "core",
         .sink_min_level = LOGCIE_LEVEL_TRACE,
         .fmt = "$x",
-        .expected_substr = ""  /* any number is OK */
+        .expected = "67"  /* any number is OK */
     },
     {
         .name = "Formatted message",
@@ -250,7 +251,7 @@ static Logcie_TestCase tests[] = {
         .module = "core",
         .sink_min_level = LOGCIE_LEVEL_TRACE,
         .fmt = "$m",
-        .expected_substr = "value=42",
+        .expected = "value=42",
         .arg = { .type = ARG_INT, .value.i = 42 },
     },
     {
@@ -260,7 +261,7 @@ static Logcie_TestCase tests[] = {
         .module = "core",
         .sink_min_level = LOGCIE_LEVEL_TRACE,
         .fmt = "$$ $m",
-        .expected_substr = "$ money"
+        .expected = "$ money"
     },
     {
         .name = "Color token present",
@@ -269,7 +270,7 @@ static Logcie_TestCase tests[] = {
         .module = "core",
         .sink_min_level = LOGCIE_LEVEL_TRACE,
         .fmt = "$c$L$r $m",
-        .expected_substr = "\x1b[31;20mERROR\x1b[0m colored"
+        .expected = "\x1b[31;20mERROR\x1b[0m colored"
     },
     {
         .name = "Padding after level",
@@ -278,7 +279,7 @@ static Logcie_TestCase tests[] = {
         .module = "core",
         .sink_min_level = LOGCIE_LEVEL_TRACE,
         .fmt = "$L$<6 $m",
-        .expected_substr = "INFO  aligned"
+        .expected = "INFO  aligned"
     },
     {
         .name = "Padding shorter level",
@@ -287,7 +288,7 @@ static Logcie_TestCase tests[] = {
         .module = "core",
         .sink_min_level = LOGCIE_LEVEL_TRACE,
         .fmt = "$L$<6 $m",
-        .expected_substr = "WARN  aligned"
+        .expected = "WARN  aligned"
     },
     {
         .name = "Padding longer level no-op",
@@ -296,7 +297,7 @@ static Logcie_TestCase tests[] = {
         .module = "core",
         .sink_min_level = LOGCIE_LEVEL_TRACE,
         .fmt = "$L$<5 $m",
-        .expected_substr = "ERROR aligned"
+        .expected = "ERROR aligned"
     },
     {
         .name = "Bracketed level no padding",
@@ -305,7 +306,7 @@ static Logcie_TestCase tests[] = {
         .module = "core",
         .sink_min_level = LOGCIE_LEVEL_TRACE,
         .fmt = "[$L] $m",
-        .expected_substr = "[INFO] hello"
+        .expected = "[INFO] hello"
     },
     {
         .name = "Long message",
@@ -314,12 +315,12 @@ static Logcie_TestCase tests[] = {
         .module = "core",
         .sink_min_level = LOGCIE_LEVEL_TRACE,
         .fmt = "$L $m",
-        .expected_substr = "this is a very long log message"
+        .expected = "INFO this is a very long log message used for stress testing"
     },
 };
 
 bool is_test_passed(Logcie_TestCase testcase, int ok) {
-    return (testcase.expected_substr && ok) || (!testcase.expected_substr && !ok);
+    return (testcase.expected && ok) || (!testcase.expected && !ok);
 }
 
 int main(void) {
@@ -335,7 +336,7 @@ int main(void) {
             passed++;
         } else {
             chrchr(buffer, '\n', '\0');
-            printf("[FAIL] %s\n  expect: '%s'\n  actual: '%s'\n", test.name, test.expected_substr ? test.expected_substr : "(no output)", buffer);
+            printf("[FAIL] %s\n  expect: '%s'\n  actual: '%s'\n", test.name, test.expected ? test.expected : "(no output)", buffer);
         }
     }
 

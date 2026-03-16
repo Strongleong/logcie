@@ -1,8 +1,10 @@
 # .clangd
-CompileFlags:
-  Add: [-DLOGCIE_IMPLEMENTATION]
 FallbackFlags:
   - -std=c11
   - -I.
 Format:
   Style: file
+If:
+  PathMatch: ['logcie.h']
+CompileFlags:
+  Add: [-DLOGCIE_IMPLEMENTATION]

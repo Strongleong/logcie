@@ -48,7 +48,8 @@ uint8_t file_filter(Logcie_Sink *sink, Logcie_Log *log) {
 }
 
 uint8_t console_filter(Logcie_Sink *sink, Logcie_Log *log) {
-  (void) sink; (void) log;
+  (void)sink;
+  (void)log;
   return current_user ? !current_user->is_invisible : 1;
 }
 
@@ -56,22 +57,22 @@ int main() {
   FILE *logfile = fopen("app.log", "w");
 
   Logcie_Sink file_sink = (Logcie_Sink){
-      .sink      = logfile,
       .min_level = LOGCIE_LEVEL_VERBOSE,
       .fmt       = "$d $t $f:$x [$M::$L] $m",
-      .formatter = logcie_printf_formatter,
-      .filter    = file_filter,
+      .formatter = {logcie_printf_formatter, NULL},
+      .writer    = {logcie_printf_writer, logfile},
+      .filter    = {file_filter, NULL},
   };
 
   logcie_add_sink(&file_sink);
 
   // Create and add a filtered console sink (stack allocated)
   Logcie_Sink console_sink = {
-      .sink      = stdout,
       .min_level = LOGCIE_LEVEL_INFO,
       .fmt       = "$c[$L]$r $M $t - $m",
-      .formatter = logcie_printf_formatter,
-      .filter    = console_filter,
+      .formatter = {logcie_printf_formatter, NULL},
+      .writer    = {logcie_printf_writer, stdout},
+      .filter    = {console_filter, NULL},
   };
 
   logcie_add_sink(&console_sink);
@@ -90,8 +91,10 @@ int main() {
   current_user = &invisible_user;
   LOGCIE_INFO("User %s(%u) logged in", current_user->name, current_user->id);
 
-  // Remove file sink and clean up
-  logcie_remove_sink_and_close(&file_sink);
+  // Remove file sink
+  logcie_remove_sink(&file_sink);
+
+  fclose(logfile);
 
   // Remove console sink (stack-allocated, no free needed)
   logcie_remove_sink(&console_sink);
