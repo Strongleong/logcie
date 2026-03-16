@@ -14,7 +14,8 @@ int main(void) {
   }
 
   Logcie_Sink file_sink = {0};
-  file_sink.sink        = logfile;
+  file_sink.writer_data = logfile;
+  file_sink.writer      = logcie_printf_writer;
   file_sink.min_level   = LOGCIE_LEVEL_DEBUG;
   file_sink.fmt         = "$d $t [$L] ($M) $m";  // nice format: date, time, level, module, message
   file_sink.formatter   = logcie_printf_formatter;

@@ -13,6 +13,7 @@
  * Usage:
  *   #define LOGCIE_IMPLEMENTATION
  *   #include "logcie.h"
+ *   LOGCIE_INFO("Hello from Logcie");
  *
  * Author: Nikita (Strongleong) Chulkov
  * License: MIT
@@ -110,6 +111,24 @@ typedef struct Logcie_Sink Logcie_Sink;
 typedef struct Logcie_Log  Logcie_Log;
 
 /**
+ * @brief Writer function type signature
+ *
+ * A writer function is responsible for writing formatted log data 
+ * to a sink. Sink could be anything, from FILE* to a HTTP API endpoint,
+ * so this is why it is a customizable function.
+ *
+ * @param data       Formatted log data
+ * @param size       Length of formatted log data
+ * @param user_data  Data for writing logs (FILE *, API endpoint, etc.)
+ */
+typedef size_t(Logcie_WriterFn)(void *user_data, const char *fmt, ...);
+
+typedef struct Logcie_Writer {
+  Logcie_WriterFn *write;
+  void *data;
+} Logcie_Writer;
+
+/**
  * @brief Formatter function type signature.
  *
  * A formatter function is responsible for converting a Logcie_Log structure
@@ -121,7 +140,12 @@ typedef struct Logcie_Log  Logcie_Log;
  * @param args  Variable argument list for message formatting
  * @return      Number of characters written to the sink
  */
-typedef size_t(Logcie_FormatterFn)(Logcie_Sink *sink, Logcie_Log log, va_list *args);
+typedef size_t(Logcie_FormatterFn)(Logcie_Writer *writer, const char *fmt, Logcie_Log log, va_list *args);
+
+typedef struct Logcie_Formatter {
+  Logcie_FormatterFn *format;
+  void *data;
+} Logcie_Formatter;
 
 /**
  * @brief Filter function type signature.
@@ -135,6 +159,11 @@ typedef size_t(Logcie_FormatterFn)(Logcie_Sink *sink, Logcie_Log log, va_list *a
  * @return      1 to emit log, 0 to suppress
  */
 typedef uint8_t(Logcie_FilterFn)(Logcie_Sink *sink, Logcie_Log *log);
+
+typedef struct Logcie_Filter {
+  Logcie_FilterFn *filter;
+  void *data;
+} Logcie_Filter;
 
 /**
  * @brief Structure representing a single log sink (output target).
@@ -159,18 +188,22 @@ typedef uint8_t(Logcie_FilterFn)(Logcie_Sink *sink, Logcie_Log *log);
  * `$<n - Pads with n spaces
  * `$$` - Literal dollar sign
  *
- * @field sink          Output file stream (stdout, file, etc.)
- * @field min_level     Minimum log level to emit (messages below this are ignored)
- * @field fmt           Format string using $ tokens for customization
- * @field formatter     Function pointer to format and write log messages
- * @field filter        Optional filter function to selectively output messages
+ * @field min_level        Minimum log level to emit (messages below this are ignored)
+ * @field fmt              Format string using $ tokens for customization
+ * @field writer           Function pointer to writer
+ * @field formatter        Function pointer to formatter
+ * @field filter           Optional filter function to selectively output messages
+ * @field writer_data      Custom data for writer
+ * @field formatter_data   Custom data for formatter
+ * @field filter_data      Custom data for filter
  */
 struct Logcie_Sink {
-  FILE               *sink;       ///< Output file stream (stdout, file, etc.)
-  Logcie_LogLevel     min_level;  ///< Minimum log level to emit
-  const char         *fmt;        ///< Format string using $ tokens
-  Logcie_FormatterFn *formatter;  ///< Formatter function
-  Logcie_FilterFn    *filter;     ///< Optional filter function
+  Logcie_LogLevel  min_level;      ///< Minimum log level to emit
+  const char      *fmt;            ///< Format string using $ tokens
+
+  Logcie_Formatter formatter;      ///< Formatter function
+  Logcie_Writer    writer;         ///< Writer function
+  Logcie_Filter    filter;         ///< Optional filter function
 };
 
 /**
@@ -401,7 +434,18 @@ LOGCIE_DEF uint8_t logcie_remove_sink_and_close(Logcie_Sink *sink);
  * @return Number of characters written to the sink
  * @see Format Tokens in README for complete $ token reference
  */
-LOGCIE_DEF size_t logcie_printf_formatter(Logcie_Sink *sink, Logcie_Log log, va_list *args);
+LOGCIE_DEF size_t logcie_printf_formatter(Logcie_Writer *writer, const char *fmt, Logcie_Log log, va_list *args);
+
+/**
+ * @brief Default printf writer
+ *
+ * This is the built-in writer that provides writes logs with fwrite
+ *
+ * @param data       Formatted log data
+ * @param size       Length of formatted log data
+ * @param user_data  Pointer to FILE where logs would be written
+ */
+LOGCIE_DEF size_t logcie_printf_writer(void *user_data, const char *fmt, ...);
 
 /**
  * @brief Allows customization of log level colors. Must be array of size Count_LOGCIE_LEVEL.
@@ -513,10 +557,13 @@ static inline const char *get_logcie_level_color(Logcie_LogLevel level) {
 }
 
 static Logcie_Sink default_stdout_sink = {
-    .sink      = NULL,
     .min_level = LOGCIE_LEVEL_TRACE,
     .fmt       = "$c$L$r " LOGCIE_COLOR_GRAY "$f:$x$r: $m",
-    .formatter = logcie_printf_formatter,
+    .writer    = {
+      .write = logcie_printf_writer,
+      .data = NULL,
+    },
+    .formatter = { logcie_printf_formatter, NULL },
     .filter    = NULL,
 };
 
@@ -528,7 +575,7 @@ static Logcie_Sink *default_stdout_sink_ptr = &default_stdout_sink;
 
 #ifdef __L_ATTR_CONSTRUCT
 __attribute__((constructor)) void init_default_stdout_sink(void) {
-  default_stdout_sink.sink = stdout;
+  default_stdout_sink.writer.data = stdout;
 }
 #endif
 
@@ -572,8 +619,8 @@ uint8_t logcie_add_sink(Logcie_Sink *sink) {
   }
 
 #ifndef __L_ATTR_CONSTRUCT
-  if (sink->sink == NULL)
-    sink->sink = stdout;
+  if (sink->writer.data == NULL)
+    sink->writer.data = stdout;
 #endif
 
   if (logcie.sinks_cap == 1) {
@@ -641,13 +688,15 @@ void logcie_remove_all_sinks(void) {
   }
 }
 
+// TODO: Fix this
 LOGCIE_DEF uint8_t logcie_remove_sink_and_close(Logcie_Sink *sink) {
-  uint8_t is_file = sink->sink != stdout && sink->sink != stderr && sink->sink != NULL;
+  (void) sink;
+  // uint8_t is_file = sink->sink != stdout && sink->sink != stderr && sink->sink != NULL;
 
-  if (logcie_remove_sink(sink) && is_file) {
-    fclose(sink->sink);
-    return 1;
-  }
+  // if (logcie_remove_sink(sink) && is_file) {
+  //   fclose(sink->sink);
+  //   return 1;
+  // }
 
   return 0;
 }
@@ -660,7 +709,7 @@ size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
 
   for (size_t i = 0; i < logcie.sinks_len; i++) {
     Logcie_Sink *sink = logcie.sinks[i];
-    _LOGCIE_ASSERT(sink->sink, "Sink have nowhere to output");
+    _LOGCIE_ASSERT(sink && sink->formatter, "Sink have no formatter");
 
     if (log.level < sink->min_level) {
       continue;
@@ -673,7 +722,7 @@ size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
     va_list args_copy;
     va_copy(args_copy, args);
 
-    sink->formatter(sink, log, &args_copy);
+    sink->formatter(sink->writer, sink->fmt, log, &args_copy);
 
     va_end(args_copy);
   }
@@ -682,12 +731,11 @@ size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
   return 0;
 }
 
-size_t logcie_printf_formatter(Logcie_Sink *sink, Logcie_Log log, va_list *args) {
-  _LOGCIE_ASSERT(sink, "Sink passed in logcie_printf_formatter is NULL");
+size_t logcie_printf_formatter(Logcie_Writer *writer, const char *fmt, Logcie_Log log, va_list *args) {
+  _LOGCIE_ASSERT(writer, "Sink have no writer");
 
   size_t      output_len = 0;
   size_t      last_len   = 0;
-  const char *fmt        = sink->fmt;
 
   struct tm local_tm = *localtime(&log.time);
   struct tm utc_tm   = *gmtime(&log.time);
@@ -695,9 +743,10 @@ size_t logcie_printf_formatter(Logcie_Sink *sink, Logcie_Log log, va_list *args)
   int32_t local_hours = local_tm.tm_hour;
   int32_t timediff    = (int32_t)difftime(mktime(&local_tm), mktime(&utc_tm)) / 3600;
 
+
   while (*fmt != '\0') {
     if (*fmt != '$') {
-      output_len += fprintf(sink->sink, "%c", *fmt);
+      output_len += writer->write(writer.data, "%c", *fmt);
       fmt++;
       continue;
     }
@@ -710,40 +759,40 @@ size_t logcie_printf_formatter(Logcie_Sink *sink, Logcie_Log log, va_list *args)
 
     switch (*fmt) {
       case '$':
-        last_len = fprintf(sink->sink, "$");
+        last_len = writer->write(writer->data, "$");
         break;
       case 'm':
-        last_len = vfprintf(sink->sink, log.msg, *args);
+        last_len = writer->write(writer->data, log.msg, *args);
         break;
       case 'l':
-        last_len = fprintf(sink->sink, "%s", get_logcie_level_label(log.level));
+        last_len = writer->write(writer->data, "%s", get_logcie_level_label(log.level));
         break;
       case 'L':
-        last_len = fprintf(sink->sink, "%s", get_logcie_level_label_upper(log.level));
+        last_len = writer->write(writer->data, "%s", get_logcie_level_label_upper(log.level));
         break;
       case 'c':
-        last_len = fprintf(sink->sink, "%s", get_logcie_level_color(log.level));
+        last_len = writer->write(writer->data, "%s", get_logcie_level_color(log.level));
         break;
       case 'r':
-        last_len = fprintf(sink->sink, LOGCIE_COLOR_RESET);
+        last_len = writer->write(writer->data, LOGCIE_COLOR_RESET);
         break;
       case 'd':
-        last_len = fprintf(sink->sink, "%d-%02d-%02d", local_tm.tm_year + 1900, local_tm.tm_mon + 1, local_tm.tm_mday);
+        last_len = writer->write(writer->data, "%d-%02d-%02d", local_tm.tm_year + 1900, local_tm.tm_mon + 1, local_tm.tm_mday);
         break;
       case 't':
-        last_len = fprintf(sink->sink, "%02d:%02d:%02d", local_hours, local_tm.tm_min, local_tm.tm_sec);
+        last_len = writer->write(writer->data, "%02d:%02d:%02d", local_hours, local_tm.tm_min, local_tm.tm_sec);
         break;
       case 'z':
-        last_len = fprintf(sink->sink, "%+d", timediff);
+        last_len = writer->write(writer->data, "%+d", timediff);
         break;
       case 'f':
-        last_len = fprintf(sink->sink, "%s", log.location.file);
+        last_len = writer->write(writer->data, "%s", log.location.file);
         break;
       case 'x':
-        last_len = fprintf(sink->sink, "%u", log.location.line);
+        last_len = writer->write(writer->data, "%u", log.location.line);
         break;
       case 'M':
-        last_len = fprintf(sink->sink, "%s", log.module ? log.module : default_module);
+        last_len = writer->write(writer->data, "%s", log.module ? log.module : default_module);
         break;
       case '<': {
         fmt++;
@@ -757,7 +806,7 @@ size_t logcie_printf_formatter(Logcie_Sink *sink, Logcie_Log log, va_list *args)
         int16_t pad = target - last_len - 1;
 
         if (pad > 0) {
-          last_len = fprintf(sink->sink, "%*s", pad, "");
+          last_len = writer->write(writer->data, "%*s", pad, "");
         }
 
         fmt--;
@@ -772,12 +821,25 @@ size_t logcie_printf_formatter(Logcie_Sink *sink, Logcie_Log log, va_list *args)
     fmt++;
   }
 
-  output_len += fprintf(sink->sink, "\n");
-  fflush(sink->sink);
+  output_len += writer->write(writer->data, "\n");
   return output_len;
 }
 
-// TODO: Align output up to delimiter
+// TODO: logcie_writer_flush()???
+
+LOGCIE_DEF size_t logcie_printf_writer(const char *fmt, Logcie_Log log, va_list *args) {
+  _LOGCIE_ASSERT(user_data, "Printf writer have nothing to write to");
+  FILE *file = user_data;
+
+  va_list args;
+  va_start(args, fmt);
+
+  size_t written = vfprintf(file, fmt, args);
+
+  va_end(args);
+  return written;
+}
+
 // TODO: Abiblity to accept custom stuff in logging (logging arrays)
 
 #endif /* end of include guard: LOGCIE_IMPLEMENTATION */

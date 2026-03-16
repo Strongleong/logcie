@@ -56,10 +56,11 @@ int main() {
   FILE *logfile = fopen("app.log", "w");
 
   Logcie_Sink file_sink = (Logcie_Sink){
-      .sink      = logfile,
       .min_level = LOGCIE_LEVEL_VERBOSE,
       .fmt       = "$d $t $f:$x [$M::$L] $m",
       .formatter = logcie_printf_formatter,
+      .writer    = logcie_printf_writer,
+      .writer_data = logfile,
       .filter    = file_filter,
   };
 
@@ -67,11 +68,12 @@ int main() {
 
   // Create and add a filtered console sink (stack allocated)
   Logcie_Sink console_sink = {
-      .sink      = stdout,
-      .min_level = LOGCIE_LEVEL_INFO,
-      .fmt       = "$c[$L]$r $t - $m",
-      .formatter = logcie_printf_formatter,
-      .filter    = console_filter,
+      .min_level   = LOGCIE_LEVEL_INFO,
+      .fmt         = "$c[$L]$r $t - $m",
+      .formatter   = logcie_printf_formatter,
+      .writer      = logcie_printf_writer,
+      .writer_data = stdout,
+      .filter      = console_filter,
   };
 
   logcie_add_sink(&console_sink);

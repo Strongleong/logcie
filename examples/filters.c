@@ -27,7 +27,8 @@ void module(void) {
 int main(void) {
   Logcie_Sink info_sink = {
     .min_level = LOGCIE_LEVEL_TRACE,
-    .sink      = stdout,
+    .writer_data      = stdout,
+    .writer = logcie_printf_writer,
     .fmt       = "$c$L (Info)$r $m",
     .formatter = logcie_printf_formatter,
     .filter    = min_info_filter,  // Use info filter
@@ -35,7 +36,8 @@ int main(void) {
 
   Logcie_Sink module_sink = {
     .min_level = LOGCIE_LEVEL_TRACE,
-    .sink      = stdout,
+    .writer_data      = stdout,
+    .writer = logcie_printf_writer,
     .fmt       = "$c$L (Module)$r $m",
     .formatter = logcie_printf_formatter,
     .filter    = module_filter,  // Use module filter
@@ -43,7 +45,8 @@ int main(void) {
 
   Logcie_Sink common_sink = {
     .min_level = LOGCIE_LEVEL_TRACE,
-    .sink      = stdout,
+    .writer_data      = stdout,
+    .writer = logcie_printf_writer,
     .fmt       = "$c$L (Common)$r $m",
     .formatter = logcie_printf_formatter,
     .filter    = common_filter,

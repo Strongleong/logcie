@@ -82,7 +82,8 @@ static bool run_test(const Logcie_TestCase *tc) {
     logcie_module = tc->module;
 
     Logcie_Sink sink = {
-        .sink = tmp,
+        .writer = logcie_printf_writer,
+        .writer_data = tmp,
         .min_level = tc->sink_min_level,
         .fmt = tc->fmt,
         .formatter = logcie_printf_formatter

@@ -9,19 +9,22 @@ size_t my_simple_formatter(Logcie_Sink *sink, Logcie_Log log, va_list *args) {
   struct tm *tminfo = localtime(&log.time);
   strftime(time_buf, sizeof(time_buf), "%H:%M:%S", tminfo);
 
-  fprintf(sink->sink, "[%s] [%s] (%s) ", time_buf, get_logcie_level_label_upper(log.level), log.module ? log.module : "none");
-  vfprintf(sink->sink, log.msg, *args);
-  fprintf(sink->sink, "\n");
+  FILE *f = sink->writer_data;
+
+  sink->writer(f, "[%s] [%s] (%s) ", time_buf, get_logcie_level_label_upper(log.level), log.module ? log.module : "none");
+  sink->writer(f, log.msg, *args);
+  sink->writer(f, "\n");
 
   return 0;
 }
 
 int main(void) {
   Logcie_Sink my_sink = {
-      .sink      = stdout,
-      .min_level = LOGCIE_LEVEL_TRACE,
-      .formatter = my_simple_formatter,
-      .fmt       = NULL,  // Not used by custom formatter
+      .min_level   = LOGCIE_LEVEL_TRACE,
+      .formatter   = my_simple_formatter,
+      .writer      = logcie_printf_writer,
+      .writer_data = stdout,
+      .fmt         = NULL,  // Not used by custom formatter
   };
 
   logcie_add_sink(&my_sink);
