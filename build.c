@@ -1,6 +1,5 @@
-#define _CRT_SECURE_NO_WARNINGS
-
 #include <errno.h>
+#include <dirent.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -28,9 +27,25 @@ typedef intptr_t pid_t;
 
 #define ARR_LEN(array) ((int)sizeof(array) / (int)sizeof((array)[0]))
 
+#define LOGCIE_IMPLEMENTATION
+#include "logcie.h"
+
+#define OPTLY_IMPLEMENTATION
+#include "./thirdparty/optly.h"
+
+#define ARR_LEN(array) ((int)sizeof(array) / (int)sizeof((array)[0]))
+
+// static const char *logcie_module = "build";
+//
+// static Logcie_Sink stdout_sink = {
+//   .min_level = LOGCIE_LEVEL_INFO,
+//   .fmt       = LOGCIE_COLOR_GRAY "[$M]$r $c$L$r:$<6$m",
+//   .formatter = { logcie_printf_formatter,  NULL },
+// };
+
 #define UNUSED(value) (void)(value)
 #define TODO(message) do { fprintf(stderr, "%s:%d: TODO: %s\n", __FILE__, __LINE__, message); abort(); } while(0)
-#define UNREACHABLE(message) do { fprintf(stderr, "%s:%d: UNREACHABLE: %s\n", __FILE__, __LINE__, message); abort(); } while(0)
+// #define UNREACHABLE(message) do { fprintf(stderr, "%s:%d: UNREACHABLE: %s\n", __FILE__, __LINE__, message); abort(); } while(0)
 
 pid_t run_cmd(char *const argv[]) {
 #ifdef _WIN32
@@ -58,8 +73,9 @@ pid_t run_cmd(char *const argv[]) {
     exit(1);
   }
 
-  UNREACHABLE("run_cmd");
+  // UNREACHABLE("run_cmd");
 #endif
+  return -1;
 }
 
 int dir_exists(const char *path) {
@@ -106,6 +122,8 @@ void explode(char *str, char **arr) {
 }
 
 int main(void) {
+  LOGCIE_INFO("Build system started...");
+
   struct stat st = {0};
 
   if(stat("out", &st) == -1 && mkdir("out", 0755) == -1) {
