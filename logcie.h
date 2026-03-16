@@ -1,5 +1,5 @@
 /*
- * Logcie v0.9.0 - Logging Library (Single Header)
+ * Logcie v0.10.0 - Logging Library (Single Header)
  *
  * Description:
  *   Logcie is a lightweight, modular, single-header logging library written in C.
@@ -28,7 +28,7 @@
 
 // Versioning macros
 #define LOGCIE_VERSION_MAJOR         0
-#define LOGCIE_VERSION_MINOR         9
+#define LOGCIE_VERSION_MINOR         10
 #define LOGCIE_VERSION_RELEASE       0
 #define LOGCIE_VERSION_NUMBER        (LOGCIE_VERSION_MAJOR * 100 * 100 + LOGCIE_VERSION_MINOR * 100 + LOGCIE_VERSION_RELEASE)
 #define LOGCIE_VERSION_FULL          LOGCIE_VERSION_MAJOR.LOGCIE_VERSION_MINOR.LOGCIE_VERSION_RELEASE
@@ -43,6 +43,10 @@
 #define LOGCIE_COLOR_RED        "\x1b[31;20m"
 #define LOGCIE_COLOR_BRIGHT_RED "\x1b[31;1m"
 #define LOGCIE_COLOR_RESET      "\x1b[0m"
+
+#ifndef LOGCIE_DEFAULT_SINK_FORMAT
+#define LOGCIE_DEFAULT_SINK_FORMAT "$c$L$r " LOGCIE_COLOR_GRAY "$f:$x$r: $m"
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -276,6 +280,7 @@ struct Logcie_Log {
 #define LOGCIE_WARN(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
 #define LOGCIE_ERROR(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
 #define LOGCIE_FATAL(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
+#define LOGCIE_LOG(level, msg, ...) LOGCIE_##level(msg, __VA_OPT__(, ) __VA_ARGS__)
 #else
 #if !defined(LOGCIE_PEDANTIC) && (defined(__GNUC__) || defined(__clang__))
 #define LOGCIE_TRACE(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
@@ -285,6 +290,7 @@ struct Logcie_Log {
 #define LOGCIE_WARN(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
 #define LOGCIE_ERROR(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
 #define LOGCIE_FATAL(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
+#define LOGCIE_LOG(level, msg, ...) LOGCIE_##level(msg, ##__VA_ARGS__)
 #else
 #define LOGCIE_TRACE(msg)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE, msg, __FILE__, __LINE__), msg)
 #define LOGCIE_DEBUG(msg)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG, msg, __FILE__, __LINE__), msg)
@@ -293,6 +299,7 @@ struct Logcie_Log {
 #define LOGCIE_WARN(msg)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN, msg, __FILE__, __LINE__), msg)
 #define LOGCIE_ERROR(msg)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR, msg, __FILE__, __LINE__), msg)
 #define LOGCIE_FATAL(msg)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL, msg, __FILE__, __LINE__), msg)
+#define LOGCIE_LOG(level, msg) LOGCIE_##level(msg)
 #define LOGCIE_VA_LOGS
 #endif
 #endif
@@ -305,7 +312,10 @@ struct Logcie_Log {
 #define LOGCIE_WARN_VA(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
 #define LOGCIE_ERROR_VA(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
 #define LOGCIE_FATAL_VA(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
+#define LOGCIE_LOG_VA(level, msg, ...) LOGCIE_##level##_VA(msg, __VA_ARGS__)
 #endif
+
+
 
 /**
  * @brief Emit a log message using the provided log metadata and arguments.
@@ -541,11 +551,19 @@ static inline const char *get_logcie_level_color(Logcie_LogLevel level) {
 }
 
 static Logcie_Sink default_stdout_sink = {
+<<<<<<< HEAD
     .min_level = LOGCIE_LEVEL_TRACE, // NOTE: @filters_lib
     .fmt       = "$c$L$r " LOGCIE_COLOR_GRAY "$f:$x$r: $m",
     .formatter = {logcie_printf_formatter, NULL},
     .writer    = {logcie_printf_writer, NULL},
     .filter    = {NULL, NULL},
+=======
+    .sink      = NULL,
+    .min_level = LOGCIE_LEVEL_TRACE,
+    .fmt       = LOGCIE_DEFAULT_SINK_FORMAT,
+    .formatter = logcie_printf_formatter,
+    .filter    = NULL,
+>>>>>>> master
 };
 
 static Logcie_Sink *default_stdout_sink_ptr = &default_stdout_sink;
@@ -574,14 +592,6 @@ static Logcie_Logger logcie = {
     .sinks_cap = 1,
 };
 
-// WARN: This should be called once
-static void _logcie_reset(void) {
-  /* _LOGCIE_ASSERT(logcie.sinks == NULL, "Badly bad stuff"); */
-  logcie.sinks_cap = 8;
-  logcie.sinks_len = 0;
-  logcie.sinks     = (Logcie_Sink **)malloc(sizeof(*logcie.sinks) * logcie.sinks_cap);
-}
-
 size_t logcie_get_sink_count(void) {
   return logcie.sinks_len;
 }
@@ -605,7 +615,9 @@ uint8_t logcie_add_sink(Logcie_Sink *sink) {
 #endif
 
   if (logcie.sinks_cap == 1) {
-    _logcie_reset();
+    logcie.sinks_cap = 8;
+    logcie.sinks_len = 0;
+    logcie.sinks     = (Logcie_Sink **)malloc(sizeof(*logcie.sinks) * logcie.sinks_cap);
   }
 
   if (logcie.sinks_cap == logcie.sinks_len) {

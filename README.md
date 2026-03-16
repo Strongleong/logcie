@@ -26,6 +26,7 @@ that supports multiple output sinks, customizable formatting, and flexible filte
 - [API Reference](#api-reference)
 - [Configuration Options](#configuration-options)
 - [Limitations](#limitations)
+- [Usage in libraries](#usage-in-libraries)
 - [License](#license)
 
 ## Quick Start
@@ -490,6 +491,64 @@ int main() {
 - **Custom formatters require `va_list` handling** - Advanced usage requires understanding of variadic arguments
 
 Future versions may address these limitations based on user feedback and requirements.
+
+## Usage in libraries
+
+You can add logcie interface to your library with this snippet:
+
+```c
+#ifndef YOURLIB_LOG_BACKEND
+#ifdef LOGCIE
+#ifdef LOGCIE_VA_LOGS
+#define YOURLIB_LOG_BACKED(level, ...) LOGCIE_##level##_VA(__VA_ARGS__)
+#else
+#define YOURLIB_LOG_BACKED(level, ...) LOGCIE_##level(__VA_ARGS__)
+#endif
+#else
+#define YOURLIB_LOG_BACKED(level, ...)
+#endif
+#endif
+
+#ifndef YOURLIB_LOG_TRACE
+#define YOURLIB_LOG_TRACE(...) YOURLIB_LOG_BACKED(TRACE, __VA_ARGS__)
+#endif
+
+#ifndef YOURLIB_LOG_DEBUG
+#define YOURLIB_LOG_DEBUG(...) YOURLIB_LOG_BACKED(DEBUG, __VA_ARGS__)
+#endif
+
+#ifndef YOURLIB_LOG_VERBOSE
+#define YOURLIB_LOG_VERBOSE(...) YOURLIB_LOG_BACKED(VERBOSE, __VA_ARGS__)
+#endif
+
+#ifndef YOURLIB_LOG_INFO
+#define YOURLIB_LOG_INFO(...) YOURLIB_LOG_BACKED(INFO, __VA_ARGS__)
+#endif
+
+#ifndef YOURLIB_LOG_WARN
+#define YOURLIB_LOG_WARN(...) YOURLIB_LOG_BACKED(WARN, __VA_ARGS__)
+#endif
+
+#ifndef YOURLIB_LOG_ERROR
+#define YOURLIB_LOG_ERROR(...) YOURLIB_LOG_BACKED(ERROR, __VA_ARGS__)
+#endif
+
+#ifndef YOURLIB_LOG_FATAL
+#define YOURLIB_LOG_FATAL(...) YOURLIB_LOG_BACKED(FATAL, __VA_ARGS__)
+#endif
+```
+
+Then just put logcie somewhre next to optly in your project, or define logging macros by yourself.
+
+```c
+#define YOURLIB_LOG_BACKEND(level, ...) fprintf(stderr, ##level ": " __VA_ARGS__);
+```
+
+You can disable or enable certan logging levels in compiile time:
+
+```c
+#define YOURLIB_LOG_DEBUG // define to nothing
+```
 
 ## License
 
