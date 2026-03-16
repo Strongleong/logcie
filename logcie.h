@@ -551,19 +551,11 @@ static inline const char *get_logcie_level_color(Logcie_LogLevel level) {
 }
 
 static Logcie_Sink default_stdout_sink = {
-<<<<<<< HEAD
     .min_level = LOGCIE_LEVEL_TRACE, // NOTE: @filters_lib
     .fmt       = "$c$L$r " LOGCIE_COLOR_GRAY "$f:$x$r: $m",
     .formatter = {logcie_printf_formatter, NULL},
     .writer    = {logcie_printf_writer, NULL},
     .filter    = {NULL, NULL},
-=======
-    .sink      = NULL,
-    .min_level = LOGCIE_LEVEL_TRACE,
-    .fmt       = LOGCIE_DEFAULT_SINK_FORMAT,
-    .formatter = logcie_printf_formatter,
-    .filter    = NULL,
->>>>>>> master
 };
 
 static Logcie_Sink *default_stdout_sink_ptr = &default_stdout_sink;
