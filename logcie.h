@@ -121,7 +121,7 @@ typedef struct Logcie_Log  Logcie_Log;
  * @param size       Length of formatted log data
  * @param user_data  Data for writing logs (FILE *, API endpoint, etc.)
  */
-typedef size_t(Logcie_WriterFn)(void *user_data, const char *fmt, ...);
+typedef size_t(Logcie_WriterFn)(void *user_data, const char *fmt, va_list *va, ...);
 
 typedef struct Logcie_Writer {
   Logcie_WriterFn *write;
@@ -429,7 +429,7 @@ LOGCIE_DEF size_t logcie_printf_formatter(Logcie_Writer *writer, const char *fmt
  * @param size       Length of formatted log data
  * @param user_data  Pointer to FILE where logs would be written
  */
-LOGCIE_DEF size_t logcie_printf_writer(void *user_data, const char *fmt, ...);
+LOGCIE_DEF size_t logcie_printf_writer(void *user_data, const char *fmt, va_list *va, ...);
 
 /**
  * @brief Allows customization of log level colors. Must be array of size Count_LOGCIE_LEVEL.
@@ -714,7 +714,7 @@ size_t logcie_printf_formatter(Logcie_Writer *writer, const char *fmt, Logcie_Lo
 
   while (*fmt != '\0') {
     if (*fmt != '$') {
-      output_len += writer->write(writer->data, "%c", *fmt);
+      output_len += writer->write(writer->data, "%c", NULL, *fmt);
       fmt++;
       continue;
     }
@@ -727,40 +727,40 @@ size_t logcie_printf_formatter(Logcie_Writer *writer, const char *fmt, Logcie_Lo
 
     switch (*fmt) {
       case '$':
-        last_len = writer->write(writer->data, "$");
+        last_len = writer->write(writer->data, "$", NULL);
         break;
       case 'm':
-        last_len = writer->write(writer->data, log.msg, *args);
+        last_len = writer->write(writer->data, log.msg, args);
         break;
       case 'l':
-        last_len = writer->write(writer->data, "%s", get_logcie_level_label(log.level));
+        last_len = writer->write(writer->data, "%s", NULL, get_logcie_level_label(log.level));
         break;
       case 'L':
-        last_len = writer->write(writer->data, "%s", get_logcie_level_label_upper(log.level));
+        last_len = writer->write(writer->data, "%s", NULL, get_logcie_level_label_upper(log.level));
         break;
       case 'c':
-        last_len = writer->write(writer->data, "%s", get_logcie_level_color(log.level));
+        last_len = writer->write(writer->data, "%s", NULL, get_logcie_level_color(log.level));
         break;
       case 'r':
-        last_len = writer->write(writer->data, LOGCIE_COLOR_RESET);
+        last_len = writer->write(writer->data, LOGCIE_COLOR_RESET, NULL);
         break;
       case 'd':
-        last_len = writer->write(writer->data, "%d-%02d-%02d", local_tm.tm_year + 1900, local_tm.tm_mon + 1, local_tm.tm_mday);
+        last_len = writer->write(writer->data, "%d-%02d-%02d", NULL, local_tm.tm_year + 1900, local_tm.tm_mon + 1, local_tm.tm_mday);
         break;
       case 't':
-        last_len = writer->write(writer->data, "%02d:%02d:%02d", local_hours, local_tm.tm_min, local_tm.tm_sec);
+        last_len = writer->write(writer->data, "%02d:%02d:%02d", NULL, local_hours, local_tm.tm_min, local_tm.tm_sec);
         break;
       case 'z':
-        last_len = writer->write(writer->data, "%+d", timediff);
+        last_len = writer->write(writer->data, "%+d", NULL, timediff);
         break;
       case 'f':
-        last_len = writer->write(writer->data, "%s", log.location.file);
+        last_len = writer->write(writer->data, "%s", NULL, log.location.file);
         break;
       case 'x':
-        last_len = writer->write(writer->data, "%u", log.location.line);
+        last_len = writer->write(writer->data, "%u", NULL, log.location.line);
         break;
       case 'M':
-        last_len = writer->write(writer->data, "%s", log.module ? log.module : default_module);
+        last_len = writer->write(writer->data, "%s", NULL, log.module ? log.module : default_module);
         break;
       case '<': {
         fmt++;
@@ -774,7 +774,7 @@ size_t logcie_printf_formatter(Logcie_Writer *writer, const char *fmt, Logcie_Lo
         int16_t pad = target - last_len - 1;
 
         if (pad > 0) {
-          last_len = writer->write(writer->data, "%*s", pad, "");
+          last_len = writer->write(writer->data, "%*s", NULL, pad, "");
         }
 
         fmt--;
@@ -789,18 +789,22 @@ size_t logcie_printf_formatter(Logcie_Writer *writer, const char *fmt, Logcie_Lo
     fmt++;
   }
 
-  output_len += writer->write(writer->data, "\n");
+  output_len += writer->write(writer->data, "\n", NULL);
   return output_len;
 }
 
 // TODO: logcie_writer_flush()???
 
-LOGCIE_DEF size_t logcie_printf_writer(void *user_data, const char *fmt, ...) {
+LOGCIE_DEF size_t logcie_printf_writer(void *user_data, const char *fmt, va_list *va, ...) {
   _LOGCIE_ASSERT(user_data, "Printf writer have nothing to write to");
   FILE *file = (FILE *)user_data;
-
   va_list args;
-  va_start(args, fmt);
+
+  if (va != NULL) {
+    va_copy(args, *va);
+  } else {
+    va_start(args, va);
+  }
 
   size_t written = vfprintf(file, fmt, args);
 

@@ -11,9 +11,9 @@ size_t my_simple_formatter(Logcie_Writer *writer, const char *fmt, Logcie_Log lo
   struct tm *tminfo = localtime(&log.time);
   strftime(time_buf, sizeof(time_buf), "%H:%M:%S", tminfo);
 
-  writer->write(writer->data, "[%s] [%s] (%s) ", time_buf, get_logcie_level_label_upper(log.level), log.module ? log.module : "none");
-  writer->write(writer->data, log.msg, *args);
-  writer->write(writer->data, "\n");
+  writer->write(writer->data, "[%s] [%s] (%s) ", NULL, time_buf, get_logcie_level_label_upper(log.level), log.module ? log.module : "none");
+  writer->write(writer->data, log.msg, args);
+  writer->write(writer->data, "\n", NULL);
 
   return 0;
 }
