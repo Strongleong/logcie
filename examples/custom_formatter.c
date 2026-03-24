@@ -4,8 +4,8 @@
 #define LOGCIE_IMPLEMENTATION
 #include <logcie.h>
 
-size_t my_simple_formatter(Logcie_Writer *writer, const char *fmt, Logcie_Log log, va_list *args) {
-  (void) fmt;
+size_t my_simple_formatter(Logcie_Writer *writer, void *user_data, Logcie_Log log, va_list *args) {
+  (void) user_data;
 
   char time_buf[9];
   struct tm *tminfo = localtime(&log.time);
@@ -20,7 +20,6 @@ size_t my_simple_formatter(Logcie_Writer *writer, const char *fmt, Logcie_Log lo
 
 int main(void) {
   Logcie_Sink my_sink = {
-      .fmt         = "",  // Not used by custom formatter
       .min_level   = LOGCIE_LEVEL_TRACE,
       .formatter   = {my_simple_formatter, NULL},
       .writer      = {logcie_printf_writer, stdout},

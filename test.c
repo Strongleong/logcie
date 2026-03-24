@@ -33,7 +33,7 @@ typedef struct {
 
     const char *module;
     Logcie_LogLevel sink_min_level;
-    const char *fmt;
+    char *fmt;
 
     const char *expected;
 
@@ -84,8 +84,7 @@ static bool run_test(const Logcie_TestCase *tc) {
     Logcie_Sink sink = {
         .writer = { .write = logcie_printf_writer, tmp, },
         .min_level = tc->sink_min_level,
-        .fmt = tc->fmt,
-        .formatter = { .format = logcie_printf_formatter, NULL },
+        .formatter = { .format = logcie_printf_formatter, .data = (void *)tc->fmt },
     };
 
     logcie_add_sink(&sink);

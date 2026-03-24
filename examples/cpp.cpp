@@ -58,8 +58,7 @@ int main() {
 
   Logcie_Sink file_sink = (Logcie_Sink){
       .min_level = LOGCIE_LEVEL_VERBOSE,
-      .fmt       = "$d $t $f:$x [$M::$L] $m",
-      .formatter = {logcie_printf_formatter, NULL},
+      .formatter = {logcie_printf_formatter, (void *)"$d $t $f:$x [$M::$L] $m"},
       .writer    = {logcie_printf_writer, logfile},
       .filter    = {file_filter, NULL},
   };
@@ -69,8 +68,7 @@ int main() {
   // Create and add a filtered console sink (stack allocated)
   Logcie_Sink console_sink = {
       .min_level = LOGCIE_LEVEL_INFO,
-      .fmt       = "$c[$L]$r $M $t - $m",
-      .formatter = {logcie_printf_formatter, NULL},
+      .formatter = {logcie_printf_formatter, (void *)"$c[$L]$r $M $t - $m"},
       .writer    = {logcie_printf_writer, stdout},
       .filter    = {console_filter, NULL},
   };

@@ -16,12 +16,11 @@ int main(void) {
   Logcie_Sink file_sink = {
       .min_level = LOGCIE_LEVEL_DEBUG,
       // nice format: date, time, level, module, message
-      .fmt       = "$d $t [$L] ($M) $m",
       .writer    = {
              .write = logcie_printf_writer,
              .data  = logfile,
       },
-      .formatter = {logcie_printf_formatter, NULL},
+      .formatter = {logcie_printf_formatter,  "$d $t [$L] ($M) $m"},
   };
 
   logcie_add_sink(&file_sink);
@@ -31,7 +30,7 @@ int main(void) {
   LOGCIE_ERROR("Error: can't save file");
 
   // Changing logs format in run time
-  file_sink.fmt = "$f:$x [$L] ($M) $m";
+  file_sink.formatter.data = "$f:$x [$L] ($M) $m";
 
   LOGCIE_INFO("New format");
 

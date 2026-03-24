@@ -144,7 +144,7 @@ typedef struct Logcie_Writer {
  * @param args  Variable argument list for message formatting
  * @return      Number of characters written to the sink
  */
-typedef size_t(Logcie_FormatterFn)(Logcie_Writer *writer, const char *fmt, Logcie_Log log, va_list *args);
+typedef size_t(Logcie_FormatterFn)(Logcie_Writer *writer, void *user_data, Logcie_Log log, va_list *args);
 
 typedef struct Logcie_Formatter {
   Logcie_FormatterFn *format;
@@ -203,7 +203,6 @@ typedef struct Logcie_Filter {
  */
 struct Logcie_Sink {
   Logcie_LogLevel min_level;  ///< Minimum log level to emit
-  const char     *fmt;        ///< Format string using $ tokens
 
   Logcie_Formatter formatter;  ///< Formatter function
   Logcie_Writer    writer;     ///< Writer function
@@ -428,7 +427,7 @@ LOGCIE_DEF void logcie_remove_all_sinks(void);
  * @return Number of characters written to the sink
  * @see Format Tokens in README for complete $ token reference
  */
-LOGCIE_DEF size_t logcie_printf_formatter(Logcie_Writer *writer, const char *fmt, Logcie_Log log, va_list *args);
+LOGCIE_DEF size_t logcie_printf_formatter(Logcie_Writer *writer, void *user_data, Logcie_Log log, va_list *args);
 
 /**
  * @brief Default printf writer
@@ -552,8 +551,7 @@ static inline const char *get_logcie_level_color(Logcie_LogLevel level) {
 
 static Logcie_Sink default_stdout_sink = {
     .min_level = LOGCIE_LEVEL_TRACE, // NOTE: @filters_lib
-    .fmt       = "$c$L$r " LOGCIE_COLOR_GRAY "$f:$x$r: $m",
-    .formatter = {logcie_printf_formatter, NULL},
+    .formatter = {logcie_printf_formatter, (void *)("$c$L$r " LOGCIE_COLOR_GRAY "$f:$x$r: $m")},
     .writer    = {logcie_printf_writer, NULL},
     .filter    = {NULL, NULL},
 };
@@ -694,7 +692,7 @@ size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
     va_list args_copy;
     va_copy(args_copy, args);
 
-    sink->formatter.format(&sink->writer, sink->fmt, log, &args_copy);
+    sink->formatter.format(&sink->writer, sink->formatter.data, log, &args_copy);
 
     va_end(args_copy);
   }
@@ -703,7 +701,8 @@ size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
   return 0;
 }
 
-size_t logcie_printf_formatter(Logcie_Writer *writer, const char *fmt, Logcie_Log log, va_list *args) {
+size_t logcie_printf_formatter(Logcie_Writer *writer, void *data, Logcie_Log log, va_list *args) {
+  const char *fmt = (const char *) data;
   _LOGCIE_ASSERT(writer, "Sink have no writer");
   _LOGCIE_ASSERT(writer->data, "printf sink have nowhere to print");
 
