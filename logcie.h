@@ -6,16 +6,151 @@
  *   It supports multiple log levels, ANSI color output, flexible formatting, and
  *   customizable filters and sinks for advanced logging use cases.
  *
- *   This library is NOT thread-safe in version 0.x.
+ *   NOTE: This library is NOT thread-safe in version 0.x.
  *       Concurrent calls from multiple threads may interleave output.
  *       Thread safety is planned for version 1.0.
  *
- * Usage:
+ * Basic usage:
  *   #define LOGCIE_IMPLEMENTATION
  *   #include "logcie.h"
- *   LOGCIE_INFO("Hello from Logcie");
  *
- * Author: Nikita (Strongleong) Chulkov
+ *   LOGCIE_INFO("Hello from Logcie");
+ *   LOGCIE_VERBOSE("Logcie supports %s logging", "ptrintf-style");
+ *
+ * Log levels:
+ *   Logcie supports 7 different log levels, ordered from lowes to highest severity:
+ *     TRACE   - Most detailed information for deep debugging
+ *     DEBUG   - Debugging information for development
+ *     VERBOSE - Verbose operational details
+ *     INFO    - General informational messages
+ *     WARN    - Warning conditions that might need attention
+ *     ERROR   - Error conditions that prevent normal operation
+ *     FATAL   - Fatal conditions requiring immediate shutdown
+ *
+ * How it works:
+ *   The core of this library are `Formatter`, `Writer` and `Filter`.
+ *
+ *   Formatter takes log structure and it is responsible for generating string out of it.
+ *             While generating text that will be written in the log it calls Writer.
+ *   Writer gets fomatted string from Formatter and its responsibility is to write this
+ *          string to the actual log place. It can write logs to a FILE, or it can send
+ *          logs to some HTTP API endoint. It can draw then as a running string on a scren
+ *          in embeded, while blinking LED with color of current log level.
+ *   Filter filters out logs. Pretty much self describing.
+ *
+ *   A set of Formatter, Writer and Filter is called Sink.
+ *   You can have as many sinks as you want. Logcie will send logs to every sinks available.
+ *
+ *   Logcie itself is basically an array of Sinks and system of distributing logs to those Sinks.
+ *
+ * Defaults:
+ *   It would not be that great if Logcie was just empty framework and you need to set it up by yourself,
+ *   so Logcie comes with a couple of pre-defined functions:
+ *
+ *      - logcie_printf_writer    - build-in wirter. Outputs logs in FILE* via vfprintf
+ *      - logcie_printf_formatter - built-in formater that provides rich foratting using $ tokens. Here is the list:
+ *                                   `$m` - Log message with printf formatting
+ *                                   `$f` - Source file name
+ *                                   `$x` - Line number
+ *                                   `$M` - Module name
+ *                                   `$l` - Log level (lowercase)
+ *                                   `$L` - Log level (uppercase)
+ *                                   `$c` - ANSI color code for log level
+ *                                   `$r` - ANSI reset color code
+ *                                   `$d` - Date (YYYY-MM-DD)
+ *                                   `$t` - Time (HH:MM:SS)
+ *                                   `$z` - Timezone offset
+ *                                   `$<n - Pads with n spaces
+ *                                   `$$` - Literal dollar sign
+ *
+ *   Also by defalult logcie alredy have Sink installed with printf writer and formatter so you can
+ *   just include logcie into your project and tart using in from the get-go.
+ *   Note that when you add your first Sink with `logcie_add_sink()` default printf Sink will be removed.
+ *   You can remove all of your sinks and set default printf sink back with `logcie_remove_all_sinks()`
+ *
+ * Colors:
+ *   As you see, `logcie_printf_formatter()` have support for ANSI colored output. It have
+ *   log level to ANSI color table to make your errors red, warnings yellow and infos blue.
+ *   You can modify this table with `logcie_set_colors()`:
+ *     ```c
+ *     const char *my_colors[Count_LOGCIE_LEVEL] = {
+ *         [LOGCIE_LEVEL_TRACE]   = "\x1b[90m",    // Gray
+ *         [LOGCIE_LEVEL_DEBUG]   = "\x1b[94m",    // Light blue
+ *         [LOGCIE_LEVEL_VERBOSE] = "\x1b[92m",    // Light green
+ *         [LOGCIE_LEVEL_INFO]    = "\x1b[1;32m",  // Bright green (bold)
+ *         [LOGCIE_LEVEL_WARN]    = "\x1b[33m",    // Yellow
+ *         [LOGCIE_LEVEL_ERROR]   = "\x1b[1;33m",  // Bright yellow (bold)
+ *         [LOGCIE_LEVEL_FATAL]   = "\x1b[1;31m",  // Bright red (bold)
+ *     };
+ *
+ *     logcie_set_colors(my_colors);
+ *     ```
+ *
+ *     To reset color call `logcie_set_colors()` again with NULL as argument.
+ *
+ * Memory management:
+ *   This library is not responsible for storing Sinks and everything that connected to them.
+ *   Make sure that Sinks that you create will outlive their usage.
+ *   TIP: Just have them in main function, or in static/global scope.
+ *
+ * Example:
+ *   You can have sink that will format log with "[$log level$] $log message$"
+ *    format to stdout, filtering out everyting more verbose that LOGCIE_INFO level. At the
+ *    same time you can have second sink that will dump every log up until LOGCIE_DEBUG level
+ *    in './log.txt' file with format that would look like:
+ *    "$log level$:$file$:$line$: $log message$ ($log time$ $log date$)".
+ *
+ *     ```c
+ *     // Defining our sinks
+ *     Logcie_Sink stdout_sink = {
+ *       .formatter = { logcie_printf_formatter, "[$L] $m" },
+ *       .writer = { logcie_printf_writer, stdout },
+ *       .filter = { logcie_filter_level_min, LOGCIE_LEVEL_INFO }
+ *     };
+ *
+ *     Logcie_Sink file_sink = {
+ *       .formatter = { logcie_printf_formatter, "$L:$f:$x: $m ($t $d)" },
+ *       .writer = { logcie_printf_writer, fopen("./log.txt", "w") },
+ *     };
+ *
+ *     // New sinks must be registred with `logcie_add_sink()`
+ *     logcie_add_sink(&stdout_sink);
+ *     logcie_add_sink(&file_sink);
+ *     ```
+ *
+ *     Now lets say you have this logs in code:
+ *        ```c
+ *        LOGCIE_INFO("Starting the application");
+ *        LOGCIE_VERBOSE("Version v%s", get_version_string());
+ *        LOGCIE_DEBUG("Commit hash: %s", get_commit_hash());
+ *        LOGCIE_FATAL("Out of memory");
+ *        ```
+ *     User would see in the console:
+ *        ```console
+ *        [INFO] Starting the application
+ *        [FATAL] Out of memory
+ *        ```
+ *     but in the './log.txt':
+ *        ```text
+ *        INFO:main.c:12 Starting the application (12:07 11:03:2026)
+ *        VERBOSE:main.c:13 Version v4.25.1 (12:07 11:03:2026)
+ *        DEBUG:main.c:14 Commit hash: bf3b539fcbffcc8113f241ab8bf5454f84487b67 (12:08 11:03:2026)
+ *        FATAL:main.c:32 Out of memory (12:08 11:03:2026)
+ *        ```
+ *
+ *      While we here lets also go through how you can remove your Sinks:
+ *        ```c
+ *        // Remove your sink by index
+ *        logcie_remove_sink_by_index(1);
+ *
+ *        // Or do it by pointer
+ *        logcie_remove_sink(&file_sink);
+ *
+ *        // If you malloc'ed your sink there is handy way to remove it and free
+ *        logcie_remove_and_free_sink(&file_sink);
+ *        ```
+ *
+ * Author: Nikita (Strongleong) Chulkov nikita_chul@mail.ru
  * License: MIT
  */
 
