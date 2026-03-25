@@ -93,6 +93,51 @@
  *   Ensure that any Sink you create remains valid for as long as it is in use.
  *   TIP: Just have them in main function, or in static/global scope.
  *
+ * Modules:
+ *   Logcie has another important concept: modules. A module is simply a string used
+ *   to label a *scope* where the log originated.
+ *
+ *   Modules allow you to group logs by subsystem (e.g., "network", "core", "database")
+ *   and can be used in format strings or filters to provied additional context or control
+ *   log output.
+ *
+ *   To define a module, declare a variable name `logcie_module` in your translation uint:
+ *     ```c
+ *     static const char *logcie_module = "network";
+ *     ```
+ *
+ *   When defined, this value will be attached to every log emitted from that file.
+ *   If not defined, a default module name is used.
+ *
+ *   You can display the module in your logs using `$M` format token.
+ *   For example:
+ *     "$d $t [$L] ($M) $m"
+ *   will output
+ *      2026-03-25 12:00:00 [INFO] (network) Connection established
+ *
+ *   Modules can also be used in custom filters to selectively allow or block logs
+ *   from specific parts of your application.
+ *
+ *   Modules also make it easy to integrate Logcie-compatible logging into third-party
+ *   libraries without creating tight dependencies.
+ *
+ *   A library can define its own module name and use logging macros (or wrapper macros)
+ *   without needing direct knowledge of the application's logging setup.
+ *
+ *   Example (inside a library):
+ *     ```c
+ *     #ifndef MYLIB_LOG
+ *       #ifdef LOGCIE
+ *         static const char *logcie_module = "mylib";
+ *         #define MYLIB_LOG(level, ...) LOGCIE_##level(__VA_ARGS__)
+ *       #else
+ *         #define MYLIB_LOG(level, ...)
+ *       #endif
+ *     #endif
+ *
+ *     MYLIB_LOG(INFO, "Library initialized");
+ *     ```
+ *
  * Example:
  *   You can have sink that will format log with "[$log level$] $log message$"
  *    format to stdout, filtering out everything more verbose than LOGCIE_INFO level. At the
