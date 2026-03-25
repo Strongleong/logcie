@@ -6,9 +6,9 @@
  *   It supports multiple log levels, ANSI color output, flexible formatting, and
  *   customizable filters and sinks for advanced logging use cases.
  *
- *   This library is NOT thread-safe in version 1.0.
+ *   This library is NOT thread-safe in version 0.x.
  *       Concurrent calls from multiple threads may interleave output.
- *       Thread safety is planned for version 2.0.
+ *       Thread safety is planned for version 1.0.
  *
  * Usage:
  *   #define LOGCIE_IMPLEMENTATION
@@ -121,12 +121,21 @@ typedef struct Logcie_Log  Logcie_Log;
  * to a sink. Sink could be anything, from FILE* to a HTTP API endpoint,
  * so this is why it is a customizable function.
  *
- * @param data       Formatted log data
- * @param size       Length of formatted log data
  * @param user_data  Data for writing logs (FILE *, API endpoint, etc.)
+ * @param fmt        String to output (can be printf format string)
+ * @param va         Va list of arguments. Can be null, and arguments can be provided as variadics
+ * @return Total number of characters written to the sink by writer
  */
 typedef size_t(Logcie_WriterFn)(void *user_data, const char *fmt, va_list *va, ...);
 
+/**
+ * @brief Writer struct
+ *
+ * Stores writer function pointer and custom data for it
+ *
+ * @param write  Writer function pointer
+ * @param data   Custom data for writer function
+ */
 typedef struct Logcie_Writer {
   Logcie_WriterFn *write;
   void            *data;
@@ -136,16 +145,25 @@ typedef struct Logcie_Writer {
  * @brief Formatter function type signature.
  *
  * A formatter function is responsible for converting a Logcie_Log structure
- * into formatted output written to a sink. The default formatter is
- * logcie_printf_formatter() which uses $ tokens for formatting.
+ * into formatted output that would be written to a sink. It should call writer->write
+ * with formatted chunks of log to write them to a sink.
  *
- * @param sink  The sink to write formatted output to
- * @param log   Log metadata and message to format
- * @param args  Variable argument list for message formatting
- * @return      Number of characters written to the sink
+ * @param writer     Pointer to writer (see Logcie_Writer)
+ * @param user_data  Data for formatting logs (Format string, options flags, current phase of the moon, etc)
+ * @param log        Lot to format
+ * @param va         Variadic arguments that was passed to logging function (LOGCIE_INFO("message %s", "this would be in va")
+ * @return Number of characters written to the sink
  */
 typedef size_t(Logcie_FormatterFn)(Logcie_Writer *writer, void *user_data, Logcie_Log log, va_list *args);
 
+/**
+ * @brief Formatter struct
+ *
+ * Stores formatter function pointer and custom data for it
+ *
+ * @param format  Formatter function pointer
+ * @param data    Custom data for writer function
+ */
 typedef struct Logcie_Formatter {
   Logcie_FormatterFn *format;
   void               *data;
@@ -164,6 +182,14 @@ typedef struct Logcie_Formatter {
  */
 typedef uint8_t(Logcie_FilterFn)(Logcie_Sink *sink, Logcie_Log *log);
 
+/**
+ * @brief Filter struct
+ *
+ * Stores filter function pointer and custom data for it
+ *
+ * @param filter  Filter function pointer
+ * @param data    Custom data for filter function
+ */
 typedef struct Logcie_Filter {
   Logcie_FilterFn *filter;
   void            *data;
@@ -173,40 +199,20 @@ typedef struct Logcie_Filter {
  * @brief Structure representing a single log sink (output target).
  *
  * A sink defines where log messages are written and how they are formatted.
- * Multiple sinks can be active simultaneously, each with different formatting
- * and filtering rules.
+ * Multiple sinks can be active simultaneously, each with different formatting,
+ * write target and filtering rules.
  *
- * Here is the list of all formatting tokens:
- *
- * `$m` - Log message with printf formatting
- * `$f` - Source file name
- * `$x` - Line number
- * `$M` - Module name
- * `$l` - Log level (lowercase)
- * `$L` - Log level (uppercase)
- * `$c` - ANSI color code for log level
- * `$r` - ANSI reset color code
- * `$d` - Date (YYYY-MM-DD)
- * `$t` - Time (HH:MM:SS)
- * `$z` - Timezone offset
- * `$<n - Pads with n spaces
- * `$$` - Literal dollar sign
- *
- * @field min_level        Minimum log level to emit (messages below this are ignored)
- * @field fmt              Format string using $ tokens for customization
- * @field writer           Function pointer to writer
- * @field formatter        Function pointer to formatter
- * @field filter           Optional filter function to selectively output messages
- * @field writer_data      Custom data for writer
- * @field formatter_data   Custom data for formatter
- * @field filter_data      Custom data for filter
+ * @field min_level  Minimum log level to emit (messages below this are ignored)
+ * @field formatter  Formatter that will format logs
+ * @field writer     Writer that will write logs
+ * @field filter     Filter for filtering logs
  */
 struct Logcie_Sink {
-  Logcie_LogLevel min_level;  ///< Minimum log level to emit
+  Logcie_LogLevel min_level;
 
-  Logcie_Formatter formatter;  ///< Formatter function
-  Logcie_Writer    writer;     ///< Writer function
-  Logcie_Filter    filter;     ///< Optional filter function
+  Logcie_Formatter formatter;
+  Logcie_Writer    writer;
+  Logcie_Filter    filter;
 };
 
 /**
@@ -257,13 +263,10 @@ struct Logcie_Log {
   }
 
 #ifndef PRINTF_TYPECHECK
-#define PRINTF_TYPECHECK(a, b)
-
-#if defined __has_attribute
-#if __has_attribute(__format__)
-#undef PRINTF_TYPECHECK
+#if defined __has_attribute && __has_attribute(__format__)
 #define PRINTF_TYPECHECK(a, b) __attribute__((__format__(__printf__, a, b)))
-#endif
+#else
+#define PRINTF_TYPECHECK(a, b)
 #endif
 #endif
 
@@ -272,49 +275,48 @@ struct Logcie_Log {
  * These use __FILE__ and __LINE__ to capture call site.
  */
 #if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 202311L)
-#define LOGCIE_TRACE(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
-#define LOGCIE_DEBUG(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
-#define LOGCIE_VERBOSE(msg, ...) logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
-#define LOGCIE_INFO(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
-#define LOGCIE_WARN(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
-#define LOGCIE_ERROR(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
-#define LOGCIE_FATAL(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
+#define LOGCIE_TRACE(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
+#define LOGCIE_DEBUG(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
+#define LOGCIE_VERBOSE(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
+#define LOGCIE_INFO(msg, ...)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
+#define LOGCIE_WARN(msg, ...)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
+#define LOGCIE_ERROR(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
+#define LOGCIE_FATAL(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
 #define LOGCIE_LOG(level, msg, ...) LOGCIE_##level(msg, __VA_OPT__(, ) __VA_ARGS__)
 #else
 #if !defined(LOGCIE_PEDANTIC) && (defined(__GNUC__) || defined(__clang__))
-#define LOGCIE_TRACE(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
-#define LOGCIE_DEBUG(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
-#define LOGCIE_VERBOSE(msg, ...) logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
-#define LOGCIE_INFO(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
-#define LOGCIE_WARN(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
-#define LOGCIE_ERROR(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
-#define LOGCIE_FATAL(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
+#define LOGCIE_TRACE(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
+#define LOGCIE_DEBUG(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
+#define LOGCIE_VERBOSE(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
+#define LOGCIE_INFO(msg, ...)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
+#define LOGCIE_WARN(msg, ...)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
+#define LOGCIE_ERROR(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
+#define LOGCIE_FATAL(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
 #define LOGCIE_LOG(level, msg, ...) LOGCIE_##level(msg, ##__VA_ARGS__)
 #else
-#define LOGCIE_TRACE(msg)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE, msg, __FILE__, __LINE__), msg)
-#define LOGCIE_DEBUG(msg)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG, msg, __FILE__, __LINE__), msg)
-#define LOGCIE_VERBOSE(msg) logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__), msg)
-#define LOGCIE_INFO(msg)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO, msg, __FILE__, __LINE__), msg)
-#define LOGCIE_WARN(msg)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN, msg, __FILE__, __LINE__), msg)
-#define LOGCIE_ERROR(msg)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR, msg, __FILE__, __LINE__), msg)
-#define LOGCIE_FATAL(msg)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL, msg, __FILE__, __LINE__), msg)
+#define LOGCIE_TRACE(msg)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE, msg, __FILE__, __LINE__), msg)
+#define LOGCIE_DEBUG(msg)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG, msg, __FILE__, __LINE__), msg)
+#define LOGCIE_VERBOSE(msg)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__), msg)
+#define LOGCIE_INFO(msg)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO, msg, __FILE__, __LINE__), msg)
+#define LOGCIE_WARN(msg)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN, msg, __FILE__, __LINE__), msg)
+#define LOGCIE_ERROR(msg)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR, msg, __FILE__, __LINE__), msg)
+#define LOGCIE_FATAL(msg)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL, msg, __FILE__, __LINE__), msg)
 #define LOGCIE_LOG(level, msg) LOGCIE_##level(msg)
 #define LOGCIE_VA_LOGS
 #endif
 #endif
 
+// Separate variadic logs for compilres that do not support optional variadics in macros
 #ifdef LOGCIE_VA_LOGS
-#define LOGCIE_TRACE_VA(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
-#define LOGCIE_DEBUG_VA(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
-#define LOGCIE_VERBOSE_VA(msg, ...) logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
-#define LOGCIE_INFO_VA(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
-#define LOGCIE_WARN_VA(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
-#define LOGCIE_ERROR_VA(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
-#define LOGCIE_FATAL_VA(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
+#define LOGCIE_TRACE_VA(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
+#define LOGCIE_DEBUG_VA(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
+#define LOGCIE_VERBOSE_VA(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
+#define LOGCIE_INFO_VA(msg, ...)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
+#define LOGCIE_WARN_VA(msg, ...)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
+#define LOGCIE_ERROR_VA(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
+#define LOGCIE_FATAL_VA(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
 #define LOGCIE_LOG_VA(level, msg, ...) LOGCIE_##level##_VA(msg, __VA_ARGS__)
 #endif
-
-
 
 /**
  * @brief Emit a log message using the provided log metadata and arguments.
@@ -421,22 +423,39 @@ LOGCIE_DEF void logcie_remove_all_sinks(void);
  * using $ tokens. It supports timestamps, colors, file locations, modules,
  * and custom formatting.
  *
- * @param sink The sink to write formatted output to
- * @param log Log metadata and message to format
- * @param args Variable argument list for message formatting
+ * Here is the list of all formatting tokens:
+ *
+ * `$m` - Log message with printf formatting
+ * `$f` - Source file name
+ * `$x` - Line number
+ * `$M` - Module name
+ * `$l` - Log level (lowercase)
+ * `$L` - Log level (uppercase)
+ * `$c` - ANSI color code for log level
+ * `$r` - ANSI reset color code
+ * `$d` - Date (YYYY-MM-DD)
+ * `$t` - Time (HH:MM:SS)
+ * `$z` - Timezone offset
+ * `$<n - Pads with n spaces
+ * `$$` - Literal dollar sign
+ *
+ * @param writer     Pointer to writer (see Logcie_Writer)
+ * @param user_data  Pointer to format string
+ * @param log        Lot to format
+ * @param va         Variadic arguments that was passed to logging function (LOGCIE_INFO("message %s", "this would be in va")
  * @return Number of characters written to the sink
- * @see Format Tokens in README for complete $ token reference
  */
 LOGCIE_DEF size_t logcie_printf_formatter(Logcie_Writer *writer, void *user_data, Logcie_Log log, va_list *args);
 
 /**
  * @brief Default printf writer
  *
- * This is the built-in writer that provides writes logs with fwrite
+ * This is the built-in writer that provides writes logs with vfprintf
  *
- * @param data       Formatted log data
- * @param size       Length of formatted log data
  * @param user_data  Pointer to FILE where logs would be written
+ * @param fmt        String to output (can be printf format string)
+ * @param va         Va list of arguments. Can be null, and arguments can be provided as variadics
+ * @return Total number of characters written to the sink by writer
  */
 LOGCIE_DEF size_t logcie_printf_writer(void *user_data, const char *fmt, va_list *va, ...);
 
@@ -451,6 +470,8 @@ LOGCIE_DEF size_t logcie_printf_writer(void *user_data, const char *fmt, va_list
  *               or NULL to reset to defaults
  * @note Colors are applied globally to all sinks using the default formatter
  * @note Custom formatters may ignore these colors
+ * @note I can not check if colors array is valid in runtime. I did what I can,
+ *       but still try to compile if -fsanitize=address to check if everything is all right
  */
 LOGCIE_DEF void logcie_set_colors(const char **colors);
 
@@ -550,7 +571,7 @@ static inline const char *get_logcie_level_color(Logcie_LogLevel level) {
 }
 
 static Logcie_Sink default_stdout_sink = {
-    .min_level = LOGCIE_LEVEL_TRACE, // NOTE: @filters_lib
+    .min_level = LOGCIE_LEVEL_TRACE,  // NOTE: @filters_lib
     .formatter = {logcie_printf_formatter, (void *)("$c$L$r " LOGCIE_COLOR_GRAY "$f:$x$r: $m")},
     .writer    = {logcie_printf_writer, NULL},
     .filter    = {NULL, NULL},
@@ -702,7 +723,7 @@ size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
 }
 
 size_t logcie_printf_formatter(Logcie_Writer *writer, void *data, Logcie_Log log, va_list *args) {
-  const char *fmt = (const char *) data;
+  const char *fmt = (const char *)data;
   _LOGCIE_ASSERT(writer, "Sink have no writer");
   _LOGCIE_ASSERT(writer->data, "printf sink have nowhere to print");
 
@@ -800,7 +821,7 @@ size_t logcie_printf_formatter(Logcie_Writer *writer, void *data, Logcie_Log log
 
 LOGCIE_DEF size_t logcie_printf_writer(void *user_data, const char *fmt, va_list *va, ...) {
   _LOGCIE_ASSERT(user_data, "Printf writer have nothing to write to");
-  FILE *file = (FILE *)user_data;
+  FILE   *file = (FILE *)user_data;
   va_list args;
 
   if (va != NULL) {
