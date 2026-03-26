@@ -5,9 +5,9 @@
 #include <logcie.h>
 
 size_t my_simple_formatter(Logcie_Writer *writer, void *user_data, Logcie_Log log, va_list *args) {
-  (void) user_data;
+  (void)user_data;
 
-  char time_buf[9];
+  char       time_buf[9];
   struct tm *tminfo = localtime(&log.time);
   strftime(time_buf, sizeof(time_buf), "%H:%M:%S", tminfo);
 
@@ -20,9 +20,9 @@ size_t my_simple_formatter(Logcie_Writer *writer, void *user_data, Logcie_Log lo
 
 int main(void) {
   Logcie_Sink my_sink = {
-      .min_level   = LOGCIE_LEVEL_TRACE,
-      .formatter   = {my_simple_formatter, NULL},
-      .writer      = {logcie_printf_writer, stdout},
+    .formatter = {my_simple_formatter, NULL},
+    .writer    = {logcie_printf_writer, stdout},
+    .filter    = logcie_filter_level_min(LOGCIE_LEVEL_TRACE)
   };
 
   logcie_add_sink(&my_sink);

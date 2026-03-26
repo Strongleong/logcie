@@ -14,13 +14,13 @@ int main(void) {
   }
 
   Logcie_Sink file_sink = {
-      .min_level = LOGCIE_LEVEL_DEBUG,
-      // nice format: date, time, level, module, message
-      .writer    = {
-             .write = logcie_printf_writer,
-             .data  = logfile,
-      },
-      .formatter = {logcie_printf_formatter,  "$d $t [$L] ($M) $m"},
+    .writer = {
+      .write = logcie_printf_writer,
+      .data  = logfile,
+    },
+    // nice format: date, time, level, module, message
+    .formatter = {logcie_printf_formatter, "$d $t [$L] ($M) $m"},
+    .filter    = logcie_filter_level_min(LOGCIE_LEVEL_DEBUG)
   };
 
   logcie_add_sink(&file_sink);

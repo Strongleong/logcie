@@ -1,6 +1,5 @@
-# .clangd
 FallbackFlags:
-  - -std=c11
+  - -std=c99
   - -I.
 Format:
   Style: file

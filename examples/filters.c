@@ -25,42 +25,44 @@ void module(void) {
 }
 
 int main(void) {
-  Logcie_Sink info_sink = {
-      .min_level = LOGCIE_LEVEL_TRACE,
-      .writer    = {logcie_printf_writer, stdout},
-      .formatter = {logcie_printf_formatter,  "$c$L (Info)$r $m"},
-      .filter    = {min_info_filter, NULL},  // Use info filter
-  };
+  // TODO: TBD
 
-  Logcie_Sink module_sink = {
-      .min_level = LOGCIE_LEVEL_TRACE,
-      .writer    = {logcie_printf_writer, stdout},
-      .formatter = {logcie_printf_formatter,  "$c$L (Module)$r $m"},
-      .filter    = {module_filter, NULL},
-  };
-
-  Logcie_Sink common_sink = {
-      .min_level = LOGCIE_LEVEL_TRACE,
-      .writer    = {logcie_printf_writer, stdout},
-      .formatter = {logcie_printf_formatter,  "$c$L (Common)$r $m"},
-      .filter    = {common_filter, NULL},
-  };
-
-  logcie_add_sink(&info_sink);
-  logcie_add_sink(&module_sink);
-  logcie_add_sink(&common_sink);
-
-  // Example logs
-  LOGCIE_TRACE("this should NOT appear");
-  LOGCIE_DEBUG("this should NOT appear either");
-  LOGCIE_INFO("info log - should appear only in info logger");
-
-  LOGCIE_INFO("you can set filters runtime");
-  module_sink.filter.filter = min_info_filter;
-  LOGCIE_TRACE("now this should appear in module logger");
-
-  module();
-
-  LOGCIE_WARN("warning log - should also appear in info logger");
+  /* Logcie_Sink info_sink = { */
+  /*   .min_level = LOGCIE_LEVEL_TRACE, */
+  /*   .writer    = {logcie_printf_writer, stdout}, */
+  /*   .formatter = {logcie_printf_formatter, "$c$L (Info)$r $m"}, */
+  /*   .filter    = {min_info_filter, NULL},  // Use info filter */
+  /* }; */
+  /**/
+  /* Logcie_Sink module_sink = { */
+  /*   .min_level = LOGCIE_LEVEL_TRACE, */
+  /*   .writer    = {logcie_printf_writer, stdout}, */
+  /*   .formatter = {logcie_printf_formatter, "$c$L (Module)$r $m"}, */
+  /*   .filter    = {module_filter, NULL}, */
+  /* }; */
+  /**/
+  /* Logcie_Sink common_sink = { */
+  /*   .min_level = LOGCIE_LEVEL_TRACE, */
+  /*   .writer    = {logcie_printf_writer, stdout}, */
+  /*   .formatter = {logcie_printf_formatter, "$c$L (Common)$r $m"}, */
+  /*   .filter    = {common_filter, NULL}, */
+  /* }; */
+  /**/
+  /* logcie_add_sink(&info_sink); */
+  /* logcie_add_sink(&module_sink); */
+  /* logcie_add_sink(&common_sink); */
+  /**/
+  /* // Example logs */
+  /* LOGCIE_TRACE("this should NOT appear"); */
+  /* LOGCIE_DEBUG("this should NOT appear either"); */
+  /* LOGCIE_INFO("info log - should appear only in info logger"); */
+  /**/
+  /* LOGCIE_INFO("you can set filters runtime"); */
+  /* module_sink.filter.filter = min_info_filter; */
+  /* LOGCIE_TRACE("now this should appear in module logger"); */
+  /**/
+  /* module(); */
+  /**/
+  /* LOGCIE_WARN("warning log - should also appear in info logger"); */
   return 0;
 }

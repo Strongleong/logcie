@@ -55,6 +55,7 @@ extern "C" {
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
 
 /**
@@ -162,7 +163,7 @@ typedef struct Logcie_Formatter {
  * @param log   Log metadata to evaluate
  * @return      1 to emit log, 0 to suppress
  */
-typedef uint8_t(Logcie_FilterFn)(Logcie_Sink *sink, Logcie_Log *log);
+typedef uint8_t(Logcie_FilterFn)(void *data, Logcie_Log *log);
 
 typedef struct Logcie_Filter {
   Logcie_FilterFn *filter;
@@ -202,8 +203,6 @@ typedef struct Logcie_Filter {
  * @field filter_data      Custom data for filter
  */
 struct Logcie_Sink {
-  Logcie_LogLevel min_level;  ///< Minimum log level to emit
-
   Logcie_Formatter formatter;  ///< Formatter function
   Logcie_Writer    writer;     ///< Writer function
   Logcie_Filter    filter;     ///< Optional filter function
@@ -272,49 +271,47 @@ struct Logcie_Log {
  * These use __FILE__ and __LINE__ to capture call site.
  */
 #if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 202311L)
-#define LOGCIE_TRACE(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
-#define LOGCIE_DEBUG(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
-#define LOGCIE_VERBOSE(msg, ...) logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
-#define LOGCIE_INFO(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
-#define LOGCIE_WARN(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
-#define LOGCIE_ERROR(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
-#define LOGCIE_FATAL(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
+#define LOGCIE_TRACE(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
+#define LOGCIE_DEBUG(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
+#define LOGCIE_VERBOSE(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
+#define LOGCIE_INFO(msg, ...)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
+#define LOGCIE_WARN(msg, ...)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
+#define LOGCIE_ERROR(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
+#define LOGCIE_FATAL(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
 #define LOGCIE_LOG(level, msg, ...) LOGCIE_##level(msg, __VA_OPT__(, ) __VA_ARGS__)
 #else
 #if !defined(LOGCIE_PEDANTIC) && (defined(__GNUC__) || defined(__clang__))
-#define LOGCIE_TRACE(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
-#define LOGCIE_DEBUG(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
-#define LOGCIE_VERBOSE(msg, ...) logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
-#define LOGCIE_INFO(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
-#define LOGCIE_WARN(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
-#define LOGCIE_ERROR(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
-#define LOGCIE_FATAL(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
+#define LOGCIE_TRACE(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
+#define LOGCIE_DEBUG(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
+#define LOGCIE_VERBOSE(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
+#define LOGCIE_INFO(msg, ...)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
+#define LOGCIE_WARN(msg, ...)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
+#define LOGCIE_ERROR(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
+#define LOGCIE_FATAL(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
 #define LOGCIE_LOG(level, msg, ...) LOGCIE_##level(msg, ##__VA_ARGS__)
 #else
-#define LOGCIE_TRACE(msg)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE, msg, __FILE__, __LINE__), msg)
-#define LOGCIE_DEBUG(msg)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG, msg, __FILE__, __LINE__), msg)
-#define LOGCIE_VERBOSE(msg) logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__), msg)
-#define LOGCIE_INFO(msg)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO, msg, __FILE__, __LINE__), msg)
-#define LOGCIE_WARN(msg)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN, msg, __FILE__, __LINE__), msg)
-#define LOGCIE_ERROR(msg)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR, msg, __FILE__, __LINE__), msg)
-#define LOGCIE_FATAL(msg)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL, msg, __FILE__, __LINE__), msg)
+#define LOGCIE_TRACE(msg)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE, msg, __FILE__, __LINE__), msg)
+#define LOGCIE_DEBUG(msg)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG, msg, __FILE__, __LINE__), msg)
+#define LOGCIE_VERBOSE(msg)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__), msg)
+#define LOGCIE_INFO(msg)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO, msg, __FILE__, __LINE__), msg)
+#define LOGCIE_WARN(msg)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN, msg, __FILE__, __LINE__), msg)
+#define LOGCIE_ERROR(msg)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR, msg, __FILE__, __LINE__), msg)
+#define LOGCIE_FATAL(msg)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL, msg, __FILE__, __LINE__), msg)
 #define LOGCIE_LOG(level, msg) LOGCIE_##level(msg)
 #define LOGCIE_VA_LOGS
 #endif
 #endif
 
 #ifdef LOGCIE_VA_LOGS
-#define LOGCIE_TRACE_VA(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
-#define LOGCIE_DEBUG_VA(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
-#define LOGCIE_VERBOSE_VA(msg, ...) logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
-#define LOGCIE_INFO_VA(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
-#define LOGCIE_WARN_VA(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
-#define LOGCIE_ERROR_VA(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
-#define LOGCIE_FATAL_VA(msg, ...)   logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
+#define LOGCIE_TRACE_VA(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
+#define LOGCIE_DEBUG_VA(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
+#define LOGCIE_VERBOSE_VA(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
+#define LOGCIE_INFO_VA(msg, ...)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
+#define LOGCIE_WARN_VA(msg, ...)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
+#define LOGCIE_ERROR_VA(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
+#define LOGCIE_FATAL_VA(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
 #define LOGCIE_LOG_VA(level, msg, ...) LOGCIE_##level##_VA(msg, __VA_ARGS__)
 #endif
-
-
 
 /**
  * @brief Emit a log message using the provided log metadata and arguments.
@@ -440,6 +437,103 @@ LOGCIE_DEF size_t logcie_printf_formatter(Logcie_Writer *writer, void *user_data
  */
 LOGCIE_DEF size_t logcie_printf_writer(void *user_data, const char *fmt, va_list *va, ...);
 
+typedef struct Logcie_FilterCombinationData {
+  Logcie_Filter a;
+  Logcie_Filter b;
+} Logcie_FilterCombinationData;
+
+/**
+ * @param data *Logcie_FilterCombinationData
+ */
+LOGCIE_DEF uint8_t logcie_filter_or_fn(void *data, Logcie_Log *log);
+
+/**
+ * @param data *Logcie_FilterCombinationData
+ */
+LOGCIE_DEF uint8_t logcie_filter_and_fn(void *data, Logcie_Log *log);
+
+/**
+ * @param data *Logcie_Filter
+ */
+LOGCIE_DEF uint8_t logcie_filter_not_fn(void *data, Logcie_Log *log);
+
+/**
+ * @param data *Logcie_LogLevel
+ */
+LOGCIE_DEF uint8_t logcie_filter_level_min_fn(void *data, Logcie_Log *log);
+
+/**
+ * @param data *Logcie_LogLevel
+ */
+LOGCIE_DEF uint8_t logcie_filter_level_max_fn(void *data, Logcie_Log *log);
+
+/**
+ * @param data cosnt char*
+ */
+LOGCIE_DEF uint8_t logcie_filter_module_eq_fn(void *data, Logcie_Log *log);
+
+/**
+ * @param data const char*
+ */
+LOGCIE_DEF uint8_t logcie_filter_message_contains_fn(void *data, Logcie_Log *log);
+
+typedef uint8_t(Logcie_FilterCustomPredicateFn)(Logcie_Log *log);
+
+/**
+ * @param data *Logcie_FilterCustomPredicateFn
+ */
+LOGCIE_DEF uint8_t logcie_filter_custom_fn(void *data, Logcie_Log *log);
+
+// Some handy filter "constructors"
+
+#define logcie_filter_and(fn_a, fn_b)                               \
+  (Logcie_Filter) {                                                 \
+    logcie_filter_and_fn, (void *)&(Logcie_FilterCombinationData) { \
+      (fn_a), (fn_b)                                                \
+    }                                                               \
+  }
+
+#define logcie_filter_or(fn_a, fn_b)                               \
+  (Logcie_Filter) {                                                \
+    logcie_filter_or_fn, (void *)&(Logcie_FilterCombinationData) { \
+      (fn_a), (fn_b)                                               \
+    }                                                              \
+  }
+
+#define logcie_filter_not(fn)                              \
+  (Logcie_Filter) {                                        \
+    logcie_filter_not_fn, (void *)(Logcie_FilterFn *)(&fn) \
+  }
+
+#define logcie_filter_level_min(level)                       \
+  (Logcie_Filter) {                                          \
+    logcie_filter_level_min_fn, (void *)&(Logcie_LogLevel) { \
+      (level)                                                \
+    }                                                        \
+  }
+
+#define logcie_filter_level_max(level)                       \
+  (Logcie_Filter) {                                          \
+    logcie_filter_level_max_fn, (void *)&(Logcie_LogLevel) { \
+      (level)                                                \
+    }                                                        \
+  }
+
+#define logcie_filter_module_eq(module)          \
+  (Logcie_Filter) {                              \
+    logcie_filter_module_eq_fn, (void *)(module) \
+  }
+
+#define logcie_filter_message_contains(substr)          \
+  (Logcie_Filter) {                                     \
+    logcie_filter_message_contains_fn, (void *)(substr) \
+  }
+
+#define logcie_filter_custom(fn)          \
+  (Logcie_Filter) {                       \
+    logcie_filter_custom_fn, (void *)(fn) \
+  }
+
 /**
  * @brief Allows customization of log level colors. Must be array of size Count_LOGCIE_LEVEL.
  *
@@ -488,13 +582,13 @@ static const char *default_module = "Logcie";
 #endif
 
 static const char *logcie_level_label[] = {
-    "trace",
-    "debug",
-    "verb",
-    "info",
-    "warn",
-    "error",
-    "fatal",
+  "trace",
+  "debug",
+  "verb",
+  "info",
+  "warn",
+  "error",
+  "fatal",
 };
 
 static inline const char *get_logcie_level_label(Logcie_LogLevel level) {
@@ -504,13 +598,13 @@ static inline const char *get_logcie_level_label(Logcie_LogLevel level) {
 }
 
 static const char *logcie_level_label_upper[] = {
-    "TRACE",
-    "DEBUG",
-    "VERB",
-    "INFO",
-    "WARN",
-    "ERROR",
-    "FATAL",
+  "TRACE",
+  "DEBUG",
+  "VERB",
+  "INFO",
+  "WARN",
+  "ERROR",
+  "FATAL",
 };
 
 static inline const char *get_logcie_level_label_upper(Logcie_LogLevel level) {
@@ -520,13 +614,13 @@ static inline const char *get_logcie_level_label_upper(Logcie_LogLevel level) {
 }
 
 static const char *logcie_default_level_color[] = {
-    LOGCIE_COLOR_GRAY,
-    LOGCIE_COLOR_GRAY,
-    LOGCIE_COLOR_GRAY,
-    LOGCIE_COLOR_BLUE,
-    LOGCIE_COLOR_YELLOW,
-    LOGCIE_COLOR_RED,
-    LOGCIE_COLOR_BRIGHT_RED,
+  LOGCIE_COLOR_GRAY,
+  LOGCIE_COLOR_GRAY,
+  LOGCIE_COLOR_GRAY,
+  LOGCIE_COLOR_BLUE,
+  LOGCIE_COLOR_YELLOW,
+  LOGCIE_COLOR_RED,
+  LOGCIE_COLOR_BRIGHT_RED,
 };
 
 static const char **logcie_level_color = logcie_default_level_color;
@@ -550,10 +644,9 @@ static inline const char *get_logcie_level_color(Logcie_LogLevel level) {
 }
 
 static Logcie_Sink default_stdout_sink = {
-    .min_level = LOGCIE_LEVEL_TRACE, // NOTE: @filters_lib
-    .formatter = {logcie_printf_formatter, (void *)("$c$L$r " LOGCIE_COLOR_GRAY "$f:$x$r: $m")},
-    .writer    = {logcie_printf_writer, NULL},
-    .filter    = {NULL, NULL},
+  .formatter = {logcie_printf_formatter, (void *)("$c$L$r " LOGCIE_COLOR_GRAY "$f:$x$r: $m")},
+  .writer    = {logcie_printf_writer, NULL},
+  .filter    = {NULL, NULL},
 };
 
 static Logcie_Sink *default_stdout_sink_ptr = &default_stdout_sink;
@@ -577,9 +670,9 @@ typedef struct Logcie_Logger {
 // INFO: By default there is one default sink to allow logging right
 //       after includnig logcie without initializing anything
 static Logcie_Logger logcie = {
-    .sinks     = &default_stdout_sink_ptr,
-    .sinks_len = 1,
-    .sinks_cap = 1,
+  .sinks     = &default_stdout_sink_ptr,
+  .sinks_len = 1,
+  .sinks_cap = 1,
 };
 
 size_t logcie_get_sink_count(void) {
@@ -681,11 +774,7 @@ size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
     Logcie_Sink *sink = logcie.sinks[i];
     _LOGCIE_ASSERT(sink && sink->formatter.format, "Sink have no formatter");
 
-    if (log.level < sink->min_level) {
-      continue;
-    }
-
-    if (sink->filter.filter && !sink->filter.filter(sink, &log)) {
+    if (sink->filter.filter && !sink->filter.filter(sink->filter.data, &log)) {
       continue;
     }
 
@@ -702,7 +791,7 @@ size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
 }
 
 size_t logcie_printf_formatter(Logcie_Writer *writer, void *data, Logcie_Log log, va_list *args) {
-  const char *fmt = (const char *) data;
+  const char *fmt = (const char *)data;
   _LOGCIE_ASSERT(writer, "Sink have no writer");
   _LOGCIE_ASSERT(writer->data, "printf sink have nowhere to print");
 
@@ -800,7 +889,7 @@ size_t logcie_printf_formatter(Logcie_Writer *writer, void *data, Logcie_Log log
 
 LOGCIE_DEF size_t logcie_printf_writer(void *user_data, const char *fmt, va_list *va, ...) {
   _LOGCIE_ASSERT(user_data, "Printf writer have nothing to write to");
-  FILE *file = (FILE *)user_data;
+  FILE   *file = (FILE *)user_data;
   va_list args;
 
   if (va != NULL) {
@@ -813,6 +902,62 @@ LOGCIE_DEF size_t logcie_printf_writer(void *user_data, const char *fmt, va_list
 
   va_end(args);
   return written;
+}
+
+LOGCIE_DEF uint8_t logcie_filter_not_fn(void *data, Logcie_Log *log) {
+  _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_not'");
+  _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_not'");
+  Logcie_Filter *filter = (Logcie_Filter *)data;
+  return !filter->filter(filter->data, log);
+}
+
+LOGCIE_DEF uint8_t logcie_filter_and_fn(void *data, Logcie_Log *log) {
+  _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_and'");
+  _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_and'");
+  Logcie_FilterCombinationData *d = (Logcie_FilterCombinationData *)data;
+  return d->a.filter(d->a.data, log) && d->b.filter(d->b.data, log);
+}
+
+LOGCIE_DEF uint8_t logcie_filter_or_fn(void *data, Logcie_Log *log) {
+  _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_or'");
+  _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_or'");
+  Logcie_FilterCombinationData *d = (Logcie_FilterCombinationData *)data;
+  return d->a.filter(d->a.data, log) || d->b.filter(d->b.data, log);
+}
+
+LOGCIE_DEF uint8_t logcie_filter_level_min_fn(void *data, Logcie_Log *log) {
+  _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_level_min'");
+  _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_level_min'");
+  Logcie_LogLevel *level = (Logcie_LogLevel *)data;
+  return log->level >= *level;
+}
+
+LOGCIE_DEF uint8_t logcie_filter_level_max_fn(void *data, Logcie_Log *log) {
+  _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_level_max'");
+  _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_level_max'");
+  Logcie_LogLevel *level = (Logcie_LogLevel *)data;
+  return log->level <= *level;
+}
+
+LOGCIE_DEF uint8_t logcie_filter_module_eq_fn(void *data, Logcie_Log *log) {
+  _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_module_eq'");
+  _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_module_eq'");
+  const char *module = (const char *)data;
+  return log->module && strcmp(module, log->module) == 0;
+}
+
+LOGCIE_DEF uint8_t logcie_filter_message_contains_fn(void *data, Logcie_Log *log) {
+  _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_message_contains'");
+  _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_message_contains'");
+  const char *str = (const char *)data;
+  return log->msg && strstr(log->msg, str);
+}
+
+LOGCIE_DEF uint8_t logcie_filter_custom_fn(void *data, Logcie_Log *log) {
+  _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_custom'");
+  _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_custom'");
+  Logcie_FilterCustomPredicateFn *predicate = (Logcie_FilterCustomPredicateFn *)data;
+  return predicate(log);
 }
 
 // TODO: Abiblity to accept custom stuff in logging (logging arrays)
