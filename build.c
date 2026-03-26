@@ -139,6 +139,7 @@ int main(void) {
     "clang -Wall -Wextra -std=c99 -I. -o out"PATH_SEP"pedantic_99      examples"PATH_SEP"pedantic_99.c -pedantic",
     "clang -Wall -Wextra -std=c11 -I. -o out"PATH_SEP"simple           examples"PATH_SEP"simple.c",
     "clang -Wall -Wextra -std=c11 -I. -o out"PATH_SEP"sink             examples"PATH_SEP"sink.c",
+    "g++ -Wall -Wextra -I. -o ./out"PATH_SEP"cpp examples"PATH_SEP"cpp.cpp",
   };
 
   for (size_t i = 0; i < ARR_LEN(examples); i++) {
