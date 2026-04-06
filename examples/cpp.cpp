@@ -6,9 +6,9 @@
 #define LOGCIE_IMPLEMENTATION
 #include <logcie.h>
 
-bool filter_exclude_noisy(void *data, Logcie_Log &log) {
+uint8_t filter_exclude_noisy(void *data, Logcie_Log *log) {
   (void) data;
-  return std::strcmp(log.location.file, "noisy.c") != 0;
+  return std::strcmp(log->location.file, "noisy.c") != 0;
 }
 
 class TimeoutData {
@@ -37,5 +37,13 @@ int main() {
       logcie_filter_message_contains("IMPORTANT")
     )
   };
+
+  logcie_add_sink(&console);
+
+  LOGCIE_INFO("Application starting");
+  LOGCIE_VERBOSE("Initializing subsystems");
+  LOGCIE_WARN("Warning: you are cool!");
+  LOGCIE_DEBUG("Very IMPORTANT: active sinks: %zu", logcie_get_sink_count());
+
   return 0;
 }
