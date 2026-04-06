@@ -94,7 +94,88 @@
  *   TIP: Just have them in main function, or in static/global scope.
  *
  * Filters:
- *   TBD!
+ *   Filters allow you to control which logs are emitted to a specific Sink.
+ *   Each Sink can have its own filter, enabling fine-grained routing of logs.
+ *
+ *   A filter is a structure that consist of pointer to filtering fucntion and
+ *   a pointer to custom data that filter might want to use.
+ *
+ *   A filtering function is simply a function that reciieves a `Logcie_Log` and returns:
+ *     1 (true)  - to allow the log
+ *     0 (false) - to suppress the log
+ *
+ *  If a Sink has no filter all logs are allowed.
+ *
+ *  Here is a list of built-in filters:
+ *
+ *    - logcie_filter_level_min(level)
+ *        Allows logs with level >= specified level
+ *
+ *    - logcie_filter_level_max(level)
+ *        Allows logs with level <= specified level
+ *
+ *    - logcie_filter_module_eq("module")
+ *        Allows logs only from specific module (see below for learning about modules)
+ *
+ *    - logcie_filter_message_contains("text")
+ *        Allows logs whosse messages contains the given substring
+ *
+ *    - logcie_filter_custom(fn)
+ *        Allows logs based on user-provied predicate function. This exists to
+ *        make it easier if you don't need custom data in your filter
+ *
+ *   Combining filters:
+ *
+ *    - logcie_filter_and(a, b)
+ *        Allows logs only if BOTH filters pass
+ *
+ *    - logcie_filter_or(a, b)
+ *        Allows logs only if EITHER filters pass
+ *
+ *    - logcie_filter_not(a)
+ *        Inverts theresult of a filter
+ *
+ *   Example:
+ *     ```c
+ *     // Sink that takes logs with level more than VERBOSE and not from "network" module
+ *     Logcie_Sink sink = {
+ *       //...
+ *       .filter = logcie_filter_and(
+ *         logcie_filter_level_min(LOGCIE_VERBOSE),
+ *         logcie_filter_not(
+ *           logcie_filter_module_eq("network")
+ *         )
+ *       )
+ *     };
+ *
+ *     uint8_t custom_filter_fn(void *data, Logcie_Log *log) {
+ *       (void) data; // ignored
+ *
+ *       // Do not allow logs from even lines
+ *       return log->location.line % 2 == 0;
+ *     }
+ *
+ *     Logcie_Sink another_sink = {
+ *       // ...
+ *       .filter = (Logcie_Filter) {
+ *         .filter = custom_filter_fn,
+ *         .data = NULL,
+ *       }
+ *     }
+ *
+ *     // Or if you do not need any custom data and you want to
+ *     // deal with creating custom structs you can do this:
+ *
+ *     Logcie_Sink another_sink = {
+ *       // ...
+ *       .filter = logcie_filter_custom(custom_filter_fn)
+ *     }
+ *     ```
+ *
+ *   Notes:
+ *     - Filters are evealuated per sink, independently.
+ *     - Be careful when using temporary data in filters (they rely on
+ *       compound literals and must remain valid during logging).
  *
  * Modules:
  *   Logcie has another important concept: modules. A module is simply a string used
