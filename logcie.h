@@ -6,16 +6,196 @@
  *   It supports multiple log levels, ANSI color output, flexible formatting, and
  *   customizable filters and sinks for advanced logging use cases.
  *
- *   This library is NOT thread-safe in version 1.0.
+ *   NOTE: This library is NOT thread-safe in version 0.x.
  *       Concurrent calls from multiple threads may interleave output.
- *       Thread safety is planned for version 2.0.
+ *       Thread safety is planned for version 1.0.
  *
- * Usage:
+ * Basic usage:
  *   #define LOGCIE_IMPLEMENTATION
  *   #include "logcie.h"
- *   LOGCIE_INFO("Hello from Logcie");
  *
- * Author: Nikita (Strongleong) Chulkov
+ *   LOGCIE_INFO("Hello from Logcie");
+ *   LOGCIE_VERBOSE("Logcie supports %s logging", "printf-style");
+ *
+ * Log levels:
+ *   Logcie supports 7 different log levels, ordered from lowest to highest severity:
+ *     TRACE   - Most detailed information for deep debugging
+ *     DEBUG   - Debugging information for development
+ *     VERBOSE - Verbose operational details
+ *     INFO    - General informational messages
+ *     WARN    - Warning conditions that might need attention
+ *     ERROR   - Error conditions that prevent normal operation
+ *     FATAL   - Fatal conditions requiring immediate shutdown
+ *
+ * How it works:
+ *   The core of this library is `Formatter`, `Writer` and `Filter`.
+ *
+ *   Formatter takes a log structure and is responsible for generating a string out of it.
+ *             While generating text that will be written in the log it calls Writer.
+ *   Writer receives formatted strings from the Formatter and it responsible for writing them
+ *          to the final destination. It can write logs to a FILE, send them to an HTTP API endpoint,
+ *          or even render them on embeded displays while blinking LED with color of current log level.
+ *   Filter filters out logs. Pretty much self-explanatory. We will ignore then for now scince they not finished yet.
+ *
+ *   A combination of Formatter, Writer and Filter is called a Sink.
+ *   You can have as many sinks as you want. Logcie will send logs to every sinks available.
+ *
+ *   Logcie itself is basically an array of Sinks and system of distributing logs to those Sinks.
+ *
+ * Defaults:
+ *   It would not be that great if Logcie was just empty framework and you need to set it up by yourself,
+ *   so Logcie comes with a couple of pre-defined functions:
+ *
+ *      - logcie_printf_writer    - built-in writer. Outputs logs in FILE* via vfprintf
+ *      - logcie_printf_formatter - built-in formatter that provides rich formatting using $ tokens. Here is the list:
+ *                                   `$m` - Log message with printf formatting
+ *                                   `$f` - Source file name
+ *                                   `$x` - Line number
+ *                                   `$M` - Module name
+ *                                   `$l` - Log level (lowercase)
+ *                                   `$L` - Log level (uppercase)
+ *                                   `$c` - ANSI color code for log level
+ *                                   `$r` - ANSI reset color code
+ *                                   `$d` - Date (YYYY-MM-DD)
+ *                                   `$t` - Time (HH:MM:SS)
+ *                                   `$z` - Timezone offset
+ *                                   `$<n - Pads with n spaces
+ *                                   `$$` - Literal dollar sign
+ *
+ *   Also by default, Logcie alredy has a Sink installed with the printf writer and formatter,
+ *   so you can start using it immediately after including the library.
+ *
+ *   Note: When you add your first Sink using `logcie_add_sink()`, the default printf Sink is removed.
+ *   You can restore it and remove your own sinks by calling `logcie_remove_all_sinks()`.
+ *
+ * Colors:
+ *   As you can see, `logcie_printf_formatter()` has support for ANSI colored output. It have
+ *   log level to ANSI color table to make your errors red, warnings yellow and infos blue.
+ *   You can modify this table with `logcie_set_colors()`:
+ *     ```c
+ *     const char *my_colors[Count_LOGCIE_LEVEL] = {
+ *         [LOGCIE_LEVEL_TRACE]   = "\x1b[90m",    // Gray
+ *         [LOGCIE_LEVEL_DEBUG]   = "\x1b[94m",    // Light blue
+ *         [LOGCIE_LEVEL_VERBOSE] = "\x1b[92m",    // Light green
+ *         [LOGCIE_LEVEL_INFO]    = "\x1b[1;32m",  // Bright green (bold)
+ *         [LOGCIE_LEVEL_WARN]    = "\x1b[33m",    // Yellow
+ *         [LOGCIE_LEVEL_ERROR]   = "\x1b[1;33m",  // Bright yellow (bold)
+ *         [LOGCIE_LEVEL_FATAL]   = "\x1b[1;31m",  // Bright red (bold)
+ *     };
+ *
+ *     logcie_set_colors(my_colors);
+ *     ```
+ *
+ *     To reset colors, call `logcie_set_colors(NULL)`.
+ *
+ * Memory management:
+ *   This library does not manage the lifetime of Sinks or their associated resources.
+ *   Ensure that any Sink you create remains valid for as long as it is in use.
+ *   TIP: Just have them in main function, or in static/global scope.
+ *
+ * Modules:
+ *   Logcie has another important concept: modules. A module is simply a string used
+ *   to label a *scope* where the log originated.
+ *
+ *   Modules allow you to group logs by subsystem (e.g., "network", "core", "database")
+ *   and can be used in format strings or filters to provied additional context or control
+ *   log output.
+ *
+ *   To define a module, declare a variable name `logcie_module` in your translation uint:
+ *     ```c
+ *     static const char *logcie_module = "network";
+ *     ```
+ *
+ *   When defined, this value will be attached to every log emitted from that file.
+ *   If not defined, a default module name is used.
+ *
+ *   You can display the module in your logs using `$M` format token.
+ *   For example:
+ *     "$d $t [$L] ($M) $m"
+ *   will output
+ *      2026-03-25 12:00:00 [INFO] (network) Connection established
+ *
+ *   Modules can also be used in custom filters to selectively allow or block logs
+ *   from specific parts of your application.
+ *
+ *   Modules also make it easy to integrate Logcie-compatible logging into third-party
+ *   libraries without creating tight dependencies.
+ *
+ *   A library can define its own module name and use logging macros (or wrapper macros)
+ *   without needing direct knowledge of the application's logging setup.
+ *
+ *   Example (inside a library):
+ *     ```c
+ *     #ifndef MYLIB_LOG
+ *       #ifdef LOGCIE
+ *         static const char *logcie_module = "mylib";
+ *         #define MYLIB_LOG(level, ...) LOGCIE_##level(__VA_ARGS__)
+ *       #else
+ *         #define MYLIB_LOG(level, ...)
+ *       #endif
+ *     #endif
+ *
+ *     MYLIB_LOG(INFO, "Library initialized");
+ *     ```
+ *
+ * Example:
+ *   You can have sink that will format log with "[$log level$] $log message$"
+ *    format to stdout, filtering out everything more verbose than LOGCIE_INFO level. At the
+ *    same time you can have second sink that will dump every log up until LOGCIE_DEBUG level
+ *    in './log.txt' file with format that would look like:
+ *    "$log level$:$file$:$line$: $log message$ ($log time$ $log date$)".
+ *
+ *     ```c
+ *     // Defining our sinks
+ *     Logcie_Sink stdout_sink = {
+ *       .formatter = { logcie_printf_formatter, "[$L] $m" },
+ *       .writer = { logcie_printf_writer, stdout },
+ *       .filter = { logcie_filter_level_min, LOGCIE_LEVEL_INFO }
+ *     };
+ *
+ *     Logcie_Sink file_sink = {
+ *       .formatter = { logcie_printf_formatter, "$L:$f:$x: $m ($t $d)" },
+ *       .writer = { logcie_printf_writer, fopen("./log.txt", "w") },
+ *     };
+ *
+ *     // New sinks must be registred with `logcie_add_sink()`
+ *     logcie_add_sink(&stdout_sink);
+ *     logcie_add_sink(&file_sink);
+ *     ```
+ *
+ *     Now lets say you have this logs in code:
+ *        ```c
+ *        LOGCIE_INFO("Starting the application");
+ *        LOGCIE_VERBOSE("Version v%s", get_version_string());
+ *        LOGCIE_DEBUG("Commit hash: %s", get_commit_hash());
+ *        LOGCIE_FATAL("Out of memory");
+ *        ```
+ *     User would see in the console:
+ *        ```console
+ *        [INFO] Starting the application
+ *        [FATAL] Out of memory
+ *        ```
+ *     but in the './log.txt':
+ *        ```text
+ *        INFO:main.c:12 Starting the application (12:07:59 11:03:2026)
+ *        VERBOSE:main.c:13 Version v4.25.1 (12:07:59 11:03:2026)
+ *        DEBUG:main.c:14 Commit hash: bf3b539fcbffcc8113f241ab8bf5454f84487b67 (12:08:00 11:03:2026)
+ *        FATAL:main.c:32 Out of memory (12:08:00 11:03:2026)
+ *        ```
+ *
+ *      While we are here, let's also go through how you can remove your Sinks:
+ *        ```c
+ *        // Remove your sink by index
+ *        logcie_remove_sink_by_index(1);
+ *
+ *        // Or do it by pointer
+ *        logcie_remove_sink(&file_sink);
+ *
+ *        // If you malloc'ed your sink there is handy way to remove it and free
+ *        logcie_remove_and_free_sink(&file_sink);
+ *        ```
+ *
+ * Author: Nikita (Strongleong) Chulkov nikita_chul@mail.ru
  * License: MIT
  */
 
@@ -90,7 +270,7 @@ typedef enum Logcie_LogLevel {
  *
  * When this variable is defined, all logs from this file will be tagged
  * with the specified module name, which can be displayed using $M in format strings
- * or can be useid in filters.
+ * or can be used in filters.
  *
  * For C++, we need a different approach
  * Users should define: const char *logcie_module = "module";
@@ -122,12 +302,21 @@ typedef struct Logcie_Log  Logcie_Log;
  * to a sink. Sink could be anything, from FILE* to a HTTP API endpoint,
  * so this is why it is a customizable function.
  *
- * @param data       Formatted log data
- * @param size       Length of formatted log data
  * @param user_data  Data for writing logs (FILE *, API endpoint, etc.)
+ * @param fmt        String to output (can be printf format string)
+ * @param va         List of arguments. Can be null, and arguments can be provided as variadics
+ * @return Total number of characters written to the sink by writer
  */
 typedef size_t(Logcie_WriterFn)(void *user_data, const char *fmt, va_list *va, ...);
 
+/**
+ * @brief Writer struct
+ *
+ * Stores writer function pointer and custom data for it
+ *
+ * @param write  Writer function pointer
+ * @param data   Custom data for writer function
+ */
 typedef struct Logcie_Writer {
   Logcie_WriterFn *write;
   void            *data;
@@ -137,16 +326,25 @@ typedef struct Logcie_Writer {
  * @brief Formatter function type signature.
  *
  * A formatter function is responsible for converting a Logcie_Log structure
- * into formatted output written to a sink. The default formatter is
- * logcie_printf_formatter() which uses $ tokens for formatting.
+ * into formatted output that would be written to a sink. It should call writer->write
+ * with formatted chunks of log to write them to a sink.
  *
- * @param sink  The sink to write formatted output to
- * @param log   Log metadata and message to format
- * @param args  Variable argument list for message formatting
- * @return      Number of characters written to the sink
+ * @param writer     Pointer to writer (see Logcie_Writer)
+ * @param user_data  Data for formatting logs (Format string, options flags, current phase of the moon, etc)
+ * @param log        Log to format
+ * @param va         Variadic arguments that was passed to logging function (LOGCIE_INFO("message %s", "this would be in va")
+ * @return Number of characters written to the sink
  */
 typedef size_t(Logcie_FormatterFn)(Logcie_Writer *writer, void *user_data, Logcie_Log log, va_list *args);
 
+/**
+ * @brief Formatter struct
+ *
+ * Stores formatter function pointer and custom data for it
+ *
+ * @param format  Formatter function pointer
+ * @param data    Custom data for writer function
+ */
 typedef struct Logcie_Formatter {
   Logcie_FormatterFn *format;
   void               *data;
@@ -165,6 +363,14 @@ typedef struct Logcie_Formatter {
  */
 typedef uint8_t(Logcie_FilterFn)(void *data, Logcie_Log *log);
 
+/**
+ * @brief Filter struct
+ *
+ * Stores filter function pointer and custom data for it
+ *
+ * @param filter  Filter function pointer
+ * @param data    Custom data for filter function
+ */
 typedef struct Logcie_Filter {
   Logcie_FilterFn *filter;
   void            *data;
@@ -174,38 +380,18 @@ typedef struct Logcie_Filter {
  * @brief Structure representing a single log sink (output target).
  *
  * A sink defines where log messages are written and how they are formatted.
- * Multiple sinks can be active simultaneously, each with different formatting
- * and filtering rules.
+ * Multiple sinks can be active simultaneously, each with different formatting,
+ * write target and filtering rules.
  *
- * Here is the list of all formatting tokens:
- *
- * `$m` - Log message with printf formatting
- * `$f` - Source file name
- * `$x` - Line number
- * `$M` - Module name
- * `$l` - Log level (lowercase)
- * `$L` - Log level (uppercase)
- * `$c` - ANSI color code for log level
- * `$r` - ANSI reset color code
- * `$d` - Date (YYYY-MM-DD)
- * `$t` - Time (HH:MM:SS)
- * `$z` - Timezone offset
- * `$<n - Pads with n spaces
- * `$$` - Literal dollar sign
- *
- * @field min_level        Minimum log level to emit (messages below this are ignored)
- * @field fmt              Format string using $ tokens for customization
- * @field writer           Function pointer to writer
- * @field formatter        Function pointer to formatter
- * @field filter           Optional filter function to selectively output messages
- * @field writer_data      Custom data for writer
- * @field formatter_data   Custom data for formatter
- * @field filter_data      Custom data for filter
+ * @field min_level  Minimum log level to emit (messages below this are ignored)
+ * @field formatter  Formatter that will format logs
+ * @field writer     Writer that will write logs
+ * @field filter     Filter for filtering logs
  */
 struct Logcie_Sink {
-  Logcie_Formatter formatter;  ///< Formatter function
-  Logcie_Writer    writer;     ///< Writer function
-  Logcie_Filter    filter;     ///< Optional filter function
+  Logcie_Formatter formatter;
+  Logcie_Writer    writer;
+  Logcie_Filter    filter;
 };
 
 /**
@@ -256,13 +442,10 @@ struct Logcie_Log {
   }
 
 #ifndef PRINTF_TYPECHECK
-#define PRINTF_TYPECHECK(a, b)
-
-#if defined __has_attribute
-#if __has_attribute(__format__)
-#undef PRINTF_TYPECHECK
+#if defined __has_attribute && __has_attribute(__format__)
 #define PRINTF_TYPECHECK(a, b) __attribute__((__format__(__printf__, a, b)))
-#endif
+#else
+#define PRINTF_TYPECHECK(a, b)
 #endif
 #endif
 
@@ -302,6 +485,7 @@ struct Logcie_Log {
 #endif
 #endif
 
+// Separate variadic logs for compilers that do not support optional variadics in macros
 #ifdef LOGCIE_VA_LOGS
 #define LOGCIE_TRACE_VA(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
 #define LOGCIE_DEBUG_VA(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
@@ -418,22 +602,39 @@ LOGCIE_DEF void logcie_remove_all_sinks(void);
  * using $ tokens. It supports timestamps, colors, file locations, modules,
  * and custom formatting.
  *
- * @param sink The sink to write formatted output to
- * @param log Log metadata and message to format
- * @param args Variable argument list for message formatting
+ * Here is the list of all formatting tokens:
+ *
+ * `$m` - Log message with printf formatting
+ * `$f` - Source file name
+ * `$x` - Line number
+ * `$M` - Module name
+ * `$l` - Log level (lowercase)
+ * `$L` - Log level (uppercase)
+ * `$c` - ANSI color code for log level
+ * `$r` - ANSI reset color code
+ * `$d` - Date (YYYY-MM-DD)
+ * `$t` - Time (HH:MM:SS)
+ * `$z` - Timezone offset
+ * `$<n - Pads with n spaces
+ * `$$` - Literal dollar sign
+ *
+ * @param writer     Pointer to writer (see Logcie_Writer)
+ * @param user_data  Pointer to format string
+ * @param log        Lot to format
+ * @param va         Variadic arguments that was passed to logging function (LOGCIE_INFO("message %s", "this would be in va")
  * @return Number of characters written to the sink
- * @see Format Tokens in README for complete $ token reference
  */
 LOGCIE_DEF size_t logcie_printf_formatter(Logcie_Writer *writer, void *user_data, Logcie_Log log, va_list *args);
 
 /**
  * @brief Default printf writer
  *
- * This is the built-in writer that provides writes logs with fwrite
+ * This is the built-in writer that writes logs using vfprintf
  *
- * @param data       Formatted log data
- * @param size       Length of formatted log data
  * @param user_data  Pointer to FILE where logs would be written
+ * @param fmt        String to output (can be printf format string)
+ * @param va         List of arguments. Can be null, and arguments can be provided as variadics
+ * @return Total number of characters written to the sink by writer
  */
 LOGCIE_DEF size_t logcie_printf_writer(void *user_data, const char *fmt, va_list *va, ...);
 
@@ -545,6 +746,8 @@ LOGCIE_DEF uint8_t logcie_filter_custom_fn(void *data, Logcie_Log *log);
  *               or NULL to reset to defaults
  * @note Colors are applied globally to all sinks using the default formatter
  * @note Custom formatters may ignore these colors
+ * @note I can not check if colors array is valid in runtime. I did what I can,
+ *       but still try to compile if -fsanitize=address to check if everything is all right
  */
 LOGCIE_DEF void logcie_set_colors(const char **colors);
 
@@ -668,7 +871,7 @@ typedef struct Logcie_Logger {
 } Logcie_Logger;
 
 // INFO: By default there is one default sink to allow logging right
-//       after includnig logcie without initializing anything
+//       after includnig Logcie without initializing anything
 static Logcie_Logger logcie = {
   .sinks     = &default_stdout_sink_ptr,
   .sinks_len = 1,
