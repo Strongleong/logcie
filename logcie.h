@@ -365,7 +365,7 @@ typedef enum Logcie_LogLevel {
  * @endcode
  */
 #ifdef __cplusplus
-#define LOGCIE_MODULE_DEF extern
+#define LOGCIE_MODULE_DEF
 #else
 #define LOGCIE_MODULE_DEF static
 #endif
@@ -386,7 +386,7 @@ typedef struct Logcie_Sink Logcie_Sink;
  * @brief Structure representing a complete log message with metadata.
  * @see struct Logcie_Log
  */
-typedef struct Logcie_Log  Logcie_Log;
+typedef struct Logcie_Log Logcie_Log;
 
 /**
  * @brief Writer function type signature
@@ -787,53 +787,49 @@ LOGCIE_DEF uint8_t logcie_filter_custom_fn(void *data, Logcie_Log *log);
 
 // Some handy filter "constructors"
 
-#define logcie_filter_and(fn_a, fn_b)                               \
-  (Logcie_Filter) {                                                 \
-    logcie_filter_and_fn, (void *)&(Logcie_FilterCombinationData) { \
-      (fn_a), (fn_b)                                                \
-    }                                                               \
-  }
+LOGCIE_DEF Logcie_Filter logcie_filter_and(Logcie_Filter a, Logcie_Filter b) {
+  static Logcie_FilterCombinationData storage;
+  storage.a = a;
+  storage.b = b;
+  return (Logcie_Filter){logcie_filter_and_fn, &storage};
+}
 
-#define logcie_filter_or(fn_a, fn_b)                               \
-  (Logcie_Filter) {                                                \
-    logcie_filter_or_fn, (void *)&(Logcie_FilterCombinationData) { \
-      (fn_a), (fn_b)                                               \
-    }                                                              \
-  }
+LOGCIE_DEF Logcie_Filter logcie_filter_or(Logcie_Filter a, Logcie_Filter b) {
+  static Logcie_FilterCombinationData storage;
+  storage.a = a;
+  storage.b = b;
+  return (Logcie_Filter){logcie_filter_or_fn, &storage};
+}
 
-#define logcie_filter_not(fn)                              \
-  (Logcie_Filter) {                                        \
-    logcie_filter_not_fn, (void *)(Logcie_FilterFn *)(&fn) \
-  }
+LOGCIE_DEF Logcie_Filter logcie_filter_not(Logcie_Filter const filter) {
+  static Logcie_Filter storage;
+  storage = filter;
+  return (Logcie_Filter){logcie_filter_or_fn, &storage};
+}
 
-#define logcie_filter_level_min(level)                       \
-  (Logcie_Filter) {                                          \
-    logcie_filter_level_min_fn, (void *)&(Logcie_LogLevel) { \
-      (level)                                                \
-    }                                                        \
-  }
+LOGCIE_DEF Logcie_Filter logcie_filter_level_min(Logcie_LogLevel level) {
+  static Logcie_LogLevel storage;
+  storage = level;
+  return (Logcie_Filter){logcie_filter_level_min_fn, &storage};
+}
 
-#define logcie_filter_level_max(level)                       \
-  (Logcie_Filter) {                                          \
-    logcie_filter_level_max_fn, (void *)&(Logcie_LogLevel) { \
-      (level)                                                \
-    }                                                        \
-  }
+LOGCIE_DEF Logcie_Filter logcie_filter_level_max(Logcie_LogLevel level) {
+  static Logcie_LogLevel storage;
+  storage = level;
+  return (Logcie_Filter){logcie_filter_level_max_fn, &storage};
+}
 
-#define logcie_filter_module_eq(module)          \
-  (Logcie_Filter) {                              \
-    logcie_filter_module_eq_fn, (void *)(module) \
-  }
+LOGCIE_DEF Logcie_Filter logcie_filter_module_eq(const char *module) {
+  return (Logcie_Filter){logcie_filter_message_contains_fn, (void *)module};
+}
 
-#define logcie_filter_message_contains(substr)          \
-  (Logcie_Filter) {                                     \
-    logcie_filter_message_contains_fn, (void *)(substr) \
-  }
+LOGCIE_DEF Logcie_Filter logcie_filter_message_contains(const char *substr) {
+  return (Logcie_Filter){logcie_filter_message_contains_fn, (void *)substr};
+}
 
-#define logcie_filter_custom(fn)          \
-  (Logcie_Filter) {                       \
-    logcie_filter_custom_fn, (void *)(fn) \
-  }
+LOGCIE_DEF Logcie_Filter logcie_filter_custom(Logcie_FilterCustomPredicateFn *fn) {
+  return (Logcie_Filter){logcie_filter_custom_fn, &fn};
+}
 
 /**
  * @brief Allows customization of log level colors. Must be array of size Count_LOGCIE_LEVEL.
