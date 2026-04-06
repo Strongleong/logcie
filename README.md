@@ -19,12 +19,20 @@ that supports multiple output sinks, customizable formatting, and flexible filte
 - [Installation](#installation)
 - [Basic Usage](#basic-usage)
 - [Log Levels](#log-levels)
+- [Architecture Overview](#architecture-overview)
+  - [Formatter](#formatter)
+  - [Writer](#writer)
+  - [Filter](#filter)
 - [Sinks and Output Configuration](#sinks-and-output-configuration)
+  - [Default sink](#default_sink)
+  - [Creating a Custom Sink](#creating-a-custom-sink)
+- [Module-Based Logging](#module-based-logging)
+  - [C++ Compatibility](#c++-compatibility)
+- [Memory Management Notes](#memory-management-notes)
 - [Format Tokens](#format-tokens)
+  - [Format Examples](#format-examples)
 - [Filters](#filters)
-- [Customization](#customization)
-- [API Reference](#api-reference)
-- [Configuration Options](#configuration-options)
+  - [Custom Filter Function](#custom-filter-function)
 - [Limitations](#limitations)
 - [Usage in libraries](#usage-in-libraries)
 - [License](#license)
@@ -59,8 +67,6 @@ int main() {
 
 ## Basic Usage
 
-### Simple Logging
-
 Logcie provides macros for all log levels that automatically capture the file name and line number:
 
 ```c
@@ -89,7 +95,24 @@ Logcie defines seven log levels in increasing order of severity:
 | ERROR   | Error conditions            | Operation failures, unexpected states    |
 | FATAL   | Fatal conditions            | Unrecoverable errors, immediate shutdown |
 
-Each sink can be configured with a minimum log level. Messages below this threshold are not emitted to that sink.
+
+## Architecture Overview
+
+Logcie is built arout three core components:
+
+### Formatter
+
+Tranforms a log structure into formatted output and passes it to [Writer](#writer)
+
+### Writer
+
+Handles where fomratted output goes (FILE*, network, etc.).
+
+### Fitler
+
+Decides whether a log should be emmited.
+
+A combination of these three components is called a **Sink**
 
 ## Sinks and Output Configuration
 
@@ -98,91 +121,67 @@ You can add additional sinks for files, network sockets, or custom destinations.
 
 ### Default sink
 
-Logcie automatically creates a default stdout sink so you can start logging immediately.
-However, when you add your first custom sink using logcie_add_sink(), the default sink is automatically removed.
-This design choice ensures you have full control over sink configuration once you start customizing.
+Logcie provides a default stdout sink automatically, so you can start logging immediately.
 
 This is how default sinks looks like:
 
 ```c
 static Logcie_Sink default_stdout_sink = {
-    .min_level = LOGCIE_LEVEL_TRACE,
-    .sink      = stdout,
-    .fmt       = "$c$L$r " LOGCIE_COLOR_GRAY "$f$x$r: $m",
-    .formatter = logcie_printf_formatter,
+    .formatter = {logcie_printf_formatter, "$c$L$r " LOGCIE_COLOR_GRAY "$f:$x$r: $m"},
+    .writer    = {logcie_printf_writer, stdouit},
+    .filter    = {NULL, NULL},
 };
 ```
+
+However, when you add your first Sink using `logcie_add_sink()`, the default printf Sink is removed.
+This design choice ensures you have full control over sink configuration once you start customizing.
 
 Important behaviors to understand:
  - Initial state: By default, one stdout sink exists at index 0
  - First sink addition: When you add your first custom sink, the default sink is removed
  - Restoring defaults: Use logcie_remove_all_sinks() to return to the initial default configuration
 
-Example:
-```c
-// Start with default stdout sink
-LOGCIE_INFO("This goes to default stdout");
-
-// Add a file sink - default sink is now REMOVED!
-Logcie_Sink file_sink = { /* ... */ };
-logcie_add_sink(&file_sink);
-
-// Only file_sink receives this message
-LOGCIE_INFO("This goes only to file");
-
-// Restore default configuration
-logcie_remove_all_sinks();
-LOGCIE_INFO("Back to default stdout");
-```
-
-If you want to keep both the default stdout sink and add additional sinks, you must re-add it explicitly:
-
-```c
-// Get default sink before it's removed
-Logcie_Sink *default_sink = logcie_get_sink(0);
-
-// Add your custom sink (default sink will be removed)
-Logcie_Sink file_sink = { /* ... */ };
-logcie_add_sink(&file_sink);
-
-// Re-add default sink if you want both
-logcie_add_sink(default_sink);
-// Now both sinks receive messages
-```
+If you want to keep both the default stdout sink and add additional sinks, you must re-add it explicitly.
 
 ### Creating a Custom Sink
 
 ```c
 // Create a file sink for error logs
 Logcie_Sink error_sink = {
-    .sink = fopen("errors.log", "a"),
-    .min_level = LOGCIE_LEVEL_ERROR,
-    .fmt = "$d $t [$L] $f:$x - $m",
-    .formatter = logcie_printf_formatter
+    .min_level = LOGCIE_LEVEL_DEBUG,
+    // nice format: date, time, level, module, message
+    .formatter = {logcie_printf_formatter,  "$d $t [$L] $f:$x - $m"},
+    .writer    = {logcie_printf_writer, fopen("errors.log", "a")},
+    .filter    = {logcie_filter_level_min, LOGCIE_LEVEL_ERROR}
 };
 
 // Add it to the logger
 logcie_add_sink(&error_sink);
 ```
 
-### Sink Structure
+If you want to keep default sink you can do it like this:
 
-The `Logcie_Sink` structure has the following fields:
+```c
+Logcie_Sink *default_sink = logcie_get_sink(0);
+logcie_add_sink(&file_sink);
+logcie_add_sink(&default_sink);
+```
 
-| Field       | Type                  | Description                                            |
-| -------     | ------                | -------------                                          |
-| `sink`      | `FILE*`               | Output stream (stdout, file pointer, etc.)             |
-| `min_level` | `Logcie_LogLevel`     | Minimum log level to output                            |
-| `fmt`       | `const char*`         | Format string using `$` tokens                         |
-| `formatter` | `Logcie_FormatterFn*` | Formatter function (usually `logcie_printf_formatter`) |
-| `filter`    | `Logcie_FilterFn*`    | Optional filter function (NULL for no filtering)       |
-| `userdata`  | `void*`               | User data for custom filters                           |
+## Module-Based Logging
 
-### Module-Based Logging
+ Logcie has another important concept: modules. A module is simply a string used to label a *scope* where the log originated.
 
-`logcie_module` is variable that you can define in your source file for flexible filtering and additional information in logs.
+ Modules allow you to group logs by subsystem (e.g., "network", "core", "database")
+ and can be used in format strings or filters to provied additional context or control log output.
 
-For more info about filtering check out [filters section](#filters)
+ To define a module, declare a variable name `logcie_module` in your translation uint:
+
+```c
+static const char *logcie_module = "network";
+```
+
+ When defined, this value will be attached to every log emitted from that file. If not defined, a default module name is used.
+ Modules can also be used in custom filters to selectively allow or block logs from specific parts of your application.
 
 ```c
 // In each source file, define a module name
@@ -194,23 +193,17 @@ Logcie_Sink file_sink = {
     .fmt       = "$d $t [$L] ($M) $m";  // nice format: date, time, level, module, message
     .formatter = logcie_printf_formatter;
 };
+
 logcie_add_sink(&file_sink);
 
 // Then log as usual
 const char *hostname = "gnu.org";
 LOGCIE_INFO("Connection established to %s", hostname);
 
-// Output: 2025-12-25 01:15:10 [INFO ] (network) Connection established to gnu.org
+// Output: 2025-12-25 01:15:10 [INFO] (network) Connection established to gnu.org
 ```
 
 The module name will appear in logs when using the `$M` format token.
-
-### Memory Management Notes
-
-Since logcie_add_sink() stores the pointer to your sink structure (not a copy), you must ensure:
-  - Stack-allocated sinks: Must not go out of scope while registered
-  - Heap-allocated sinks: Must be freed only after removal
-  - Modification: You can modify sink properties after adding (changes take effect immediately)
 
 ### C++ Compatibility
 
@@ -233,6 +226,13 @@ extern "C" {
     const char *logcie_module = "module_name";
 }
 ```
+
+## Memory Management Notes
+
+Since logcie_add_sink() stores the pointer to your sink structure (not a copy), you must ensure:
+  - Stack-allocated sinks: Must not go out of scope while registered
+  - Heap-allocated sinks: Must be freed only after removal
+  - Modification: You can modify sink properties after adding (changes take effect immediately)
 
 ## Format Tokens
 
@@ -288,201 +288,6 @@ uint8_t filter_by_level_range(Logcie_Sink *sink, Logcie_Log *log) {
 }
 ```
 
-## Customization
-
-### Custom Colors
-
-You can override the default ANSI colors for each log level:
-
-```c
-// Define custom colors for each level
-const char *custom_colors[Count_LOGCIE_LEVEL] = {
-    "\x1b[90m",      // TRACE - bright black
-    "\x1b[37m",      // DEBUG - white
-    "\x1b[96m",      // VERBOSE - bright cyan
-    "\x1b[34m",      // INFO - blue
-    "\x1b[33m",      // WARN - yellow
-    "\x1b[31m",      // ERROR - red
-    "\x1b[35;1m"     // FATAL - bright magenta
-};
-
-// Apply the custom colors
-logcie_set_colors(custom_colors);
-
-// To reset to defaults
-logcie_set_colors(NULL);
-```
-
-### Custom Formatters
-
-You can create custom formatter functions for specialized output needs. A formatter function has the following signature:
-
-```c
-size_t my_formatter(Logcie_Sink *sink, Logcie_Log log, va_list *args);
-```
-
-The formatter should:
-1. Process the sink's format string (`sink->fmt`)
-2. Write output to `sink->sink`
-3. Use `va_list` operations to handle printf-style arguments
-4. Return the number of characters written
-
-You don't *need* to write logs somewhere in formatter.
-For example: you can send logs to remote API, or collect statistics.
-
-### Internal Helper Functions
-
-When LOGCIE_IMPLEMENTATION is defined, the following internal helper functions become available:
-
-| Function                         | Description                                 |
-| --------                         | -----------                                 |
-| `get_logcie_level_label()`       | Returns lowercase level name (e.g., "info") |
-| `get_logcie_level_label_upper()` | Returns uppercase level name (e.g., "INFO") |
-| `get_logcie_level_color()`       | Returns ANSI color code for given level     |
-
-These functions are declared as static inline and are primarily intended for use within custom formatters. They can only be used in translation units where LOGCIE_IMPLEMENTATION is defined.
-
-Example usage in custom formatters:
-
-```c
-size_t my_formatter(Logcie_Sink *sink, Logcie_Log log, va_list *args) {
-    fprintf(sink->sink, "[%s] ", get_logcie_level_label_upper(log.level));
-    // ... rest of formatter
-}
-```
-
-## API Reference
-
-### Core Functions
-
-| Function                         | Description                                                                 |
-| ----------                       | -------------                                                               |
-| `logcie_log()`                   | Internal function called by logging macros                                  |
-| `logcie_get_sink_count()`        | Gets the number of sinks currently registered in the logger.                |
-| `logcie_get_sink()`              | Retrieves a sink by its index in the sink array.                            |
-| `logcie_add_sink()`              | Add a sink to the logger                                                    |
-| `logcie_remove_sink()`           | Removes a sink from the logger by pointer.                                  |
-| `logcie_remove_sink_by_index()`  | Removes a sink from the logger by index.                                    |
-| `logcie_remove_and_free_sink()`  | Removes and frees a sink from the logger (if it was dynamically allocated). |
-| `logcie_remove_all_sinks()`      | Set custom colors for log levels                                            |
-| `logcie_remove_sink_and_close()` | Removes a sink and closes its file stream if it's not stdout/stderr         |
-| `logcie_set_colors()`            | Allows customization of log level colors. Must                              |
-
-### Built-in Formatters
-
-| Function                    | Description                                              |
-| ----------                  | -------------                                            |
-| `logcie_printf_formatter()` | Default formatter using `$` tokens and printf formatting |
-
-### Log Level Macros
-
-| Macro              | Level   | Description                       |
-| -------            | ------- | -------------                     |
-| `LOGCIE_TRACE()`   | TRACE   | Most detailed tracing information |
-| `LOGCIE_DEBUG()`   | DEBUG   | Debugging information             |
-| `LOGCIE_VERBOSE()` | VERBOSE | Verbose operational details       |
-| `LOGCIE_INFO()`    | INFO    | General informational messages    |
-| `LOGCIE_WARN()`    | WARN    | Warning conditions                |
-| `LOGCIE_ERROR()`   | ERROR   | Error conditions                  |
-| `LOGCIE_FATAL()`   | FATAL   | Fatal conditions                  |
-
-For compilers without full variadic macro support, use the `_VA` variants (e.g., `LOGCIE_TRACE_VA()`).
-
-## Configuration Options
-
-The following preprocessor defines can be set before including `logcie.h` to configure library behavior:
-
-### Core Configuration
-
-| Define                  | Purpose                                         | Default     |
-| --------                | ---------                                       | ---------   |
-| `LOGCIE_IMPLEMENTATION` | Enable implementation in one translation unit   | Not defined |
-| `LOGCIE_DEF`            | Control function linkage (static, extern, etc.) | `extern`    |
-| `LOGCIE_PEDANTIC`       | Enable strict C compatibility mode              | Not defined |
-
-### Color Configuration
-
-You can override the default ANSI color definitions:
-
-```c
-#define LOGCIE_COLOR_GRAY       "\x1b[90m"
-#define LOGCIE_COLOR_BLUE       "\x1b[34m"
-#define LOGCIE_COLOR_YELLOW     "\x1b[33m"
-#define LOGCIE_COLOR_RED        "\x1b[31m"
-#define LOGCIE_COLOR_BRIGHT_RED "\x1b[31;1m"
-#define LOGCIE_COLOR_RESET      "\x1b[0m"
-```
-
-### Version Information
-
-Logcie provides version macros for compile-time checks:
-
-```c
-// Version as separate components
-LOGCIE_VERSION_MAJOR    // 1
-LOGCIE_VERSION_MINOR    // 0
-LOGCIE_VERSION_RELEASE  // 0
-
-// Combined numeric version (major*10000 + minor*100 + release)
-LOGCIE_VERSION_NUMBER   // 10000
-
-// String version
-LOGCIE_VERSION_STRING   // "1.0.0"
-```
-
-## Complete Example
-
-```c
-#define LOGCIE_IMPLEMENTATION
-#include "logcie.h"
-#include <string.h>
-
-// Define module names
-static const char *logcie_module = "main";
-
-// Custom filter: only log from specific file
-uint8_t filter_by_file(Logcie_Sink *sink, Logcie_Log *log) {
-    return strstr(log->location.file, "network.c") != NULL;
-}
-
-int main() {
-    // Create a file sink for detailed logging
-    FILE *logfile = fopen("app.log", "a");
-    if (logfile) {
-        Logcie_Sink file_sink = {
-            .sink = logfile,
-            .min_level = LOGCIE_LEVEL_DEBUG,
-            .fmt = "$d $t [$L] $M - $m\n",
-            .formatter = logcie_printf_formatter
-        };
-        logcie_add_sink(&file_sink);
-    }
-
-    // Customize stdout sink format
-    Logcie_Sink console_sink = {
-        .sink = stdout,
-        .min_level = LOGCIE_LEVEL_INFO,
-        .fmt = "$c[$L]$r $t - $m\n",
-        .formatter = logcie_printf_formatter
-    };
-    logcie_add_sink(&console_sink);
-
-    // Log some messages
-    LOGCIE_INFO("Application v%s starting", LOGCIE_VERSION_STRING);
-    LOGCIE_DEBUG("Initializing subsystems");
-
-    // Simulate some work
-    for (int i = 0; i < 3; i++) {
-        LOGCIE_VERBOSE("Processing iteration %d", i);
-    }
-
-    LOGCIE_WARN("Configuration file not found, using defaults");
-    LOGCIE_INFO("Application shutdown complete");
-
-    return 0;
-}
-```
-
 ## Limitations
 
 - **Not thread-safe** - Concurrent calls to logging functions from multiple threads may interleave output. Thread safety and multithreading is planned for version 1.0.0
@@ -520,28 +325,6 @@ Just change YOURLLIB to something more fitting :)
 
 ## License
 
-Logcie is released under the MIT License:
-
-```
-Copyright (c) 2024 Nikita (Strongleong) Chulkov
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
+Logcie is released under the MIT License. See [LICENSE file for more info](./LICENSE)
 
 For questions or contributions, contact: Nikita (Strongleong) Chulkov <nikita_chul@mail.ru>
