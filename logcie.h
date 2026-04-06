@@ -100,7 +100,7 @@
  *   A filter is a structure that consist of pointer to filtering fucntion and
  *   a pointer to custom data that filter might want to use.
  *
- *   A filtering function is simply a function that reciieves a `Logcie_Log` and returns:
+ *   A filtering function is simply a function that recieves a `Logcie_Log` and returns:
  *     1 (true)  - to allow the log
  *     0 (false) - to suppress the log
  *
