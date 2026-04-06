@@ -93,6 +93,90 @@
  *   Ensure that any Sink you create remains valid for as long as it is in use.
  *   TIP: Just have them in main function, or in static/global scope.
  *
+ * Filters:
+ *   Filters allow you to control which logs are emitted to a specific Sink.
+ *   Each Sink can have its own filter, enabling fine-grained routing of logs.
+ *
+ *   A filter is a structure that consist of pointer to filtering fucntion and
+ *   a pointer to custom data that filter might want to use.
+ *
+ *   A filtering function is simply a function that recieves a `Logcie_Log` and returns:
+ *     1 (true)  - to allow the log
+ *     0 (false) - to suppress the log
+ *
+ *  If a Sink has no filter all logs are allowed.
+ *
+ *  Here is a list of built-in filters:
+ *
+ *    - logcie_filter_level_min(level)
+ *        Allows logs with level >= specified level
+ *
+ *    - logcie_filter_level_max(level)
+ *        Allows logs with level <= specified level
+ *
+ *    - logcie_filter_module_eq("module")
+ *        Allows logs only from specific module (see below for learning about modules)
+ *
+ *    - logcie_filter_message_contains("text")
+ *        Allows logs whosse messages contains the given substring
+ *
+ *    - logcie_filter_custom(fn)
+ *        Allows logs based on user-provied predicate function. This exists to
+ *        make it easier if you don't need custom data in your filter
+ *
+ *   Combining filters:
+ *
+ *    - logcie_filter_and(a, b)
+ *        Allows logs only if BOTH filters pass
+ *
+ *    - logcie_filter_or(a, b)
+ *        Allows logs only if EITHER filters pass
+ *
+ *    - logcie_filter_not(a)
+ *        Inverts theresult of a filter
+ *
+ *   Example:
+ *     ```c
+ *     // Sink that takes logs with level more than VERBOSE and not from "network" module
+ *     Logcie_Sink sink = {
+ *       //...
+ *       .filter = logcie_filter_and(
+ *         logcie_filter_level_min(LOGCIE_VERBOSE),
+ *         logcie_filter_not(
+ *           logcie_filter_module_eq("network")
+ *         )
+ *       )
+ *     };
+ *
+ *     uint8_t custom_filter_fn(void *data, Logcie_Log *log) {
+ *       (void) data; // ignored
+ *
+ *       // Do not allow logs from even lines
+ *       return log->location.line % 2 == 0;
+ *     }
+ *
+ *     Logcie_Sink another_sink = {
+ *       // ...
+ *       .filter = (Logcie_Filter) {
+ *         .filter = custom_filter_fn,
+ *         .data = NULL,
+ *       }
+ *     }
+ *
+ *     // Or if you do not need any custom data and you want to
+ *     // deal with creating custom structs you can do this:
+ *
+ *     Logcie_Sink another_sink = {
+ *       // ...
+ *       .filter = logcie_filter_custom(custom_filter_fn)
+ *     }
+ *     ```
+ *
+ *   Notes:
+ *     - Filters are evealuated per sink, independently.
+ *     - Be careful when using temporary data in filters (they rely on
+ *       compound literals and must remain valid during logging).
+ *
  * Modules:
  *   Logcie has another important concept: modules. A module is simply a string used
  *   to label a *scope* where the log originated.
@@ -235,6 +319,7 @@ extern "C" {
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
 
 /**
@@ -280,7 +365,7 @@ typedef enum Logcie_LogLevel {
  * @endcode
  */
 #ifdef __cplusplus
-#define LOGCIE_MODULE_DEF extern
+#define LOGCIE_MODULE_DEF
 #else
 #define LOGCIE_MODULE_DEF static
 #endif
@@ -291,8 +376,17 @@ LOGCIE_MODULE_DEF const char __attribute__((unused)) * logcie_module;
 LOGCIE_MODULE_DEF const char *logcie_module;
 #endif
 
+/**
+ * @brief Structure representing a single log sink (output target).
+ * @see struct Logcie_Sink
+ */
 typedef struct Logcie_Sink Logcie_Sink;
-typedef struct Logcie_Log  Logcie_Log;
+
+/**
+ * @brief Structure representing a complete log message with metadata.
+ * @see struct Logcie_Log
+ */
+typedef struct Logcie_Log Logcie_Log;
 
 /**
  * @brief Writer function type signature
@@ -356,11 +450,11 @@ typedef struct Logcie_Formatter {
  * to a particular sink. Return 1 (true) to allow the log, 0 (false) to
  * suppress it.
  *
- * @param sink  The sink being evaluated
+ * @param data  Data for filtering (required log level, string to compare to, etc.)
  * @param log   Log metadata to evaluate
  * @return      1 to emit log, 0 to suppress
  */
-typedef uint8_t(Logcie_FilterFn)(Logcie_Sink *sink, Logcie_Log *log);
+typedef uint8_t(Logcie_FilterFn)(void *data, Logcie_Log *log);
 
 /**
  * @brief Filter struct
@@ -382,14 +476,11 @@ typedef struct Logcie_Filter {
  * Multiple sinks can be active simultaneously, each with different formatting,
  * write target and filtering rules.
  *
- * @field min_level  Minimum log level to emit (messages below this are ignored)
  * @field formatter  Formatter that will format logs
  * @field writer     Writer that will write logs
  * @field filter     Filter for filtering logs
  */
 struct Logcie_Sink {
-  Logcie_LogLevel min_level;
-
   Logcie_Formatter formatter;
   Logcie_Writer    writer;
   Logcie_Filter    filter;
@@ -639,6 +730,107 @@ LOGCIE_DEF size_t logcie_printf_formatter(Logcie_Writer *writer, void *user_data
  */
 LOGCIE_DEF size_t logcie_printf_writer(void *user_data, const char *fmt, va_list *va, ...);
 
+typedef struct Logcie_FilterCombinationData {
+  Logcie_Filter a;
+  Logcie_Filter b;
+} Logcie_FilterCombinationData;
+
+/**
+ * @brief Filters out logs with two different filters combining them with 'or' function
+ * @param data *Logcie_FilterCombinationData
+ */
+LOGCIE_DEF uint8_t logcie_filter_or_fn(void *data, Logcie_Log *log);
+
+/**
+ * @brief Filters out logs with two different filters combining them with 'and' function
+ * @param data *Logcie_FilterCombinationData
+ */
+LOGCIE_DEF uint8_t logcie_filter_and_fn(void *data, Logcie_Log *log);
+
+/**
+ * @brief Negates result of a filter
+ * @param data *Logcie_Filter
+ */
+LOGCIE_DEF uint8_t logcie_filter_not_fn(void *data, Logcie_Log *log);
+
+/**
+ * @brief Filters out logs if log level is less than specified level
+ * @param data *Logcie_LogLevel
+ */
+LOGCIE_DEF uint8_t logcie_filter_level_min_fn(void *data, Logcie_Log *log);
+
+/**
+ * @brief Filters out logs if log level is more than specified level
+ * @param data *Logcie_LogLevel
+ */
+LOGCIE_DEF uint8_t logcie_filter_level_max_fn(void *data, Logcie_Log *log);
+
+/**
+ * @brief Filters out logs if log module is equal to specified string
+ * @param data cosnt char*
+ */
+LOGCIE_DEF uint8_t logcie_filter_module_eq_fn(void *data, Logcie_Log *log);
+
+/**
+ * @brief Filters out logs if log messages contains specified string
+ * @param data const char*
+ */
+LOGCIE_DEF uint8_t logcie_filter_message_contains_fn(void *data, Logcie_Log *log);
+
+typedef uint8_t(Logcie_FilterCustomPredicateFn)(Logcie_Log *log);
+
+/**
+ * @brief Filters out logs if specified function returns 0
+ * @param data *Logcie_FilterCustomPredicateFn
+ */
+LOGCIE_DEF uint8_t logcie_filter_custom_fn(void *data, Logcie_Log *log);
+
+// Some handy filter "constructors"
+
+LOGCIE_DEF Logcie_Filter logcie_filter_and(Logcie_Filter a, Logcie_Filter b) {
+  static Logcie_FilterCombinationData storage;
+  storage.a = a;
+  storage.b = b;
+  return (Logcie_Filter){logcie_filter_and_fn, &storage};
+}
+
+LOGCIE_DEF Logcie_Filter logcie_filter_or(Logcie_Filter a, Logcie_Filter b) {
+  static Logcie_FilterCombinationData storage;
+  storage.a = a;
+  storage.b = b;
+  return (Logcie_Filter){logcie_filter_or_fn, &storage};
+}
+
+LOGCIE_DEF Logcie_Filter logcie_filter_not(Logcie_Filter const filter) {
+  static Logcie_Filter storage;
+  storage = filter;
+  return (Logcie_Filter){logcie_filter_or_fn, &storage};
+}
+
+LOGCIE_DEF Logcie_Filter logcie_filter_level_min(Logcie_LogLevel level) {
+  static Logcie_LogLevel storage;
+  storage = level;
+  return (Logcie_Filter){logcie_filter_level_min_fn, &storage};
+}
+
+LOGCIE_DEF Logcie_Filter logcie_filter_level_max(Logcie_LogLevel level) {
+  static Logcie_LogLevel storage;
+  storage = level;
+  return (Logcie_Filter){logcie_filter_level_max_fn, &storage};
+}
+
+LOGCIE_DEF Logcie_Filter logcie_filter_module_eq(const char *module) {
+  return (Logcie_Filter){logcie_filter_message_contains_fn, (void *)module};
+}
+
+LOGCIE_DEF Logcie_Filter logcie_filter_message_contains(const char *substr) {
+  return (Logcie_Filter){logcie_filter_message_contains_fn, (void *)substr};
+}
+
+LOGCIE_DEF Logcie_Filter logcie_filter_custom(Logcie_FilterCustomPredicateFn *fn) {
+  return (Logcie_Filter){logcie_filter_custom_fn, &fn};
+}
+
 /**
  * @brief Allows customization of log level colors. Must be array of size Count_LOGCIE_LEVEL.
  *
@@ -689,13 +881,13 @@ static const char *default_module = "Logcie";
 #endif
 
 static const char *logcie_level_label[] = {
-    "trace",
-    "debug",
-    "verb",
-    "info",
-    "warn",
-    "error",
-    "fatal",
+  "trace",
+  "debug",
+  "verb",
+  "info",
+  "warn",
+  "error",
+  "fatal",
 };
 
 static inline const char *get_logcie_level_label(Logcie_LogLevel level) {
@@ -705,13 +897,13 @@ static inline const char *get_logcie_level_label(Logcie_LogLevel level) {
 }
 
 static const char *logcie_level_label_upper[] = {
-    "TRACE",
-    "DEBUG",
-    "VERB",
-    "INFO",
-    "WARN",
-    "ERROR",
-    "FATAL",
+  "TRACE",
+  "DEBUG",
+  "VERB",
+  "INFO",
+  "WARN",
+  "ERROR",
+  "FATAL",
 };
 
 static inline const char *get_logcie_level_label_upper(Logcie_LogLevel level) {
@@ -721,13 +913,13 @@ static inline const char *get_logcie_level_label_upper(Logcie_LogLevel level) {
 }
 
 static const char *logcie_default_level_color[] = {
-    LOGCIE_COLOR_GRAY,
-    LOGCIE_COLOR_GRAY,
-    LOGCIE_COLOR_GRAY,
-    LOGCIE_COLOR_BLUE,
-    LOGCIE_COLOR_YELLOW,
-    LOGCIE_COLOR_RED,
-    LOGCIE_COLOR_BRIGHT_RED,
+  LOGCIE_COLOR_GRAY,
+  LOGCIE_COLOR_GRAY,
+  LOGCIE_COLOR_GRAY,
+  LOGCIE_COLOR_BLUE,
+  LOGCIE_COLOR_YELLOW,
+  LOGCIE_COLOR_RED,
+  LOGCIE_COLOR_BRIGHT_RED,
 };
 
 static const char **logcie_level_color = logcie_default_level_color;
@@ -751,10 +943,9 @@ static inline const char *get_logcie_level_color(Logcie_LogLevel level) {
 }
 
 static Logcie_Sink default_stdout_sink = {
-    .min_level = LOGCIE_LEVEL_TRACE,  // NOTE: @filters_lib
-    .formatter = {logcie_printf_formatter, (void *)("$c$L$r " LOGCIE_COLOR_GRAY "$f:$x$r: $m")},
-    .writer    = {logcie_printf_writer, NULL},
-    .filter    = {NULL, NULL},
+  .formatter = {logcie_printf_formatter, (void *)("$c$L$r " LOGCIE_COLOR_GRAY "$f:$x$r: $m")},
+  .writer    = {logcie_printf_writer, NULL},
+  .filter    = {NULL, NULL},
 };
 
 static Logcie_Sink *default_stdout_sink_ptr = &default_stdout_sink;
@@ -778,9 +969,9 @@ typedef struct Logcie_Logger {
 // INFO: By default there is one default sink to allow logging right
 //       after includnig Logcie without initializing anything
 static Logcie_Logger logcie = {
-    .sinks     = &default_stdout_sink_ptr,
-    .sinks_len = 1,
-    .sinks_cap = 1,
+  .sinks     = &default_stdout_sink_ptr,
+  .sinks_len = 1,
+  .sinks_cap = 1,
 };
 
 size_t logcie_get_sink_count(void) {
@@ -882,11 +1073,7 @@ size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
     Logcie_Sink *sink = logcie.sinks[i];
     _LOGCIE_ASSERT(sink && sink->formatter.format, "Sink have no formatter");
 
-    if (log.level < sink->min_level) {
-      continue;
-    }
-
-    if (sink->filter.filter && !sink->filter.filter(sink, &log)) {
+    if (sink->filter.filter && !sink->filter.filter(sink->filter.data, &log)) {
       continue;
     }
 
@@ -1014,6 +1201,62 @@ LOGCIE_DEF size_t logcie_printf_writer(void *user_data, const char *fmt, va_list
 
   va_end(args);
   return written;
+}
+
+LOGCIE_DEF uint8_t logcie_filter_not_fn(void *data, Logcie_Log *log) {
+  _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_not'");
+  _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_not'");
+  Logcie_Filter *filter = (Logcie_Filter *)data;
+  return !filter->filter(filter->data, log);
+}
+
+LOGCIE_DEF uint8_t logcie_filter_and_fn(void *data, Logcie_Log *log) {
+  _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_and'");
+  _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_and'");
+  Logcie_FilterCombinationData *d = (Logcie_FilterCombinationData *)data;
+  return d->a.filter(d->a.data, log) && d->b.filter(d->b.data, log);
+}
+
+LOGCIE_DEF uint8_t logcie_filter_or_fn(void *data, Logcie_Log *log) {
+  _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_or'");
+  _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_or'");
+  Logcie_FilterCombinationData *d = (Logcie_FilterCombinationData *)data;
+  return d->a.filter(d->a.data, log) || d->b.filter(d->b.data, log);
+}
+
+LOGCIE_DEF uint8_t logcie_filter_level_min_fn(void *data, Logcie_Log *log) {
+  _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_level_min'");
+  _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_level_min'");
+  Logcie_LogLevel *level = (Logcie_LogLevel *)data;
+  return log->level >= *level;
+}
+
+LOGCIE_DEF uint8_t logcie_filter_level_max_fn(void *data, Logcie_Log *log) {
+  _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_level_max'");
+  _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_level_max'");
+  Logcie_LogLevel *level = (Logcie_LogLevel *)data;
+  return log->level <= *level;
+}
+
+LOGCIE_DEF uint8_t logcie_filter_module_eq_fn(void *data, Logcie_Log *log) {
+  _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_module_eq'");
+  _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_module_eq'");
+  const char *module = (const char *)data;
+  return log->module && strcmp(module, log->module) == 0;
+}
+
+LOGCIE_DEF uint8_t logcie_filter_message_contains_fn(void *data, Logcie_Log *log) {
+  _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_message_contains'");
+  _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_message_contains'");
+  const char *str = (const char *)data;
+  return log->msg && strstr(log->msg, str);
+}
+
+LOGCIE_DEF uint8_t logcie_filter_custom_fn(void *data, Logcie_Log *log) {
+  _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_custom'");
+  _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_custom'");
+  Logcie_FilterCustomPredicateFn *predicate = (Logcie_FilterCustomPredicateFn *)data;
+  return predicate(log);
 }
 
 // TODO: Abiblity to accept custom stuff in logging (logging arrays)

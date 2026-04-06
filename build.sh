@@ -4,11 +4,11 @@ set -e
 set -o errexit -o pipefail -o noclobber -o nounset
 
 CFLAGS="-Wall -Wextra -std=c99"
-CPPFLAGS="-Wall -Wextra"
+CPPFLAGS="-Wall -Wextra -std=c++11 -stdlib=libc++"
 CLIBS="-I."
 CDEBUG="-ggdb -fsanitize=address -fno-omit-frame-pointer -D_LOGCIE_DEBUG -O0"
 CC="gcc"
-CPP="c++"
+CPP="clang++"
 OUTDIR="./out"
 VERBOSE=true
 BEAR=false
@@ -35,7 +35,9 @@ fi
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    "-d"|"--debug") CFLAGS="$CFLAGS $CDEBUG"
+    "-d"|"--debug")
+      CFLAGS="$CFLAGS $CDEBUG"
+      CPPFLAGS="$CPPFLAGS $CDEBUG"
       shift
       ;;
     "-b"|"--bear") BEAR=true

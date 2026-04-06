@@ -1,106 +1,49 @@
-#include <stdint.h>
-#include <stdio.h>
-#include <stdnoreturn.h>
-#include <string.h>
+#include <cstdio>
+#include <cstring>
+#include <cstdint>
+#include <ctime>
 
 #define LOGCIE_IMPLEMENTATION
 #include <logcie.h>
 
-// Imagine if this is backend for web application, ok, yes?
+uint8_t filter_exclude_noisy(void *data, Logcie_Log *log) {
+  (void) data;
+  return std::strcmp(log->location.file, "noisy.c") != 0;
+}
 
-typedef struct User {
-  uint32_t    id;
-  const char *name;
-  uint8_t     is_invisible;
-} User;
-
-static User normal_user = (User){
-    .id           = 1,
-    .name         = "John",
-    .is_invisible = 0,
+class TimeoutData {
+public:
+  uint64_t timeout_ms;
+  uint64_t last_time;
 };
 
-static User invisible_user = (User){
-    .id           = 2,
-    .name         = "Dave",
-    .is_invisible = 1,
-};
+bool filter_timeout(void *data, Logcie_Log &log) {
+  TimeoutData *d = static_cast<TimeoutData*>(data);
 
-static User *current_user;
+  if (log.time - d->last_time > d->timeout_ms) {
+    d->last_time = log.time;
+    return true;
+  }
 
-// Set module name for this file
-const char *logcie_module = "main";
-
-// Custom filter: only log messages containing "important"
-uint8_t filter_important_only(Logcie_Sink *sink, Logcie_Log *log) {
-  (void)sink;  // Unused parameter
-  return strstr(log->msg, "important") != NULL;
-}
-
-// Custom filter: exclude debug messages from a specific file
-uint8_t filter_exclude_file(Logcie_Sink *sink, Logcie_Log *log) {
-  (void)sink;  // Unused parameter
-  return strstr(log->location.file, "noisy.c") == NULL;
-}
-
-uint8_t file_filter(Logcie_Sink *sink, Logcie_Log *log) {
-  return filter_important_only(sink, log) && filter_exclude_file(sink, log);
-}
-
-uint8_t console_filter(Logcie_Sink *sink, Logcie_Log *log) {
-  (void)sink;
-  (void)log;
-  return current_user ? !current_user->is_invisible : 1;
+  return false;
 }
 
 int main() {
-  FILE *logfile = fopen("app.log", "w");
-
-  Logcie_Sink file_sink = (Logcie_Sink){
-      .min_level = LOGCIE_LEVEL_VERBOSE,
-      .formatter = {logcie_printf_formatter, (void *)"$d $t $f:$x [$M::$L] $m"},
-      .writer    = {logcie_printf_writer, logfile},
-      .filter    = {file_filter, NULL},
+  Logcie_Sink console = {
+    .formatter = {logcie_printf_formatter, (void*)("[$M::$c$L$r] $m")},
+    .writer = {logcie_printf_writer, stdout},
+    .filter = logcie_filter_or(
+      logcie_filter_level_min(LOGCIE_LEVEL_INFO),
+      logcie_filter_message_contains("IMPORTANT")
+    )
   };
 
-  logcie_add_sink(&file_sink);
+  logcie_add_sink(&console);
 
-  // Create and add a filtered console sink (stack allocated)
-  Logcie_Sink console_sink = {
-      .min_level = LOGCIE_LEVEL_INFO,
-      .formatter = {logcie_printf_formatter, (void *)"$c[$L]$r $M $t - $m"},
-      .writer    = {logcie_printf_writer, stdout},
-      .filter    = {console_filter, NULL},
-  };
-
-  logcie_add_sink(&console_sink);
-
-  // Log some messages
   LOGCIE_INFO("Application starting");
   LOGCIE_VERBOSE("Initializing subsystems");
-  LOGCIE_WARN("This is an important warning about memory");
-  LOGCIE_DEBUG("Active sinks: %zu", logcie_get_sink_count());
-
-  // A another user logs in
-  current_user = &normal_user;
-  LOGCIE_INFO("User %s(%u) logged in", current_user->name, current_user->id);
-
-  // Another user logs in
-  current_user = &invisible_user;
-  LOGCIE_INFO("User %s(%u) logged in", current_user->name, current_user->id);
-
-  // Remove file sink
-  logcie_remove_sink(&file_sink);
-
-  fclose(logfile);
-
-  // Remove console sink (stack-allocated, no free needed)
-  logcie_remove_sink(&console_sink);
-
-  // Remove all sinks (back to default only)
-  logcie_remove_all_sinks();
-
-  LOGCIE_INFO("Shutdown");
+  LOGCIE_WARN("Warning: you are cool!");
+  LOGCIE_DEBUG("Very IMPORTANT: active sinks: %zu", logcie_get_sink_count());
 
   return 0;
 }
