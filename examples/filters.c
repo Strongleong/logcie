@@ -38,7 +38,7 @@ typedef struct TimeoutFilterData {
   uint64_t last_time;
 } TimeoutFilterData;
 
-uint8_t filter_timout(void *data, Logcie_Log *log) {
+uint8_t filter_timout(const void *data, Logcie_Log *log) {
   TimeoutFilterData *d = (TimeoutFilterData *)data;
 
   if (log->time - d->last_time >= d->timeout_ms) {

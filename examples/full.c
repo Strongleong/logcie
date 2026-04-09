@@ -31,14 +31,15 @@ static User *current_user;
 // Set module name for this file
 static const char *logcie_module = "main";
 
-uint8_t console_filter(void *data, Logcie_Log *log) {
+uint8_t console_filter(const void *data, Logcie_Log *log) {
   (void)log;
   User *user = (User *)data;
   return user ? !user->is_invisible : 1;
 }
 
 // Custom filter: exclude debug messages from a specific file
-uint8_t filter_exclude_file(Logcie_Log *log) {
+uint8_t filter_exclude_file(const void *data, Logcie_Log *log) {
+  (void) data;
   return strstr(log->location.file, "noisy.c") == NULL;
 }
 
@@ -55,7 +56,10 @@ int main() {
       logcie_filter_message_contains("important"),
       logcie_filter_and(
         logcie_filter_level_min(LOGCIE_LEVEL_VERBOSE),
-        logcie_filter_custom(filter_exclude_file)
+        ((Logcie_Filter){
+          .filter = filter_exclude_file,
+          .data = NULL,
+        })
       )
     )
   };
