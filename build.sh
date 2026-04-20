@@ -4,7 +4,7 @@ set -e
 set -o errexit -o pipefail -o noclobber -o nounset
 
 CFLAGS="-Wall -Wextra -std=c99"
-CPPFLAGS="-Wall -Wextra -std=c++11 -stdlib=libc++"
+CPPFLAGS="-Wall -Wextra -std=c++11"
 CLIBS="-I."
 CDEBUG="-ggdb -fsanitize=address -fno-omit-frame-pointer -D_LOGCIE_DEBUG -O0"
 CC="gcc"
