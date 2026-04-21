@@ -863,7 +863,7 @@ LOGCIE_DEF void logcie_set_colors(const char **colors);
 static const char *default_module = "Logcie";
 
 #ifndef _LOGCIE_ASSERT
-#define _LOGCIE_ASSERT(bool, msg) assert(bool &&msg)
+#define _LOGCIE_ASSERT(bool, msg) assert(bool && msg)
 #endif
 
 #ifdef _LOGCIE_DEBUG
@@ -1225,14 +1225,14 @@ LOGCIE_DEF uint8_t logcie_filter_or_fn(const void *data, Logcie_Log *log) {
 }
 
 LOGCIE_DEF uint8_t logcie_filter_level_min_fn(const void *data, Logcie_Log *log) {
-  _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_level_min'");
+  _LOGCIE_ASSERT((uintptr_t)data < Count_LOGCIE_LEVEL, "Param 'data' is not correct for filter 'logcie_filter_level_max'");
   _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_level_min'");
   Logcie_LogLevel level = (Logcie_LogLevel)(uintptr_t)data;
   return log->level >= level;
 }
 
 LOGCIE_DEF uint8_t logcie_filter_level_max_fn(const void *data, Logcie_Log *log) {
-  _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_level_max'");
+  _LOGCIE_ASSERT((uintptr_t)data < Count_LOGCIE_LEVEL, "Param 'data' is not correct for filter 'logcie_filter_level_max'");
   _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_level_max'");
   Logcie_LogLevel level = (Logcie_LogLevel)(uintptr_t)data;
   return log->level <= level;
