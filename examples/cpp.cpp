@@ -14,7 +14,7 @@ int main() {
     .filter    = logcie_filter_and(
       (Logcie_Filter{
         .filter = [](const void *data, Logcie_Log *log) -> uint8_t {
-          TimeoutData *d = (TimeoutData*)(data);
+          TimeoutData *d = (TimeoutData *)(data);
 
           if (log->time - d->last_time > d->timeout_ms) {
             d->last_time = log->time;
