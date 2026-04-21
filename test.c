@@ -95,7 +95,8 @@ static bool run_test(const Logcie_TestCase *tc) {
   emit_by_level(tc);
 
   rewind(tmp);
-  fread(buffer, 1, sizeof(buffer) - 1, tmp);
+  size_t read = fread(buffer, 1, sizeof(buffer) - 1, tmp);
+  (void)read;
 
   logcie_remove_sink(&sink);
   fclose(tmp);
