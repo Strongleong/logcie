@@ -1,34 +1,11 @@
-#include <iso646.h>
-
-#include <cstdint>
-#include <cstdio>
-#include <cstring>
-#include <ctime>
-
 #define LOGCIE_IMPLEMENTATION
 #include <logcie.h>
 
-uint8_t filter_exclude_noisy(void *data, Logcie_Log *log) {
-  (void)data;
-  return std::strcmp(log->location.file, "noisy.c") != 0;
-}
-
 class TimeoutData {
  public:
-  uint64_t timeout_ms;
-  uint64_t last_time;
+  uint64_t timeout_ms = 0;
+  uint64_t last_time  = 0;
 };
-
-bool filter_timeout(void *data, Logcie_Log &log) {
-  TimeoutData *d = static_cast<TimeoutData *>(data);
-
-  if (log.time - d->last_time > d->timeout_ms) {
-    d->last_time = log.time;
-    return true;
-  }
-
-  return false;
-}
 
 int main() {
   Logcie_Sink sink = {
@@ -37,11 +14,16 @@ int main() {
     .filter    = logcie_filter_and(
       (Logcie_Filter{
         .filter = [](const void *data, Logcie_Log *log) -> uint8_t {
-          (void)data;
-          (void)log;
-          return true;
+          TimeoutData *d = (TimeoutData*)(data);
+
+          if (log->time - d->last_time > d->timeout_ms) {
+            d->last_time = log->time;
+            return true;
+          }
+
+          return false;
         },
-        .data = NULL,
+        .data = new TimeoutData(),
       }),
       logcie_filter_or(
         logcie_filter_level_min(LOGCIE_LEVEL_INFO),
