@@ -1,5 +1,5 @@
 /*
-  optly.h — v2.3.3
+  optly.h — v2.3.4
   Single-header command line argument parser for C.
 
   Features
@@ -241,7 +241,7 @@
 // Versioning macros
 #define OPTLY_VERSION_MAJOR         2
 #define OPTLY_VERSION_MINOR         3
-#define OPTLY_VERSION_RELEASE       3
+#define OPTLY_VERSION_RELEASE       4
 #define OPTLY_VERSION_NUMBER        (OPTLY_VERSION_MAJOR * 100 * 100 + OPTLY_VERSION_MINOR * 100 + OPTLY_VERSION_RELEASE)
 #define OPTLY_VERSION_FULL          OPTLY_VERSION_MAJOR.OPTLY_VERSION_MINOR.OPTLY_VERSION_RELEASE
 #define OPTLY_QUOTE(str)            #str
@@ -466,6 +466,7 @@ OPTLYDEF OptlyPositional *optly_get_positional(OptlyCommand *command, const char
 
 // -----------------------------------
 
+#define OPTLY_IMPLEMENTATION
 #ifdef OPTLY_IMPLEMENTATION
 
 #include <assert.h>
@@ -477,19 +478,29 @@ OPTLYDEF OptlyPositional *optly_get_positional(OptlyCommand *command, const char
 // Logcie integration
 
 #ifndef OPTLY_LOG
-#if defined(LOGCIE) && LOGCIE_VERSION_NUMBER < 1200
-#warning "You logcie version is too old. Logcie is ignored."
+#if defined(LOGCIE) && LOGCIE_VERSION_NUMBER >= 1200
+
 #ifdef LOGCIE_VA_LOGS
-#define OPTLY_LOG(level, msg, ...) LOGCIE_LOG_MOD_VA("OPTLY", level, msg, __VA_ARGS__)
+#define OPTLY_LOG(level, msg, ...) \
+  LOGCIE_LOG_MOD_VA("optly", level, msg, __VA_ARGS__)
 #else
-#define OPTLY_LOG(level, ...) LOGCIE_LOG_MOD("OPTLY", level, __VA_ARGS__)
+#define OPTLY_LOG(level, ...) \
+  LOGCIE_LOG_MOD("optly", level, __VA_ARGS__)
 #endif
+
 #else
-#define OPTLY_LOG(level, ...)              \
-  do {                                       \
-    fprintf(stderr, #level ": "__VA_ARGS__); \
-    fprintf(stderr, "\n");                   \
+
+#if defined(LOGCIE) && LOGCIE_VERSION_NUMBER < 1200
+#warning "Your Logcie version is too old. Falling back to fprintf logging."
+#endif
+
+#define OPTLY_LOG(level, ...)     \
+  do {                            \
+    fprintf(stderr, #level ": "); \
+    fprintf(stderr, __VA_ARGS__); \
+    fprintf(stderr, "\n");        \
   } while (0)
+
 #endif
 #endif
 
