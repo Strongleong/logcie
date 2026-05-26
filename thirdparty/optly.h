@@ -1,5 +1,5 @@
 /*
-  optly.h — v2.3.2
+  optly.h — v2.3.3
   Single-header command line argument parser for C.
 
   Features
@@ -241,7 +241,7 @@
 // Versioning macros
 #define OPTLY_VERSION_MAJOR         2
 #define OPTLY_VERSION_MINOR         3
-#define OPTLY_VERSION_RELEASE       2
+#define OPTLY_VERSION_RELEASE       3
 #define OPTLY_VERSION_NUMBER        (OPTLY_VERSION_MAJOR * 100 * 100 + OPTLY_VERSION_MINOR * 100 + OPTLY_VERSION_RELEASE)
 #define OPTLY_VERSION_FULL          OPTLY_VERSION_MAJOR.OPTLY_VERSION_MINOR.OPTLY_VERSION_RELEASE
 #define OPTLY_QUOTE(str)            #str
@@ -447,20 +447,20 @@ static inline bool optly_is_command_null(const OptlyCommand *cmd) {
   return cmd == NULL || cmd->name == NULL;
 }
 
-inline OPTLYDEF bool             optly_flag_value_bool(const OptlyCommand *command, const char *name);
-inline OPTLYDEF char             optly_flag_value_char(const OptlyCommand *command, const char *name);
-inline OPTLYDEF char            *optly_flag_value_string(const OptlyCommand *command, const char *name);
-inline OPTLYDEF int8_t           optly_flag_value_int8(const OptlyCommand *command, const char *name);
-inline OPTLYDEF int16_t          optly_flag_value_int16(const OptlyCommand *command, const char *name);
-inline OPTLYDEF int32_t          optly_flag_value_int32(const OptlyCommand *command, const char *name);
-inline OPTLYDEF int64_t          optly_flag_value_int64(const OptlyCommand *command, const char *name);
-inline OPTLYDEF uint8_t          optly_flag_value_uint8(const OptlyCommand *command, const char *name);
-inline OPTLYDEF uint16_t         optly_flag_value_uint16(const OptlyCommand *command, const char *name);
-inline OPTLYDEF uint32_t         optly_flag_value_uint32(const OptlyCommand *command, const char *name);
-inline OPTLYDEF uint64_t         optly_flag_value_uint64(const OptlyCommand *command, const char *name);
-inline OPTLYDEF float            optly_flag_value_float(const OptlyCommand *command, const char *name);
-inline OPTLYDEF double           optly_flag_value_double(const OptlyCommand *command, const char *name);
-inline OPTLYDEF OptlyPositional *optly_get_positional(OptlyCommand *command, const char *name);
+OPTLYDEF bool             optly_flag_value_bool(const OptlyCommand *command, const char *name);
+OPTLYDEF char             optly_flag_value_char(const OptlyCommand *command, const char *name);
+OPTLYDEF char            *optly_flag_value_string(const OptlyCommand *command, const char *name);
+OPTLYDEF int8_t           optly_flag_value_int8(const OptlyCommand *command, const char *name);
+OPTLYDEF int16_t          optly_flag_value_int16(const OptlyCommand *command, const char *name);
+OPTLYDEF int32_t          optly_flag_value_int32(const OptlyCommand *command, const char *name);
+OPTLYDEF int64_t          optly_flag_value_int64(const OptlyCommand *command, const char *name);
+OPTLYDEF uint8_t          optly_flag_value_uint8(const OptlyCommand *command, const char *name);
+OPTLYDEF uint16_t         optly_flag_value_uint16(const OptlyCommand *command, const char *name);
+OPTLYDEF uint32_t         optly_flag_value_uint32(const OptlyCommand *command, const char *name);
+OPTLYDEF uint64_t         optly_flag_value_uint64(const OptlyCommand *command, const char *name);
+OPTLYDEF float            optly_flag_value_float(const OptlyCommand *command, const char *name);
+OPTLYDEF double           optly_flag_value_double(const OptlyCommand *command, const char *name);
+OPTLYDEF OptlyPositional *optly_get_positional(OptlyCommand *command, const char *name);
 
 #endif  // OPTLY_H
 
@@ -1082,7 +1082,7 @@ static void optly__validate_positionals(OptlyCommand *cmd, OptlyErrors *errs) {
   }
 }
 
-inline OPTLYDEF bool optly_is_command(OptlyCommand *command, const char *name) {
+OPTLYDEF bool optly_is_command(OptlyCommand *command, const char *name) {
   return command && strcmp(command->name, name) == 0;
 }
 
@@ -1096,77 +1096,77 @@ const OptlyFlag *optly_get_flag(const OptlyFlag *flags, const char *name) {
   return NULL;
 }
 
-inline OPTLYDEF bool optly_flag_value_bool(const OptlyCommand *command, const char *name) {
+OPTLYDEF bool optly_flag_value_bool(const OptlyCommand *command, const char *name) {
   const OptlyFlag *flag = optly_get_flag(command->flags, name);
   return flag ? flag->value.as_bool : false;
 }
 
-inline OPTLYDEF char optly_flag_value_char(const OptlyCommand *command, const char *name) {
+OPTLYDEF char optly_flag_value_char(const OptlyCommand *command, const char *name) {
   const OptlyFlag *flag = optly_get_flag(command->flags, name);
   return flag ? flag->value.as_char : '\0';
 }
 
-inline OPTLYDEF char *optly_flag_value_string(const OptlyCommand *command, const char *name) {
+OPTLYDEF char *optly_flag_value_string(const OptlyCommand *command, const char *name) {
   const OptlyFlag *flag = optly_get_flag(command->flags, name);
   return flag ? flag->value.as_string : "";
 }
 
-inline OPTLYDEF int8_t optly_flag_value_int8(const OptlyCommand *command, const char *name) {
+OPTLYDEF int8_t optly_flag_value_int8(const OptlyCommand *command, const char *name) {
   const OptlyFlag *flag = optly_get_flag(command->flags, name);
   return flag ? flag->value.as_int8 : 0;
 }
 
-inline OPTLYDEF int16_t optly_flag_value_int16(const OptlyCommand *command, const char *name) {
+OPTLYDEF int16_t optly_flag_value_int16(const OptlyCommand *command, const char *name) {
   const OptlyFlag *flag = optly_get_flag(command->flags, name);
   return flag ? flag->value.as_int16 : 0;
 }
 
-inline OPTLYDEF int32_t optly_flag_value_int32(const OptlyCommand *command, const char *name) {
+OPTLYDEF int32_t optly_flag_value_int32(const OptlyCommand *command, const char *name) {
   const OptlyFlag *flag = optly_get_flag(command->flags, name);
   return flag ? flag->value.as_int32 : 0;
 }
 
-inline OPTLYDEF int64_t optly_flag_value_int64(const OptlyCommand *command, const char *name) {
+OPTLYDEF int64_t optly_flag_value_int64(const OptlyCommand *command, const char *name) {
   const OptlyFlag *flag = optly_get_flag(command->flags, name);
   return flag ? flag->value.as_int64 : 0;
 }
 
-inline OPTLYDEF uint8_t optly_flag_value_uint8(const OptlyCommand *command, const char *name) {
+OPTLYDEF uint8_t optly_flag_value_uint8(const OptlyCommand *command, const char *name) {
   const OptlyFlag *flag = optly_get_flag(command->flags, name);
   return flag ? flag->value.as_uint8 : 0;
 }
 
-inline OPTLYDEF uint16_t optly_flag_value_uint16(const OptlyCommand *command, const char *name) {
+OPTLYDEF uint16_t optly_flag_value_uint16(const OptlyCommand *command, const char *name) {
   const OptlyFlag *flag = optly_get_flag(command->flags, name);
   return flag ? flag->value.as_uint16 : 0;
 }
 
-inline OPTLYDEF uint32_t optly_flag_value_uint32(const OptlyCommand *command, const char *name) {
+OPTLYDEF uint32_t optly_flag_value_uint32(const OptlyCommand *command, const char *name) {
   const OptlyFlag *flag = optly_get_flag(command->flags, name);
   return flag ? flag->value.as_uint32 : 0;
 }
 
-inline OPTLYDEF uint64_t optly_flag_value_uint64(const OptlyCommand *command, const char *name) {
+OPTLYDEF uint64_t optly_flag_value_uint64(const OptlyCommand *command, const char *name) {
   const OptlyFlag *flag = optly_get_flag(command->flags, name);
   return flag ? flag->value.as_uint64 : 0;
 }
 
-inline OPTLYDEF float optly_flag_value_float(const OptlyCommand *command, const char *name) {
+OPTLYDEF float optly_flag_value_float(const OptlyCommand *command, const char *name) {
   const OptlyFlag *flag = optly_get_flag(command->flags, name);
   return flag ? flag->value.as_float : 0;
 }
 
-inline OPTLYDEF double optly_flag_value_double(const OptlyCommand *command, const char *name) {
+OPTLYDEF double optly_flag_value_double(const OptlyCommand *command, const char *name) {
   const OptlyFlag *flag = optly_get_flag(command->flags, name);
   return flag ? flag->value.as_double : 0;
 }
 
-inline OPTLYDEF char *optly_flag_value_enum(const OptlyCommand *command, const char *name) {
+OPTLYDEF char *optly_flag_value_enum(const OptlyCommand *command, const char *name) {
   const OptlyFlag *flag = optly_get_flag(command->flags, name);
   return flag ? flag->value.as_enum[0] : NULL;
 }
 
-inline OPTLYDEF OptlyPositional *optly_get_positional(OptlyCommand *command, const char *name) {
+OPTLYDEF OptlyPositional *optly_get_positional(OptlyCommand *command, const char *name) {
   for (OptlyPositional *p = command->positionals; p->name; p++) {
     if (strcmp(p->name, name) == 0) {
       return p;
