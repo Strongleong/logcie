@@ -1099,9 +1099,10 @@ void logcie_remove_all_sinks(void) {
 size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
 #ifndef LOGCIE_ALLOW_RECURSIVE_LOGGING
   if (logcie_log_depth > 0) {
-    logcie_log_depth++;
     return 0;
   }
+
+  logcie_log_depth++;
 #endif
 
   va_list args;
