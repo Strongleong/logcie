@@ -23,6 +23,7 @@ that supports multiple output sinks, customizable formatting, and flexible filte
   - [Formatter](#formatter)
   - [Writer](#writer)
   - [Filter](#filter)
+  - [Recursive Logging](#recursive-logging)
 - [Sinks and Output Configuration](#sinks-and-output-configuration)
   - [Default sink](#default_sink)
   - [Creating a Custom Sink](#creating-a-custom-sink)
@@ -131,6 +132,25 @@ Handles where fomratted output goes (FILE*, network, etc.).
 Decides whether a log should be emmited.
 
 A combination of these three components is called a **Sink**
+
+### Recursive Logging
+
+> Recursive logging from formatters, writers or filters is not supported!
+
+By default, Logcie suppresses recursive log attempts to avoid infinite recursion
+and deadlocks. Recursive calls return `0` and produce no output.
+
+If you want to avoid the small overhead of the recursion check,
+or if you intentionally rely on recursive logging and you know what you are doing
+you can disable the recursion guard:
+
+
+```c
+#define LOGCIE_ALLOW_RECURSIVE_LOGGING
+```
+
+Disabling the recursion guard may cause infinite recursion, deadlocks,
+or stack overflows.
 
 ## Sinks and Output Configuration
 

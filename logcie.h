@@ -42,6 +42,20 @@
  *
  *   Logcie itself is basically an array of Sinks and system of distributing logs to those Sinks.
  *
+ *   NOTE: Recursive logging from formatters, writers or filters is not supported!
+ *
+ *  By default Logcie suppresses recursive log attempts to avoid infinite recursion
+ *  and deadlocks. Recursive calls return 0 and produce no output.
+ *
+ *  If you want to avoid the small overhead of the recursion check,
+ *  or if you intentionally rely on recursive logging and you know what you are doing
+ *  you can disable the recursion guard:
+ *   ```c
+ *   #define LOGCIE_ALLOW_RECURSIVE_LOGGING
+ *   ```
+ *  Disabling the recursion guard may cause infinite recursion, deadlocks,
+ *  or stack overflows.
+ *
  * Defaults:
  *   It would not be that great if Logcie was just empty framework and you need to set it up by yourself,
  *   so Logcie comes with a couple of pre-defined functions:
@@ -886,6 +900,19 @@ LOGCIE_DEF void logcie_set_colors(const char **colors);
 #define _LOGCIE_ARR_LEN(array) ((int)sizeof(array) / (int)sizeof((array)[0]))
 #endif
 
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define LOGCIE_THREAD_LOCAL _Thread_local
+#elif defined(_MSC_VER)
+#define LOGCIE_THREAD_LOCAL __declspec(thread)
+#elif defined(__GNUC__)
+#define LOGCIE_THREAD_LOCAL __thread
+#else
+#define LOGCIE_THREAD_LOCAL
+#warning "No thread local storage support"
+#endif
+
+static LOGCIE_THREAD_LOCAL int logcie_log_depth = 0;
+
 static const char *logcie_level_label[] = {
   "trace",
   "debug",
@@ -1070,6 +1097,13 @@ void logcie_remove_all_sinks(void) {
 }
 
 size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
+#ifndef LOGCIE_ALLOW_RECURSIVE_LOGGING
+  if (logcie_log_depth > 0) {
+    logcie_log_depth++;
+    return 0;
+  }
+#endif
+
   va_list args;
   va_start(args, fmt);
 
@@ -1090,6 +1124,10 @@ size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
 
     va_end(args_copy);
   }
+
+#ifndef LOGCIE_ALLOW_RECURSIVE_LOGGING
+  logcie_log_depth--;
+#endif
 
   va_end(args);
   return 0;
