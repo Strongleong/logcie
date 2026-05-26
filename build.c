@@ -1,11 +1,13 @@
 #include <dirent.h>
 #include <errno.h>
-#include <fts.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+
+// TODO: Write my own file system ops lib and replace fts with it
+#include <fts.h>
 
 #ifdef _WIN32
 
@@ -13,7 +15,7 @@
 #include <process.h>
 #include <windows.h>
 
-typedef intptr_t pid_t;
+typedef HANDLE pid_t;
 
 #define mkdir(path, mode) _mkdir(path)
 #define PATH_SEP          "\\"
@@ -44,6 +46,7 @@ static OptlyCommand command = {
   NULL,
   .flags = optly_flags(
     optly_flag_bool("debug", 'd', "Compile with debug flags"),
+    optly_flag_bool("pedantic", 'p', "Enable pedantic compilation flags"),
     optly_flag_bool("silent", 's', "Compile without unnececary output"),
     optly_flag_string("outdir", 'o', "Set output dir", .value.as_string = "." PATH_SEP "out" PATH_SEP),
     optly_flag_string("c-compiler", 'c', "Set which C compier to use", .value.as_string = "clang"),
@@ -199,11 +202,17 @@ int dir_exists(const char *path) {
 #endif
 }
 
-size_t cmd_to_string(char **cmd, char *str) {
+size_t cmd_to_string(char **cmd, char *str, size_t cap) {
   size_t len = 0;
 
   for (char **c = cmd; *c; c++) {
-    len += snprintf(str + len, 250, "%s ", *c);
+    int written = snprintf(str + len, cap - len, "%s ", *c);
+
+    if (written < 0 || (size_t)written >= cap - len) {
+      break;
+    }
+
+    len += (size_t)written;
   }
 
   return len;
@@ -220,11 +229,12 @@ int main(int argc, char *argv[]) {
     stdout_sink_log_level = LOGCIE_LEVEL_WARN;
   }
 
-  strncpy(outdir, optly_flag_value_string(&command, "outdir"), PATH_MAX_LEN);
+  snprintf(outdir, sizeof(outdir), "%s", optly_flag_value_string(&command, "outdir"));
   size_t outdir_len = strlen(outdir);
 
-  if (strcmp(&outdir[outdir_len - 1], PATH_SEP) != 0) {
-    outdir[outdir_len] = PATH_SEP[0];
+  if (outdir_len > 0 && outdir[outdir_len - 1] != PATH_SEP[0]) {
+    outdir[outdir_len++] = PATH_SEP[0];
+    outdir[outdir_len]   = '\0';
   }
 
   if (!dir_exists(outdir)) {
@@ -244,6 +254,8 @@ int main(int argc, char *argv[]) {
     LOGCIE_FATAL("Can not open file system: %s", strerror(errno));
     return 1;
   }
+
+  bool is_all_ok = true;
 
   while ((node = fts_read(file_system)) != NULL) {
     switch (node->fts_info) {
@@ -279,8 +291,12 @@ int main(int argc, char *argv[]) {
         cmd[i++] = "-Wextra";
         cmd[i++] = cpp ? "-std=c++11" : "-std=c99";
 
+        if (optly_flag_value_bool(&command, "pedantic")) {
+          cmd[i++] = "-pedantic";
+          cmd[i++] = "-DLOGCIE_PEDANTIC";
+        }
+
         if (optly_flag_value_bool(&command, "debug")) {
-          cmd[i++] = "-O3";
           cmd[i++] = "-ggdb";
           cmd[i++] = "-fsanitize=address";
           cmd[i++] = "-fno-omit-frame-pointer";
@@ -300,11 +316,13 @@ int main(int argc, char *argv[]) {
         snprintf(in, in_len, "%s", node->fts_accpath);
 
         char buf[256] = {0};
-        cmd_to_string(cmd, buf);
+        cmd_to_string(cmd, buf, sizeof(buf));
         LOGCIE_INFO("%s", buf);
 
         if (!optly_flag_value_bool(&command, "dry-run")) {
-          run_cmd(cmd);
+          if (!run_cmd(cmd)) {
+            is_all_ok = false;
+          }
         }
 
         break;
@@ -313,5 +331,5 @@ int main(int argc, char *argv[]) {
   }
 
   fts_close(file_system);
-  return 0;
+  return is_all_ok ? 0 : 1;
 }
