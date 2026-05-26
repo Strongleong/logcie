@@ -65,6 +65,24 @@ int main() {
 #include "logcie.h"
 ```
 
+## Building examples and tests
+
+## Installation
+
+### Building examples and tests
+
+On Linux you can compile the build system with:
+
+```sh
+cc -o build build.c
+```
+
+Then run it with:
+
+```sh
+./build --help
+```
+
 ## Basic Usage
 
 Logcie provides macros for all log levels that automatically capture the file name and line number:
