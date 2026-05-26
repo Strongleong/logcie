@@ -1,9 +1,8 @@
 #include <stdio.h>
 
+#define LOGCIE_MODULE "main"
 #define LOGCIE_IMPLEMENTATION
 #include <logcie.h>
-
-static const char *logcie_module = "main";
 
 int main(void) {
   // Open a file for logs

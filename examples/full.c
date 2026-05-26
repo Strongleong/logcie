@@ -3,6 +3,8 @@
 #include <stdnoreturn.h>
 #include <string.h>
 
+// Set module name for this file
+#define LOGCIE_MODULE "main"
 #define LOGCIE_IMPLEMENTATION
 #include <logcie.h>
 
@@ -27,9 +29,6 @@ static User invisible_user = (User){
 };
 
 static User *current_user;
-
-// Set module name for this file
-static const char *logcie_module = "main";
 
 uint8_t console_filter(const void *data, Logcie_Log *log) {
   (void)log;
