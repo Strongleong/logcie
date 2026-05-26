@@ -49,14 +49,14 @@ void chrchr(char *string, char old, char new) {
   }
 }
 
-#define EMIT(level, tc)                                                     \
-  do {                                                                      \
-    switch ((tc)->arg.type) {                                               \
-      case ARG_INT:    LOGCIE_##level((tc)->msg, (tc)->arg.value.i); break; \
-      case ARG_DOUBLE: LOGCIE_##level((tc)->msg, (tc)->arg.value.d); break; \
-      case ARG_STR:    LOGCIE_##level((tc)->msg, (tc)->arg.value.s); break; \
-      case ARG_NONE:   LOGCIE_##level((tc)->msg); break;                      \
-    }                                                                       \
+#define EMIT(level, tc)                                                                          \
+  do {                                                                                           \
+    switch ((tc)->arg.type) {                                                                    \
+      case ARG_INT:    LOGCIE_LOG_MOD((tc)->module, level, (tc)->msg, (tc)->arg.value.i); break; \
+      case ARG_DOUBLE: LOGCIE_LOG_MOD((tc)->module, level, (tc)->msg, (tc)->arg.value.d); break; \
+      case ARG_STR:    LOGCIE_LOG_MOD((tc)->module, level, (tc)->msg, (tc)->arg.value.s); break; \
+      case ARG_NONE:   LOGCIE_LOG_MOD((tc)->module, level, (tc)->msg); break;                      \
+    }                                                                                            \
   } while (0)
 
 static void emit_by_level(const Logcie_TestCase *tc) {
@@ -95,7 +95,8 @@ static bool run_test(const Logcie_TestCase *tc) {
   emit_by_level(tc);
 
   rewind(tmp);
-  fread(buffer, 1, sizeof(buffer) - 1, tmp);
+  size_t read = fread(buffer, 1, sizeof(buffer) - 1, tmp);
+  (void)read;
 
   logcie_remove_sink(&sink);
   fclose(tmp);
@@ -201,7 +202,7 @@ static Logcie_TestCase tests[] = {
    .module         = NULL,
    .sink_min_level = LOGCIE_LEVEL_TRACE,
    .fmt            = "$M $m",
-   .expected       = "Logcie fallback"},
+   .expected       = "  fallback"},
   {.name           = "File token",
    .level          = LOGCIE_LEVEL_INFO,
    .msg            = "file test",

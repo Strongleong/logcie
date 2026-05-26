@@ -1,5 +1,5 @@
 /*
-  optly.h — v1.3.1
+  optly.h — v2.3.4
   Single-header command line argument parser for C.
 
   Features
@@ -25,6 +25,9 @@
     #include "optly.h"
 
     // You need to define "main" command, which is your application.
+    // Note: If you compile with `gcc` with flag `-pedantic` this will fire warning.
+    //       To suppress it have static variables for flags, commands and enum flag values separately,
+    //       or move cmd to runtime (to `main` function)
     static OptlyCommand cmd = {
 
       // Name will be used in usage. If you set is as NULL it will be argv[0]
@@ -89,8 +92,8 @@
     int main(int argc, char **argv) {
       optly_parse_args(argc, argv, &cmd);
 
-      printf("Verbose: %s\n", optly_bool(&cmd, "verbose") ? "true" : "false");
-      printf("Threads: %u\n", optly_uint32(&cmd, "threads"));
+      printf("Verbose: %s\n", optly_flag_value_bool(&cmd, "verbose") ? "true" : "false");
+      printf("Threads: %u\n", optly_flag_value_uint32(&cmd, "threads"));
 
       if (!cmd.next_command) {
         return 0;
@@ -98,8 +101,8 @@
 
       printf("Command: %s\n", cmd.next_command->name);
 
-      printf("Verbose: %s\n", optly_bool(cmd.next_command, "verbose") ? "true" : "false");
-      printf("Port: %u\n", optly_uint16(cmd.next_command, "port"));
+      printf("Verbose: %s\n", optly_flag_value_bool(cmd.next_command, "verbose") ? "true" : "false");
+      printf("Port: %u\n", optly_flag_value_uint16(cmd.next_command, "port"));
 
       if (cmd.next_command->next_command) {
         printf("Command: %s\n", cmd.next_command->next_command->name);
@@ -161,7 +164,7 @@
       // ...
     }
 
-  Help command/flag generation
+  Help and version command/flag generation
   ----------------------------
 
   You can define
@@ -169,8 +172,54 @@
     #define OPTLY_GEN_HELP_FLAG
     #define OPTLY_GEN_HELP_COMMAND
 
-  to generate help flag `--help | -h` and/or help command `help cmd`.
-  If help command/flag would be found during parsing usage would be automatically called
+  to generate help flag `--help | -h` and/or help command `help cmd`, or
+
+  #define OPTLY_GEN_VERSION_FLAG
+  #define OPTLY_GEN_VERSION_COMMAND
+
+  to generate version flag `--version | -v` and/or version command `version`.
+
+  If help/version command/flag would be found during parsing usage would be
+  automatically called and `exit(0)` is called.
+
+  Note that user defined flags with `-h`/`-v` would interfere with generated flags.
+
+  Error and logging handling
+  --------------
+
+  This library always logs errors internally using OPTLY_LOG.
+
+  Instead of failing on first error, Optly now accumulates all errors during parsing.
+
+  `optly_parse_args()` returns an `OptlyErrors` struct:
+
+    OptlyErrors errs = optly_parse_args(argc, argv, &cmd);
+
+    for (size_t i = 0; i < optly_errors_count(&errs); i++) {
+      OptlyError e = optly_errors_at(&errs, i);
+      printf("Error: %s", optly_error_message(e.kind));
+
+      if (e.arg) {
+        printf(" (%s)", e.arg);
+      }
+
+      printf("\n");
+    }
+
+  Each error may include optional context, which could be - flag, value, command or positional name
+
+  By default, Optly will call `exit()` if any errors occurred.
+
+  To disable this behavior:
+
+    #define OPTLY_NO_EXIT
+
+  This is useful for:
+  - testing
+  - custom error handling
+
+  The best way to control logging is to use Logcie library (https://github.com/strongleong/logcie).
+  Or have a look at OPTLY_LOG family of macros.
 
   Licese
   ------
@@ -190,9 +239,9 @@
 #endif  // OPTLYDEF
 
 // Versioning macros
-#define OPTLY_VERSION_MAJOR         1
+#define OPTLY_VERSION_MAJOR         2
 #define OPTLY_VERSION_MINOR         3
-#define OPTLY_VERSION_RELEASE       1
+#define OPTLY_VERSION_RELEASE       4
 #define OPTLY_VERSION_NUMBER        (OPTLY_VERSION_MAJOR * 100 * 100 + OPTLY_VERSION_MINOR * 100 + OPTLY_VERSION_RELEASE)
 #define OPTLY_VERSION_FULL          OPTLY_VERSION_MAJOR.OPTLY_VERSION_MINOR.OPTLY_VERSION_RELEASE
 #define OPTLY_QUOTE(str)            #str
@@ -209,6 +258,18 @@
 #define OPTLY_FLAG_BUFFER_LENGTH 256
 #endif
 
+#ifndef OPTLY_MAX_ERRORS
+#define OPTLY_MAX_ERRORS 32
+#endif
+
+#ifndef OPTLY_HELP_SHORT_FLAG
+#define OPTLY_HELP_SHORT_FLAG "-h"
+#endif
+
+#ifndef OPTLY_VERSION_SHORT_FLAG
+#define OPTLY_VERSION_SHORT_FLAG "-v"
+#endif
+
 typedef enum OptlyFlagType {
   OPTLY_TYPE_BOOL,
   OPTLY_TYPE_CHAR,
@@ -223,13 +284,15 @@ typedef enum OptlyFlagType {
   OPTLY_TYPE_UINT64,
   OPTLY_TYPE_FLOAT,
   OPTLY_TYPE_DOUBLE,
+  OPTLY_TYPE_ENUM,
 } OptlyFlagType;
 
 typedef union OptlyFlagValue {
   bool as_bool;
 
-  char  as_char;
-  char *as_string;
+  char   as_char;
+  char  *as_string;
+  char **as_enum;
 
   int8_t  as_int8;
   int16_t as_int16;
@@ -269,6 +332,7 @@ typedef struct {
 } OptlyPositional;
 
 typedef struct OptlyCommand OptlyCommand;
+
 struct OptlyCommand {
   char *name;
   char *description;
@@ -280,16 +344,46 @@ struct OptlyCommand {
   OptlyCommand *next_command;
 };
 
+typedef enum OptlyErrorKind {
+  OPTLY_OK = 0,
+  OPTLY_ERR_UNKNOWN_FLAG,
+  OPTLY_ERR_UNKNOWN_COMMAND,
+  OPTLY_ERR_MISSING_VALUE,
+  OPTLY_ERR_INVALID_VALUE,
+  OPTLY_ERR_MISSING_REQUIRED,
+  OPTLY_ERR_POSITIONAL_TOO_FEW,
+  OPTLY_ERR_POSITIONAL_TOO_MANY,
+  OPTLY_ERR_DUPLICATE_VARIADIC,
+  OPTLY_ERR_BATCH_NON_BOOL,
+  Count_OptlyError
+} OptlyErrorKind;
+
+typedef struct OptlyError {
+  OptlyErrorKind kind;
+  const char    *arg;
+} OptlyError;
+
+typedef struct OptlyErrors {
+  OptlyError items[OPTLY_MAX_ERRORS];
+  size_t     count;
+} OptlyErrors;
+
+OPTLYDEF size_t      optly_errors_count(const OptlyErrors *errs);
+OPTLYDEF OptlyError  optly_errors_at(const OptlyErrors *errs, size_t i);
+OPTLYDEF const char *optly_error_message(OptlyErrorKind err);
+OPTLYDEF void        optly_error_print(const OptlyErrors *errs);
+
 #define NULL_FLAG       {.fullname = NULL, .shortname = 0, .value = {.as_int64 = 0}, .type = 0}
 #define NULL_COMMAND    {.name = NULL, .flags = NULL}
 #define NULL_POSITIONAL {.name = NULL}
 
-// NOTE: Forcing designated initializer to automatically zero initialize missing fields
+// NOTE: Forcing designated initializer for automatically zero-initializing missing fields
 #define optly_flag(name, ...)        \
   (OptlyFlag) {                      \
     .fullname = (name), __VA_ARGS__, \
     .present  = false                \
   }
+
 #define optly_command(namme, ...) \
   (OptlyCommand) {                \
     .name = (namme), __VA_ARGS__  \
@@ -326,27 +420,21 @@ struct OptlyCommand {
 #define optly_flag_uint64(name, ...) optly_flag(name, __VA_ARGS__, .type = OPTLY_TYPE_UINT64)
 #define optly_flag_float(name, ...)  optly_flag(name, __VA_ARGS__, .type = OPTLY_TYPE_FLOAT)
 #define optly_flag_double(name, ...) optly_flag(name, __VA_ARGS__, .type = OPTLY_TYPE_DOUBLE)
+#define optly_flag_enum(name, ...)   optly_flag(name, __VA_ARGS__, .type = OPTLY_TYPE_ENUM)
 
-OPTLYDEF OptlyCommand *optly_parse_args(int argc, char *argv[], OptlyCommand *main_cmd);
+#define optly_enum_values(default, ...) \
+  .value.as_enum = (char *[]) {         \
+    default, __VA_ARGS__, NULL          \
+  }
 
+#if defined(OPTLY_GEN_VERSION_FLAG) || defined(OPTLY_GEN_VERSION_COMMAND)
+OPTLYDEF OptlyErrors optly_parse_args(int argc, char *argv[], OptlyCommand *main_cmd, const char *version);
+#else
+OPTLYDEF OptlyErrors optly_parse_args(int argc, char *argv[], OptlyCommand *main_cmd);
+#endif
+
+OPTLYDEF bool             optly_is_command(OptlyCommand *command, const char *name);
 OPTLYDEF const OptlyFlag *optly_get_flag(const OptlyFlag *flags, const char *name);
-
-OPTLYDEF bool     optly_bool(OptlyCommand *command, const char *name);
-OPTLYDEF char     optly_char(OptlyCommand *command, const char *name);
-OPTLYDEF char    *optly_string(OptlyCommand *command, const char *name);
-OPTLYDEF int8_t   optly_int8(OptlyCommand *command, const char *name);
-OPTLYDEF int16_t  optly_int16(OptlyCommand *command, const char *name);
-OPTLYDEF int32_t  optly_int32(OptlyCommand *command, const char *name);
-OPTLYDEF int64_t  optly_int64(OptlyCommand *command, const char *name);
-OPTLYDEF uint8_t  optly_uint8(OptlyCommand *command, const char *name);
-OPTLYDEF uint16_t optly_uint16(OptlyCommand *command, const char *name);
-OPTLYDEF uint32_t optly_uint32(OptlyCommand *command, const char *name);
-OPTLYDEF uint64_t optly_uint64(OptlyCommand *command, const char *name);
-OPTLYDEF float    optly_float(OptlyCommand *command, const char *name);
-OPTLYDEF double   optly_double(OptlyCommand *command, const char *name);
-
-OPTLYDEF bool optly_is_command(OptlyCommand *command, const char *name);
-
 OPTLYDEF OptlyPositional *optly_get_positional(OptlyCommand *command, const char *name);
 
 OPTLYDEF void optly_usage(OptlyCommand *command);
@@ -359,25 +447,26 @@ static inline bool optly_is_command_null(const OptlyCommand *cmd) {
   return cmd == NULL || cmd->name == NULL;
 }
 
-inline OPTLYDEF bool optly_flag_value_bool(const OptlyCommand *command, const char *name);
-inline OPTLYDEF char optly_flag_value_char(const OptlyCommand *command, const char *name);
-inline OPTLYDEF char *optly_flag_value_string(const OptlyCommand *command, const char *name);
-inline OPTLYDEF int8_t optly_flag_value_int8(const OptlyCommand *command, const char *name);
-inline OPTLYDEF int16_t optly_flag_value_int16(const OptlyCommand *command, const char *name);
-inline OPTLYDEF int32_t optly_flag_value_int32(const OptlyCommand *command, const char *name);
-inline OPTLYDEF int64_t optly_flag_value_int64(const OptlyCommand *command, const char *name);
-inline OPTLYDEF uint8_t optly_flag_value_uint8(const OptlyCommand *command, const char *name);
-inline OPTLYDEF uint16_t optly_flag_value_uint16(const OptlyCommand *command, const char *name);
-inline OPTLYDEF uint32_t optly_flag_value_uint32(const OptlyCommand *command, const char *name);
-inline OPTLYDEF uint64_t optly_flag_value_uint64(const OptlyCommand *command, const char *name);
-inline OPTLYDEF float optly_flag_value_float(const OptlyCommand *command, const char *name);
-inline OPTLYDEF double optly_flag_value_double(const OptlyCommand *command, const char *name);
-inline OPTLYDEF OptlyPositional *optly_get_positional(OptlyCommand *command, const char *name);
+OPTLYDEF bool             optly_flag_value_bool(const OptlyCommand *command, const char *name);
+OPTLYDEF char             optly_flag_value_char(const OptlyCommand *command, const char *name);
+OPTLYDEF char            *optly_flag_value_string(const OptlyCommand *command, const char *name);
+OPTLYDEF int8_t           optly_flag_value_int8(const OptlyCommand *command, const char *name);
+OPTLYDEF int16_t          optly_flag_value_int16(const OptlyCommand *command, const char *name);
+OPTLYDEF int32_t          optly_flag_value_int32(const OptlyCommand *command, const char *name);
+OPTLYDEF int64_t          optly_flag_value_int64(const OptlyCommand *command, const char *name);
+OPTLYDEF uint8_t          optly_flag_value_uint8(const OptlyCommand *command, const char *name);
+OPTLYDEF uint16_t         optly_flag_value_uint16(const OptlyCommand *command, const char *name);
+OPTLYDEF uint32_t         optly_flag_value_uint32(const OptlyCommand *command, const char *name);
+OPTLYDEF uint64_t         optly_flag_value_uint64(const OptlyCommand *command, const char *name);
+OPTLYDEF float            optly_flag_value_float(const OptlyCommand *command, const char *name);
+OPTLYDEF double           optly_flag_value_double(const OptlyCommand *command, const char *name);
+OPTLYDEF OptlyPositional *optly_get_positional(OptlyCommand *command, const char *name);
 
 #endif  // OPTLY_H
 
 // -----------------------------------
 
+#define OPTLY_IMPLEMENTATION
 #ifdef OPTLY_IMPLEMENTATION
 
 #include <assert.h>
@@ -388,53 +477,89 @@ inline OPTLYDEF OptlyPositional *optly_get_positional(OptlyCommand *command, con
 
 // Logcie integration
 
-#ifndef OPTLY_LOG_BACKEND
-#ifdef LOGCIE
+#ifndef OPTLY_LOG
+#if defined(LOGCIE) && LOGCIE_VERSION_NUMBER >= 1200
+
 #ifdef LOGCIE_VA_LOGS
-#define OPTLY_LOG_BACKED(level, ...) LOGCIE_##level##_VA(__VA_ARGS__)
+#define OPTLY_LOG(level, msg, ...) \
+  LOGCIE_LOG_MOD_VA("optly", level, msg, __VA_ARGS__)
 #else
-#define OPTLY_LOG_BACKED(level, ...) LOGCIE_##level(__VA_ARGS__)
+#define OPTLY_LOG(level, ...) \
+  LOGCIE_LOG_MOD("optly", level, __VA_ARGS__)
 #endif
+
 #else
-#define OPTLY_LOG_BACKED(level, ...)
-#endif
+
+#if defined(LOGCIE) && LOGCIE_VERSION_NUMBER < 1200
+#warning "Your Logcie version is too old. Falling back to fprintf logging."
 #endif
 
-#ifndef OPTLY_LOG_TRACE
-#define OPTLY_LOG_TRACE(...) OPTLY_LOG_BACKED(TRACE, __VA_ARGS__)
-#endif
+#define OPTLY_LOG(level, ...)     \
+  do {                            \
+    fprintf(stderr, #level ": "); \
+    fprintf(stderr, __VA_ARGS__); \
+    fprintf(stderr, "\n");        \
+  } while (0)
 
-#ifndef OPTLY_LOG_DEBUG
-#define OPTLY_LOG_DEBUG(...) OPTLY_LOG_BACKED(DEBUG, __VA_ARGS__)
 #endif
-
-#ifndef OPTLY_LOG_VERBOSE
-#define OPTLY_LOG_VERBOSE(...) OPTLY_LOG_BACKED(VERBOSE, __VA_ARGS__)
-#endif
-
-#ifndef OPTLY_LOG_INFO
-#define OPTLY_LOG_INFO(...) OPTLY_LOG_BACKED(INFO, __VA_ARGS__)
-#endif
-
-#ifndef OPTLY_LOG_WARN
-#define OPTLY_LOG_WARN(...) OPTLY_LOG_BACKED(WARN, __VA_ARGS__)
-#endif
-
-#ifndef OPTLY_LOG_ERROR
-#define OPTLY_LOG_ERROR(...) OPTLY_LOG_BACKED(ERROR, __VA_ARGS__)
-#endif
-
-#ifndef OPTLY_LOG_FATAL
-#define OPTLY_LOG_FATAL(...) OPTLY_LOG_BACKED(FATAL, __VA_ARGS__)
 #endif
 
 #define SHIFT_ARG(argv, argc) (++(argv), --(argc))
 
-#define UNREACHABLE(message)                                               \
-  do {                                                                     \
-    OPTLY_LOG_FATAL("%s:%d: UNREACHABLE: %s", __FILE__, __LINE__, message) \
-    abort();                                                               \
-  } while (0)
+static const char *error_messages[] = {
+  [OPTLY_OK]                      = "No error",
+  [OPTLY_ERR_UNKNOWN_FLAG]        = "Unknown flag",
+  [OPTLY_ERR_UNKNOWN_COMMAND]     = "Unknown command",
+  [OPTLY_ERR_MISSING_VALUE]       = "Flag requires a value",
+  [OPTLY_ERR_INVALID_VALUE]       = "Invalid value for flag",
+  [OPTLY_ERR_MISSING_REQUIRED]    = "Required flag is not present",
+  [OPTLY_ERR_POSITIONAL_TOO_FEW]  = "Not enough positional arguments",
+  [OPTLY_ERR_POSITIONAL_TOO_MANY] = "Too many positional arguments",
+  [OPTLY_ERR_DUPLICATE_VARIADIC]  = "Duplicate variadic positional",
+  [OPTLY_ERR_BATCH_NON_BOOL]      = "Cannot batch non-boolean flags",
+};
+
+OPTLYDEF const char *optly_error_message(OptlyErrorKind err) {
+#if __STDC_VERSION__ >= 201112L  // Check for C11 support
+  static_assert(Count_OptlyError == 10, "Forgot to update optly_error_message");
+#else
+  assert(Count_OptlyError == 10 && "Forgot to update optly_error_message");
+#endif
+
+  assert(err >= OPTLY_OK && err < Count_OptlyError);
+  return error_messages[err];
+}
+
+OPTLYDEF void optly_error_print(const OptlyErrors *errs) {
+  for (size_t i = 0; i < errs->count; i++) {
+    fprintf(stdout, "ERROR: %s (%s)\n", optly_error_message(errs->items[i].kind), errs->items[i].arg);
+  }
+}
+
+static void optly__push_error(OptlyErrors *errs, OptlyErrorKind err, const char *arg) {
+  if (!errs) {
+    return;
+  }
+
+  if (errs->count < OPTLY_MAX_ERRORS) {
+    errs->items[errs->count++] = (OptlyError){err, arg};
+  }
+}
+
+#ifdef OPTLY_NO_EXIT
+#define OPTLY_EXIT(errs, code)
+#else
+#define OPTLY_EXIT(errs, code) \
+  do { exit(code); } while (0)
+#endif
+
+OPTLYDEF size_t optly_errors_count(const OptlyErrors *errs) {
+  return errs ? errs->count : 0;
+}
+
+OPTLYDEF OptlyError optly_errors_at(const OptlyErrors *errs, size_t i) {
+  return errs->items[i];
+}
 
 static bool optly__has_flags(OptlyCommand *cmd) {
   return cmd && cmd->flags && !optly_is_flag_null(cmd->flags);
@@ -494,6 +619,7 @@ static const char *optly__flag_type_name(OptlyFlagType type) {
     case OPTLY_TYPE_UINT64: return "<u64>";
     case OPTLY_TYPE_FLOAT:  return "<float>";
     case OPTLY_TYPE_DOUBLE: return "<double>";
+    case OPTLY_TYPE_ENUM:   return "<enum>";
   }
 
   return "";
@@ -572,6 +698,10 @@ static void optly__usage_commands_list(OptlyCommand *commands) {
 #ifdef OPTLY_GEN_HELP_COMMAND
   fprintf(stderr, "  %-*s  %s\n", (int)pad, "help", "Show help for command");
 #endif
+
+#ifdef OPTLY_GEN_VERSION_COMMAND
+  fprintf(stderr, "  %-*s  %s\n", (int)pad, "version", "Show app version");
+#endif
 }
 
 static void optly__usage_flags(OptlyFlag *flags) {
@@ -582,8 +712,30 @@ static void optly__usage_flags(OptlyFlag *flags) {
   size_t pad = optly__flag_print_width(flags);
 
   for (OptlyFlag *flag = flags; !optly_is_flag_null(flag); flag++) {
-    char        buf[OPTLY_FLAG_BUFFER_LENGTH];
-    const char *type = optly__flag_type_name(flag->type);
+    char buf[OPTLY_FLAG_BUFFER_LENGTH + 16];
+
+    // const char *type = optly__flag_type_name(flag->type);
+    char type_buf[OPTLY_FLAG_BUFFER_LENGTH];
+
+    if (flag->type == OPTLY_TYPE_ENUM && flag->value.as_enum) {
+      char **vals = flag->value.as_enum;
+
+      size_t offset = 0;
+      offset += snprintf(type_buf + offset, sizeof(type_buf) - offset, "[");
+
+      for (char **v = vals + 1; *v; v++) {
+        offset += snprintf(type_buf + offset, sizeof(type_buf) - offset, "%s", *v);
+        if (*(v + 1)) {
+          offset += snprintf(type_buf + offset, sizeof(type_buf) - offset, "|");
+        }
+      }
+
+      snprintf(type_buf + offset, sizeof(type_buf) - offset, "]");
+    } else {
+      snprintf(type_buf, sizeof(type_buf), "%s", optly__flag_type_name(flag->type));
+    }
+
+    const char *type = type_buf;
 
     if (flag->shortname && flag->fullname) {
       snprintf(buf, sizeof(buf), "-%c --%s %s", flag->shortname, flag->fullname, type);
@@ -597,6 +749,10 @@ static void optly__usage_flags(OptlyFlag *flags) {
 
     if (flag->required) {
       fprintf(stderr, " (required)");
+    } else if (flag->type == OPTLY_TYPE_ENUM && flag->value.as_enum) {
+      if (flag->value.as_enum[0]) {
+        fprintf(stderr, " (default: %s)", flag->value.as_enum[0]);
+      }
     } else if (flag->value.as_string != NULL) {
       optly__print_default_value(flag);
     }
@@ -605,8 +761,11 @@ static void optly__usage_flags(OptlyFlag *flags) {
   }
 
 #ifdef OPTLY_GEN_HELP_FLAG
-  char *help = "-h --help";
-  fprintf(stderr, "\n  %-*s Show this message\n", (int)pad, help);
+  fprintf(stderr, "\n  %-*s  Show this message\n", (int)pad + type_name_pad, "-h --help");
+#endif
+
+#ifdef OPTLY_GEN_VERSION_FLAG
+  fprintf(stderr, "  %-*s  Show version\n", (int)pad + type_name_pad, "-v --version");
 #endif
 }
 
@@ -616,7 +775,11 @@ static void optly__usage_positionals(OptlyPositional *pos) {
   fprintf(stderr, "\nPOSITIONAL ARGUMENTS\n");
 
   for (; pos->name; pos++) {
-    fprintf(stderr, "  %s  (%zu..%zu values)\n", pos->name, pos->min, pos->max ? pos->max : SIZE_MAX);
+    if (pos->max == 0) {
+      fprintf(stderr, "  %s  (%zu.. values)\n", pos->name, pos->min);
+    } else {
+      fprintf(stderr, "  %s  (%zu..%zu values)\n", pos->name, pos->min, pos->max);
+    }
   }
 }
 
@@ -635,25 +798,6 @@ OPTLYDEF void optly_usage(OptlyCommand *command) {
   fprintf(stderr, "\nRun '%s help <command>' for more information.\n", command->name);
 #endif
 }
-
-#ifdef OPTLY_GET_HELP_FLAG
-static OptlyFlag optly__help_flag = {
-  .fullname    = "help",
-  .shortname   = 'h',
-  .description = "Show this help message",
-  .required    = false,
-  .present     = false,
-  .value       = {.as_bool = false},
-  .type        = OPTLY_TYPE_BOOL
-};
-#endif
-
-#ifdef OPTLY_GET_HELP_COMMAND
-static OptlyCommand optly__help_command = {
-  .name        = "help",
-  .description = "Show help for command"
-};
-#endif
 
 /**
  * Check if argument matches a flag definition.
@@ -678,16 +822,20 @@ static OptlyFlag *optly__find_flag(const char *arg, OptlyFlag *flags) {
   return NULL;
 }
 
-static bool optly__flag_set_value(OptlyFlag *flag, char *value) {
+static void optly__flag_set_value(OptlyFlag *flag, char *value, OptlyErrors *errs) {
   assert(flag);
 
   if (flag->type != OPTLY_TYPE_BOOL && !value) {
-    OPTLY_LOG_FATAL("Flag --%s requires value", flag->fullname);
-    exit(1);
+    OPTLY_LOG(FATAL, "Flag --%s requires value", flag->fullname);
+    optly__push_error(errs, OPTLY_ERR_MISSING_VALUE, flag->fullname);
+    return;
   }
 
-  flag->value.as_int64 = 0;
-  char *end            = "";
+  if (flag->type != OPTLY_TYPE_ENUM) {
+    flag->value.as_int64 = 0;
+  }
+
+  char *end = "";
 
   switch (flag->type) {
     case OPTLY_TYPE_CHAR:   flag->value.as_char = *value; break;
@@ -696,28 +844,94 @@ static bool optly__flag_set_value(OptlyFlag *flag, char *value) {
     case OPTLY_TYPE_INT16:  flag->value.as_int16 = strtoll(value, &end, 10); break;
     case OPTLY_TYPE_INT32:  flag->value.as_int32 = strtoll(value, &end, 10); break;
     case OPTLY_TYPE_INT64:  flag->value.as_int64 = strtoll(value, &end, 10); break;
-    case OPTLY_TYPE_UINT8:  flag->value.as_uint8 = strtoll(value, &end, 10); break;
-    case OPTLY_TYPE_UINT16: flag->value.as_uint16 = strtoll(value, &end, 10); break;
-    case OPTLY_TYPE_UINT32: flag->value.as_uint32 = strtoll(value, &end, 10); break;
-    case OPTLY_TYPE_UINT64: flag->value.as_uint64 = strtoll(value, &end, 10); break;
-    case OPTLY_TYPE_FLOAT:  flag->value.as_float = strtod(value, &end); break;
+    case OPTLY_TYPE_UINT8:  flag->value.as_uint8 = strtoull(value, &end, 10); break;
+    case OPTLY_TYPE_UINT16: flag->value.as_uint16 = strtoull(value, &end, 10); break;
+    case OPTLY_TYPE_UINT32: flag->value.as_uint32 = strtoull(value, &end, 10); break;
+    case OPTLY_TYPE_UINT64: flag->value.as_uint64 = strtoull(value, &end, 10); break;
+    case OPTLY_TYPE_FLOAT:  flag->value.as_float = strtof(value, &end); break;
     case OPTLY_TYPE_DOUBLE: flag->value.as_double = strtod(value, &end); break;
     case OPTLY_TYPE_BOOL:   flag->value.as_bool = true; break;
+    case OPTLY_TYPE_ENUM:   {
+      char **vals  = flag->value.as_enum;
+      bool   valid = false;
+
+      for (char **v = vals + 1; *v; v++) {
+        if (strcmp(*v, value) == 0) {
+          valid = true;
+          break;
+        }
+      }
+
+      if (!valid) {
+        OPTLY_LOG(ERROR, "Invalid enum value '%s' for --%s", value, flag->fullname);
+        optly__push_error(errs, OPTLY_ERR_INVALID_VALUE, value);
+        return;
+      }
+
+      flag->value.as_enum[0] = value;
+      break;
+    }
   }
 
   if (*end != '\0') {
-    OPTLY_LOG_ERROR("Argument '%s' is not a number (%s)", flag->fullname, value);
-    return false;
+    OPTLY_LOG(ERROR, "Argument '%s' is not a number (%s)", flag->fullname, value);
+    optly__push_error(errs, OPTLY_ERR_INVALID_VALUE, value);
+    return;
   }
 
   flag->present = true;
-  return true;
 }
 
-/**
- * Parse flags from argv.
- */
-static void optly__parse_flags(char ***argv_ptr, int *argc_ptr, OptlyFlag *flags) {
+inline static bool optly__is_help_flag(char *arg) {
+  return strcmp(arg, "--help") == 0 ||
+         strcmp(arg, OPTLY_HELP_SHORT_FLAG) == 0 ||
+         (strlen(arg) > 2 &&
+          arg[0] == '-' &&
+          arg[1] != '-' &&
+          strchr(arg, OPTLY_HELP_SHORT_FLAG[1]) != NULL);
+}
+
+inline static bool optly__is_version_flag(char *arg) {
+  return strcmp(arg, "--version") == 0 ||
+         strcmp(arg, OPTLY_VERSION_SHORT_FLAG) == 0 ||
+         (strlen(arg) > 2 &&
+          arg[0] == '-' &&
+          arg[1] != '-' &&
+          strchr(arg, OPTLY_VERSION_SHORT_FLAG[1]) != NULL);
+}
+
+static void optly__parse_batch_flags(char *arg, OptlyFlag *flags, OptlyErrors *errs) {
+  if (strchr(arg, '=') != NULL) {
+    return;
+  }
+
+  for (char *c = &arg[1]; *c; c++) {
+    char sarg[3];
+    snprintf(sarg, sizeof(sarg), "-%c", *c);
+
+    OptlyFlag *flag = optly__find_flag(sarg, flags);
+
+    if (!flag) {
+      OPTLY_LOG(WARN, "Unknown short flag: %s", sarg);
+      optly__push_error(errs, OPTLY_ERR_UNKNOWN_FLAG, sarg);
+
+      continue;
+    }
+
+    if (flag->type != OPTLY_TYPE_BOOL) {
+      OPTLY_LOG(WARN, "cannot batch non-boolean flags (invalid flag in %s)", sarg);
+      optly__push_error(errs, OPTLY_ERR_BATCH_NON_BOOL, &flag->shortname);
+      continue;
+    }
+
+    flag->value.as_bool = true;
+    flag->present       = true;
+  }
+
+  return;
+}
+
+static void optly__parse_long_flags(char ***argv_ptr, int *argc_ptr, OptlyFlag *flags, OptlyErrors *errs) {
   char **argv = *argv_ptr;
   int    argc = *argc_ptr;
 
@@ -727,94 +941,69 @@ static void optly__parse_flags(char ***argv_ptr, int *argc_ptr, OptlyFlag *flags
 
   char *arg = *argv;
 
-  // Detect batch short flags like `-abc`
-  bool is_batch_short = (arg[0] == '-' && arg[1] != '-' && strlen(arg) > 2) && arg[2] != '=';
-
-  if (is_batch_short) {
-    if (strchr(arg, '=') != NULL) {
-      *argv_ptr = argv;
-      *argc_ptr = argc;
-      return;
-    }
-
-    for (char *c = &arg[1]; *c; c++) {
-      char sarg[3];
-      snprintf(sarg, sizeof(sarg), "-%c", *c);
-
-      OptlyFlag *flag = optly__find_flag(sarg, flags);
-
-      if (!flag) {
-#ifdef OPTLY_GEN_HELP_FLAG
-        if (strcmp(arg, "--help") == 0 || strcmp(arg, "-h") == 0) {
-          optly__help_flag.present = true;
-          return;
-        }
-#endif
-
-        OPTLY_LOG_WARN("Unknown short flag: %s", sarg);
-        continue;
-      }
-
-      if (flag->type != OPTLY_TYPE_BOOL) {
-        OPTLY_LOG_WARN("cannot batch non-boolean flags (invalid flag in %s)", sarg);
-        continue;
-      }
-
-      flag->value.as_bool = true;
-      flag->present       = true;
-    }
-
-    *argv_ptr = argv;
-    *argc_ptr = argc;
-    return;
-  }
-
-  // Handle single flag: long or short
   char *value = NULL;
-
-  char *eq = strchr(arg, '=');
+  char *eq    = strchr(arg, '=');
   char  tmp[OPTLY_FLAG_BUFFER_LENGTH];
 
   if (eq) {
     size_t len = strlen(arg);
-    if (len >= sizeof(tmp)) len = sizeof(tmp) - 1;
-    memcpy(tmp, arg, len);
-    tmp[len] = '\0';
 
+    if (len >= sizeof(tmp)) {
+      len = sizeof(tmp) - 1;
+    }
+
+    memcpy(tmp, arg, len);
+
+    tmp[len]  = '\0';
     char *eq2 = strchr(tmp, '=');
     *eq2      = '\0';
-    arg       = tmp;
-    value     = eq + 1;
+
+    arg   = tmp;
+    value = eq + 1;
   }
 
   OptlyFlag *flag = optly__find_flag(arg, flags);
 
   if (!flag) {
-#ifdef OPTLY_GEN_HELP_FLAG
-    if (strcmp(arg, "--help") == 0 || strcmp(arg, "-h") == 0) {
-      optly__help_flag.present = true;
-      return;
-    }
-#endif
-
-    OPTLY_LOG_WARN("Unknown flag: %s", arg);
+    OPTLY_LOG(WARN, "Unknown flag: %s", arg);
+    // NOTE: We can't save arg for later because it can point to local tmp (if arg was in form --flag=value)
+    optly__push_error(errs, OPTLY_ERR_UNKNOWN_FLAG, *argv);
     return;
   }
 
   flag->present = true;
 
-  // If no value provided inline and next arg looks like a value (not a flag)
-  if (!value && flag->type != OPTLY_TYPE_BOOL && argc > 1 && argv[1][0] != '-') {
+  if (!value && flag->type != OPTLY_TYPE_BOOL && argv[1] && argv[1][0] != '-') {
     value = argv[1];
     SHIFT_ARG(argv, argc);
   }
 
-  if (!optly__flag_set_value(flag, value)) {
-    OPTLY_LOG_ERROR("Failed to set value for flag: %s\n", arg);
-  }
+  optly__flag_set_value(flag, value, errs);
 
   *argv_ptr = argv;
   *argc_ptr = argc;
+}
+
+/**
+ * Parse flags from argv.
+ */
+static void optly__parse_flags(char ***argv_ptr, int *argc_ptr, OptlyFlag *flags, OptlyErrors *errs) {
+  char **argv = *argv_ptr;
+  int    argc = *argc_ptr;
+
+  if (!argv || argc <= 0 || !*argv) {
+    return;
+  }
+
+  char *arg = *argv;
+
+  bool is_batch_short = (arg[0] == '-' && arg[1] != '-' && strlen(arg) > 2) && arg[2] != '=';
+
+  if (is_batch_short) {
+    optly__parse_batch_flags(arg, flags, errs);
+  } else {
+    optly__parse_long_flags(argv_ptr, argc_ptr, flags, errs);
+  }
 }
 
 /**
@@ -865,29 +1054,46 @@ static void optly__push_positional(OptlyCommand *cmd, char *value) {
   }
 }
 
-static bool optly__validate_positionals(OptlyCommand *cmd) {
+static void optly__validate_flags(OptlyCommand *cmd, OptlyErrors *errs) {
+  for (OptlyFlag *flag = cmd->flags; !optly_is_flag_null(flag); flag++) {
+    if (flag->required && !flag->present) {
+      OPTLY_LOG(ERROR, "Required flag '--%s' is not present", flag->fullname);
+      optly__push_error(errs, OPTLY_ERR_MISSING_REQUIRED, flag->fullname);
+    }
+  }
+}
+
+static void optly__validate_positionals(OptlyCommand *cmd, OptlyErrors *errs) {
   if (!cmd->positionals) {
-    return true;
+    return;
   }
 
-  bool ok = true;
+  bool infinite_found = false;
 
   for (OptlyPositional *pos = cmd->positionals; pos->name; pos++) {
+    if (pos->max == 0) {
+      if (infinite_found) {
+        OPTLY_LOG(FATAL, "Positional '%s' allows infinite values, but another variadic positional already exists", pos->name);
+        optly__push_error(errs, OPTLY_ERR_DUPLICATE_VARIADIC, pos->name);
+        OPTLY_EXIT(&errs, OPTLY_ERR_DUPLICATE_VARIADIC);
+      }
+
+      infinite_found = true;
+    }
+
     if (pos->count < pos->min) {
-      OPTLY_LOG_ERROR("Not enough values for positional '%s'", pos->name);
-      ok = false;
+      OPTLY_LOG(ERROR, "Not enough values for positional '%s'", pos->name);
+      optly__push_error(errs, OPTLY_ERR_POSITIONAL_TOO_FEW, pos->name);
     }
 
     if (pos->max != 0 && pos->count > pos->max) {
-      OPTLY_LOG_ERROR("Too many values for positional '%s'", pos->name);
-      ok = false;
+      OPTLY_LOG(ERROR, "Too many values for positional '%s'", pos->name);
+      optly__push_error(errs, OPTLY_ERR_POSITIONAL_TOO_MANY, pos->name);
     }
   }
-
-  return ok;
 }
 
-inline OPTLYDEF bool optly_is_command(OptlyCommand *command, const char *name) {
+OPTLYDEF bool optly_is_command(OptlyCommand *command, const char *name) {
   return command && strcmp(command->name, name) == 0;
 }
 
@@ -901,72 +1107,77 @@ const OptlyFlag *optly_get_flag(const OptlyFlag *flags, const char *name) {
   return NULL;
 }
 
-inline OPTLYDEF bool optly_flag_value_bool(const OptlyCommand *command, const char *name) {
+OPTLYDEF bool optly_flag_value_bool(const OptlyCommand *command, const char *name) {
   const OptlyFlag *flag = optly_get_flag(command->flags, name);
   return flag ? flag->value.as_bool : false;
 }
 
-inline OPTLYDEF char optly_flag_value_char(const OptlyCommand *command, const char *name) {
+OPTLYDEF char optly_flag_value_char(const OptlyCommand *command, const char *name) {
   const OptlyFlag *flag = optly_get_flag(command->flags, name);
   return flag ? flag->value.as_char : '\0';
 }
 
-inline OPTLYDEF char *optly_flag_value_string(const OptlyCommand *command, const char *name) {
+OPTLYDEF char *optly_flag_value_string(const OptlyCommand *command, const char *name) {
   const OptlyFlag *flag = optly_get_flag(command->flags, name);
   return flag ? flag->value.as_string : "";
 }
 
-inline OPTLYDEF int8_t optly_flag_value_int8(const OptlyCommand *command, const char *name) {
+OPTLYDEF int8_t optly_flag_value_int8(const OptlyCommand *command, const char *name) {
   const OptlyFlag *flag = optly_get_flag(command->flags, name);
   return flag ? flag->value.as_int8 : 0;
 }
 
-inline OPTLYDEF int16_t optly_flag_value_int16(const OptlyCommand *command, const char *name) {
+OPTLYDEF int16_t optly_flag_value_int16(const OptlyCommand *command, const char *name) {
   const OptlyFlag *flag = optly_get_flag(command->flags, name);
   return flag ? flag->value.as_int16 : 0;
 }
 
-inline OPTLYDEF int32_t optly_flag_value_int32(const OptlyCommand *command, const char *name) {
+OPTLYDEF int32_t optly_flag_value_int32(const OptlyCommand *command, const char *name) {
   const OptlyFlag *flag = optly_get_flag(command->flags, name);
   return flag ? flag->value.as_int32 : 0;
 }
 
-inline OPTLYDEF int64_t optly_flag_value_int64(const OptlyCommand *command, const char *name) {
+OPTLYDEF int64_t optly_flag_value_int64(const OptlyCommand *command, const char *name) {
   const OptlyFlag *flag = optly_get_flag(command->flags, name);
   return flag ? flag->value.as_int64 : 0;
 }
 
-inline OPTLYDEF uint8_t optly_flag_value_uint8(const OptlyCommand *command, const char *name) {
+OPTLYDEF uint8_t optly_flag_value_uint8(const OptlyCommand *command, const char *name) {
   const OptlyFlag *flag = optly_get_flag(command->flags, name);
   return flag ? flag->value.as_uint8 : 0;
 }
 
-inline OPTLYDEF uint16_t optly_flag_value_uint16(const OptlyCommand *command, const char *name) {
+OPTLYDEF uint16_t optly_flag_value_uint16(const OptlyCommand *command, const char *name) {
   const OptlyFlag *flag = optly_get_flag(command->flags, name);
   return flag ? flag->value.as_uint16 : 0;
 }
 
-inline OPTLYDEF uint32_t optly_flag_value_uint32(const OptlyCommand *command, const char *name) {
+OPTLYDEF uint32_t optly_flag_value_uint32(const OptlyCommand *command, const char *name) {
   const OptlyFlag *flag = optly_get_flag(command->flags, name);
   return flag ? flag->value.as_uint32 : 0;
 }
 
-inline OPTLYDEF uint64_t optly_flag_value_uint64(const OptlyCommand *command, const char *name) {
+OPTLYDEF uint64_t optly_flag_value_uint64(const OptlyCommand *command, const char *name) {
   const OptlyFlag *flag = optly_get_flag(command->flags, name);
   return flag ? flag->value.as_uint64 : 0;
 }
 
-inline OPTLYDEF float optly_flag_value_float(const OptlyCommand *command, const char *name) {
+OPTLYDEF float optly_flag_value_float(const OptlyCommand *command, const char *name) {
   const OptlyFlag *flag = optly_get_flag(command->flags, name);
   return flag ? flag->value.as_float : 0;
 }
 
-inline OPTLYDEF double optly_flag_value_double(const OptlyCommand *command, const char *name) {
+OPTLYDEF double optly_flag_value_double(const OptlyCommand *command, const char *name) {
   const OptlyFlag *flag = optly_get_flag(command->flags, name);
   return flag ? flag->value.as_double : 0;
 }
 
-inline OPTLYDEF OptlyPositional *optly_get_positional(OptlyCommand *command, const char *name) {
+OPTLYDEF char *optly_flag_value_enum(const OptlyCommand *command, const char *name) {
+  const OptlyFlag *flag = optly_get_flag(command->flags, name);
+  return flag ? flag->value.as_enum[0] : NULL;
+}
+
+OPTLYDEF OptlyPositional *optly_get_positional(OptlyCommand *command, const char *name) {
   for (OptlyPositional *p = command->positionals; p->name; p++) {
     if (strcmp(p->name, name) == 0) {
       return p;
@@ -976,17 +1187,20 @@ inline OPTLYDEF OptlyPositional *optly_get_positional(OptlyCommand *command, con
   return NULL;
 }
 
-OPTLYDEF OptlyCommand *optly_parse_args(int argc, char *argv[], OptlyCommand *main_cmd) {
+#if defined(OPTLY_GEN_VERSION_FLAG) || defined(OPTLY_GEN_VERSION_COMMAND)
+OPTLYDEF OptlyErrors optly_parse_args(int argc, char *argv[], OptlyCommand *main_cmd, const char *version) {
+#else
+OPTLYDEF OptlyErrors optly_parse_args(int argc, char *argv[], OptlyCommand *main_cmd) {
+#endif
   assert(argc > 0);
+  OptlyErrors errs = {0};
 
   if (main_cmd->name == NULL) {
     main_cmd->name = argv[0];
   }
 
-  OptlyCommand *current_cmd = main_cmd;
-
-  bool positional_only            = false;
-  bool all_required_flags_present = true;
+  OptlyCommand *current_cmd     = main_cmd;
+  bool          positional_only = false;
 
   SHIFT_ARG(argv, argc);
 
@@ -997,131 +1211,117 @@ OPTLYDEF OptlyCommand *optly_parse_args(int argc, char *argv[], OptlyCommand *ma
       break;
     }
 
+#ifdef OPTLY_GEN_HELP_FLAG
+    if (optly__is_help_flag(arg)) {
+      optly_usage(current_cmd);
+      exit(0);
+    }
+#endif
+
+#ifdef OPTLY_GEN_VERSION_FLAG
+    if (optly__is_version_flag(arg)) {
+      fprintf(stderr, "%s: %s\n", main_cmd->name, version);
+      exit(0);
+    }
+#endif
+
     if (positional_only) {
       optly__push_positional(current_cmd, arg);
       SHIFT_ARG(argv, argc);
       continue;
     }
 
-    if (arg[0] == '-') {
-      if (arg[1] == '-' && arg[2] == '\0') {
-        // `--` encountered
-        positional_only = true;
-      } else if (current_cmd->flags) {
-        optly__parse_flags(&argv, &argc, current_cmd->flags);
-      } else {
-        optly__push_positional(current_cmd, arg);
-      }
-    } else {
-      OptlyCommand *cmd = optly__parse_command(arg, current_cmd->commands);
-
-#ifdef OPTLY_GEN_HELP_COMMAND
-      if (strcmp(arg, "help") == 0) {
-        SHIFT_ARG(argv, argc);
-
-        if (argc == 0) {
-          optly_usage(current_cmd);
-          exit(0);
-        }
-
-        char         *target = *argv;
-        OptlyCommand *cmd    = optly__parse_command(target, current_cmd->commands);
-
-        if (!cmd) {
-          OPTLY_LOG_ERROR("Unknown command: %s", target);
-          exit(1);
-        }
-
-        optly_usage(cmd);
-        exit(0);
-      }
-#endif
-
-      if (!cmd) {
-        if (current_cmd->positionals) {
-          optly__push_positional(current_cmd, arg);
-        } else {
-          OPTLY_LOG_ERROR("Unknown command %s", arg);
-        }
-
-        SHIFT_ARG(argv, argc);
-        continue;
-      }
-
-      for (OptlyFlag *flag = current_cmd->flags; !optly_is_flag_null(flag); flag++) {
-        if (flag->required && !flag->present) {
-          all_required_flags_present = false;
-          OPTLY_LOG_ERROR("Required flag '--%s' is not present", flag->fullname);
-        }
-      }
-
-      if (!optly__validate_positionals(current_cmd)) {
-        all_required_flags_present = false;
-      }
-
-      bool infinite_found = false;
-
-      for (OptlyPositional *pos = current_cmd->positionals; pos != NULL && pos->name != NULL; pos++) {
-        if (pos->max == 0) {
-          if (infinite_found) {
-            OPTLY_LOG_FATAL("Positional '%s' allows infinite values, but another variadic positional already exists", pos->name);
-            exit(1);
-          }
-
-          infinite_found = true;
-        }
-      }
-
-      current_cmd->next_command = cmd;
-      current_cmd               = current_cmd->next_command;
+    if (strcmp(arg, "--") == 0) {
+      positional_only = true;
+      SHIFT_ARG(argv, argc);
+      continue;
     }
 
-#ifdef OPTLY_GET_HELP_FLAG
-    if (optly__help_flag.present) {
-      optly_usage(current_cmd);
+    if (arg[0] == '-') {
+      if (current_cmd->flags) {
+        optly__parse_flags(&argv, &argc, current_cmd->flags, &errs);
+      } else {
+        // '--flag' argument is positional if no flags defined
+        optly__push_positional(current_cmd, arg);
+      }
+
+      SHIFT_ARG(argv, argc);
+      continue;
+    }
+
+    OptlyCommand *cmd = optly__parse_command(arg, current_cmd->commands);
+
+#ifdef OPTLY_GEN_HELP_COMMAND
+    if (strcmp(arg, "help") == 0) {
+      SHIFT_ARG(argv, argc);
+
+      OptlyCommand *target = current_cmd;
+
+      if (argc > 0) {
+        OptlyCommand *tmp = optly__parse_command(*argv, current_cmd->commands);
+        if (!tmp) {
+          OPTLY_LOG(ERROR, "Unknown command: %s", *argv);
+          optly__push_error(&errs, OPTLY_ERR_UNKNOWN_COMMAND, *argv);
+          OPTLY_EXIT(&errs, OPTLY_ERR_UNKNOWN_COMMAND);
+        }
+
+        target = tmp;
+      }
+
+      optly_usage(target);
       exit(0);
     }
 #endif
 
+#ifdef OPTLY_GEN_VERSION_COMMAND
+    if (strcmp(arg, "version") == 0) {
+      fprintf(stderr, "%s: %s\n", main_cmd->name, version);
+      exit(0);
+    }
+#endif
+
+    if (cmd) {
+      current_cmd->next_command = cmd;
+      current_cmd               = current_cmd->next_command;
+    } else {
+      if (current_cmd->positionals) {
+        optly__push_positional(current_cmd, arg);
+      } else {
+        OPTLY_LOG(ERROR, "Unknown command %s", arg);
+        optly__push_error(&errs, OPTLY_ERR_UNKNOWN_COMMAND, arg);
+      }
+    }
+
     SHIFT_ARG(argv, argc);
   }
 
-  for (OptlyFlag *flag = current_cmd->flags; !optly_is_flag_null(flag); flag++) {
-    if (flag->required && !flag->present) {
-      all_required_flags_present = false;
-      OPTLY_LOG_ERROR("Required flag '--%s' is not present", flag->fullname);
-    }
-  }
-
-  if (!optly__validate_positionals(current_cmd)) {
-    all_required_flags_present = false;
-  }
-
-  if (!all_required_flags_present) {
-    exit(1);
+  for (OptlyCommand *cmd = main_cmd; cmd; cmd = cmd->next_command) {
+    optly__validate_flags(cmd, &errs);
+    optly__validate_positionals(cmd, &errs);
   }
 
   current_cmd->next_command = NULL;
-  return main_cmd;
+
+#ifndef OPTLY_NO_EXIT
+  if (errs.count > 0) {
+    exit(EXIT_FAILURE);
+  }
+#endif
+
+  return errs;
 }
 
 #endif  // OPTLY_IMPLEMENTATION
 
-// TODO: Add auto `command --help|-h` and `help command`
-// TODO: Should I print type of flag value in usage? @print_flag_type
-// TODO: Usage and version string customisation (usage per command)
 // TODO: Types for variadics?
 // TODO: Support different kind of numbers (0xBABA, 0123)?
-// TODO: Return state? errors? from optly_parse_args
-// TODO: Come up with a way to automatically choose field for .value in optly_flag
-// TODO: Enum type flag support
 
 /*
    ------------------------------------------------------------------------------
    This software is available under 2 licenses -- choose whichever you prefer.
    ------------------------------------------------------------------------------
    ALTERNATIVE A - MIT License
-   Copyright (c) 2026 Nikita Chukov nikita_chul@mail.ru
+   Copyright (c) 2026 Nikita Chulkov nikita_chul@mail.ru
    Permission is hereby granted, free of charge, to any person obtaining a copy of
    this software and associated documentation files (the "Software"), to deal in
    the Software without restriction, including without limitation the rights to

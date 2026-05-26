@@ -1,5 +1,5 @@
 /*
- * Logcie v0.11.0 - Logging Library (Single Header)
+ * Logcie v0.12.0 - Logging Library (Single Header)
  *
  * Description:
  *   Logcie is a lightweight, modular, single-header logging library written in C.
@@ -120,10 +120,6 @@
  *    - logcie_filter_message_contains("text")
  *        Allows logs whosse messages contains the given substring
  *
- *    - logcie_filter_custom(fn)
- *        Allows logs based on user-provied predicate function. This exists to
- *        make it easier if you don't need custom data in your filter
- *
  *   Combining filters:
  *
  *    - logcie_filter_and(a, b)
@@ -162,14 +158,6 @@
  *         .data = NULL,
  *       }
  *     }
- *
- *     // Or if you do not need any custom data and you want to
- *     // deal with creating custom structs you can do this:
- *
- *     Logcie_Sink another_sink = {
- *       // ...
- *       .filter = logcie_filter_custom(custom_filter_fn)
- *     }
  *     ```
  *
  *   Notes:
@@ -178,49 +166,62 @@
  *       compound literals and must remain valid during logging).
  *
  * Modules:
- *   Logcie has another important concept: modules. A module is simply a string used
- *   to label a *scope* where the log originated.
+ *   A module is a string label that identifies the origin of a log message,
+ *   such as "network", "core", or "database". It can be displayed with the
+ *   `$M` token and used in filters.
  *
- *   Modules allow you to group logs by subsystem (e.g., "network", "core", "database")
- *   and can be used in format strings or filters to provied additional context or control
- *   log output.
+ *   Logcie supports three ways to set the module, from simplest to most
+ *   explicit:
  *
- *   To define a module, declare a variable name `logcie_module` in your translation uint:
- *     ```c
- *     static const char *logcie_module = "network";
- *     ```
+ *   1. Per‑file default (via macro):
+ *      ```c
+ *      #define LOGCIE_MODULE "core"
+ *      #include "logcie.h"
+ *      ```
+ *      All classic macros (LOGCIE_INFO, LOGCIE_ERROR, …) in that file will
+ *      be tagged with "core".
  *
- *   When defined, this value will be attached to every log emitted from that file.
- *   If not defined, a default module name is used.
+ *   2. Per‑call explicit module:
+ *      ```c
+ *      LOGCIE_LOG_MOD("network", INFO, "Connected");
+ *      ```
+ *      (Use LOGCIE_LOG_MOD_VA when variadic macros are unavailable.)
+ *      This does not affect any other log line.
  *
- *   You can display the module in your logs using `$M` format token.
- *   For example:
+ *   3. Library integration (recommended for header‑only libraries):
+ *      ```c
+ *      #ifndef YOURLIB_LOG
+ *        #ifdef LOGCIE
+ *          #ifdef LOGCIE_VA_LOGS
+ *            #define YOURLIB_LOG(level, msg, ...) LOGCIE_LOG_MOD_VA("YOURLIB", level, msg, __VA_ARGS__)
+ *          #else
+ *            #define YOURLIB_LOG(level, ...)      LOGCIE_LOG_MOD("YOURLIB", level, __VA_ARGS__)
+ *          #endif
+ *        #else
+ *          #define YOURLIB_LOG(level, ...) (void*)0
+ *        #endif
+ *      #endif
+ *      ```
+ *      If you need to have fallback logging this can be used instead of `(void *)0`:
+ *
+ *      ```c
+ *      #define YOURLIB_LOG(level, ...)                \
+ *         do {                                       \
+ *           fprintf(stderr, #level ": "__VA_ARGS__); \
+ *           fprintf(stderr, "\n");                   \
+ *         } while (0)
+ *      ```
+ *
+ *      Just change YOURLLIB to something more fitting, then call `MYLIB_LOG(INFO, "Library ready");`.
+ *      The module string `"mylib"` is fixed and never clashes with user code.
+ *
+ *   You can display the module in your logs using the `$M` format token:
  *     "$d $t [$L] ($M) $m"
- *   will output
- *      2026-03-25 12:00:00 [INFO] (network) Connection established
+ *   produces
+ *     2026-03-25 12:00:00 [INFO] (network) Connection established
  *
- *   Modules can also be used in custom filters to selectively allow or block logs
+ *   Modules can also be used in filters to selectively allow or block logs
  *   from specific parts of your application.
- *
- *   Modules also make it easy to integrate Logcie-compatible logging into third-party
- *   libraries without creating tight dependencies.
- *
- *   A library can define its own module name and use logging macros (or wrapper macros)
- *   without needing direct knowledge of the application's logging setup.
- *
- *   Example (inside a library):
- *     ```c
- *     #ifndef MYLIB_LOG
- *       #ifdef LOGCIE
- *         static const char *logcie_module = "mylib";
- *         #define MYLIB_LOG(level, ...) LOGCIE_##level(__VA_ARGS__)
- *       #else
- *         #define MYLIB_LOG(level, ...)
- *       #endif
- *     #endif
- *
- *     MYLIB_LOG(INFO, "Library initialized");
- *     ```
  *
  * Example:
  *   You can have sink that will format log with "[$log level$] $log message$"
@@ -292,7 +293,7 @@
 
 // Versioning macros
 #define LOGCIE_VERSION_MAJOR         0
-#define LOGCIE_VERSION_MINOR         11
+#define LOGCIE_VERSION_MINOR         12
 #define LOGCIE_VERSION_RELEASE       0
 #define LOGCIE_VERSION_NUMBER        (LOGCIE_VERSION_MAJOR * 100 * 100 + LOGCIE_VERSION_MINOR * 100 + LOGCIE_VERSION_RELEASE)
 #define LOGCIE_VERSION_FULL          LOGCIE_VERSION_MAJOR.LOGCIE_VERSION_MINOR.LOGCIE_VERSION_RELEASE
@@ -350,30 +351,22 @@ typedef enum Logcie_LogLevel {
 } Logcie_LogLevel;
 
 /**
- * @brief Defines the module name for the current translation unit.
+ * @brief Default module name for classic LOGCIE_* macros.
  *
- * When this variable is defined, all logs from this file will be tagged
- * with the specified module name, which can be displayed using $M in format strings
- * or can be used in filters.
+ * Define this macro **before** including logcie.h to set the module for all
+ * classic log calls in the file. If not defined, `"Logcie"` is used.
  *
- * For C++, we need a different approach
- * Users should define: const char *logcie_module = "module";
+ * @note This macro has no effect on LOGCIE_LOG_MOD / LOGCIE_LOG_MOD_VA,
+ *       which always take an explicit module argument.
  *
- * Example usage:
+ * Example:
  * @code
- * static const char *logcie_module = "network";
+ * #define LOGCIE_MODULE "network"
+ * #include "logcie.h"
  * @endcode
  */
-#ifdef __cplusplus
-#define LOGCIE_MODULE_DEF
-#else
-#define LOGCIE_MODULE_DEF static
-#endif
-
-#if defined(__has_attribute) && __has_attribute(unused)
-LOGCIE_MODULE_DEF const char __attribute__((unused)) * logcie_module;
-#else
-LOGCIE_MODULE_DEF const char *logcie_module;
+#ifndef LOGCIE_MODULE
+#define LOGCIE_MODULE "Logcie"
 #endif
 
 /**
@@ -454,7 +447,7 @@ typedef struct Logcie_Formatter {
  * @param log   Log metadata to evaluate
  * @return      1 to emit log, 0 to suppress
  */
-typedef uint8_t(Logcie_FilterFn)(void *data, Logcie_Log *log);
+typedef uint8_t(Logcie_FilterFn)(const void *data, Logcie_Log *log);
 
 /**
  * @brief Filter struct
@@ -466,7 +459,7 @@ typedef uint8_t(Logcie_FilterFn)(void *data, Logcie_Log *log);
  */
 typedef struct Logcie_Filter {
   Logcie_FilterFn *filter;
-  void            *data;
+  const void      *data;
 } Logcie_Filter;
 
 /**
@@ -521,17 +514,19 @@ struct Logcie_Log {
 };
 
 // Helper macro for constructing a log message
-#define LOGCIE_CREATE_LOG(lvl, txt, f, l) \
-  (Logcie_Log) {                          \
-    .level    = lvl,                      \
-    .msg      = txt,                      \
-    .time     = time(NULL),               \
-    .module   = logcie_module,            \
-    .location = {                         \
-      .file = f,                          \
-      .line = l,                          \
-    }                                     \
+#define LOGCIE_CREATE_LOG_MOD(mod, lvl, txt, f, l) \
+  (Logcie_Log) {                                   \
+    .level    = lvl,                               \
+    .msg      = txt,                               \
+    .time     = time(NULL),                        \
+    .module   = mod,                               \
+    .location = {                                  \
+      .file = f,                                   \
+      .line = l,                                   \
+    }                                              \
   }
+
+#define LOGCIE_CREATE_LOG(lvl, txt, f, l) LOGCIE_CREATE_LOG_MOD(LOGCIE_MODULE, lvl, txt, f, l)
 
 #ifndef PRINTF_TYPECHECK
 #if defined __has_attribute && __has_attribute(__format__)
@@ -542,51 +537,52 @@ struct Logcie_Log {
 #endif
 
 /**
- * @brief Convenience macros for each log level.
+ * @brief Compiler‑specific variadic handling for the core macro
  * These use __FILE__ and __LINE__ to capture call site.
  */
 #if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 202311L)
-#define LOGCIE_TRACE(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
-#define LOGCIE_DEBUG(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
-#define LOGCIE_VERBOSE(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
-#define LOGCIE_INFO(msg, ...)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
-#define LOGCIE_WARN(msg, ...)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
-#define LOGCIE_ERROR(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
-#define LOGCIE_FATAL(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
-#define LOGCIE_LOG(level, msg, ...) LOGCIE_##level(msg, __VA_OPT__(, ) __VA_ARGS__)
+#define LOGCIE_LOG_IMPL(level, msg, ...)        logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg __VA_OPT__(, ) __VA_ARGS__)
+#define LOGCIE_LOG_MOD(module, level, msg, ...) logcie_log(LOGCIE_CREATE_LOG_MOD(module, LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg __VA_OPT__(, ) __VA_ARGS__)
+#elif !defined(LOGCIE_PEDANTIC) && (defined(__GNUC__) || defined(__clang__))
+#define LOGCIE_LOG_IMPL(level, msg, ...)        logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
+#define LOGCIE_LOG_MOD(module, level, msg, ...) logcie_log(LOGCIE_CREATE_LOG_MOD(module, LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
 #else
-#if !defined(LOGCIE_PEDANTIC) && (defined(__GNUC__) || defined(__clang__))
-#define LOGCIE_TRACE(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
-#define LOGCIE_DEBUG(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
-#define LOGCIE_VERBOSE(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
-#define LOGCIE_INFO(msg, ...)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
-#define LOGCIE_WARN(msg, ...)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
-#define LOGCIE_ERROR(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
-#define LOGCIE_FATAL(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
-#define LOGCIE_LOG(level, msg, ...) LOGCIE_##level(msg, ##__VA_ARGS__)
-#else
-#define LOGCIE_TRACE(msg)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE, msg, __FILE__, __LINE__), msg)
-#define LOGCIE_DEBUG(msg)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG, msg, __FILE__, __LINE__), msg)
-#define LOGCIE_VERBOSE(msg)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__), msg)
-#define LOGCIE_INFO(msg)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO, msg, __FILE__, __LINE__), msg)
-#define LOGCIE_WARN(msg)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN, msg, __FILE__, __LINE__), msg)
-#define LOGCIE_ERROR(msg)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR, msg, __FILE__, __LINE__), msg)
-#define LOGCIE_FATAL(msg)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL, msg, __FILE__, __LINE__), msg)
-#define LOGCIE_LOG(level, msg) LOGCIE_##level(msg)
+#define LOGCIE_LOG_IMPL(level, msg)        logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg)
+#define LOGCIE_LOG_MOD(module, level, msg) logcie_log(LOGCIE_CREATE_LOG_MOD(module, LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg)
 #define LOGCIE_VA_LOGS
 #endif
-#endif
+
+#define LOGCIE_TRACE(...)   LOGCIE_LOG_IMPL(TRACE, __VA_ARGS__)
+#define LOGCIE_DEBUG(...)   LOGCIE_LOG_IMPL(DEBUG, __VA_ARGS__)
+#define LOGCIE_VERBOSE(...) LOGCIE_LOG_IMPL(VERBOSE, __VA_ARGS__)
+#define LOGCIE_INFO(...)    LOGCIE_LOG_IMPL(INFO, __VA_ARGS__)
+#define LOGCIE_WARN(...)    LOGCIE_LOG_IMPL(WARN, __VA_ARGS__)
+#define LOGCIE_ERROR(...)   LOGCIE_LOG_IMPL(ERROR, __VA_ARGS__)
+#define LOGCIE_FATAL(...)   LOGCIE_LOG_IMPL(FATAL, __VA_ARGS__)
+
+#define LOGCIE_TRACE_MOD(mod, ...)   LOGCIE_LOG_MOD(mod, TRACE, __VA_ARGS__)
+#define LOGCIE_DEBUG_MOD(mod, ...)   LOGCIE_LOG_MOD(mod, DEBUG, __VA_ARGS__)
+#define LOGCIE_VERBOSE_MOD(mod, ...) LOGCIE_LOG_MOD(mod, VERBOSE, __VA_ARGS__)
+#define LOGCIE_INFO_MOD(mod, ...)    LOGCIE_LOG_MOD(mod, INFO, __VA_ARGS__)
+#define LOGCIE_WARN_MOD(mod, ...)    LOGCIE_LOG_MOD(mod, WARN, __VA_ARGS__)
+#define LOGCIE_ERROR_MOD(mod, ...)   LOGCIE_LOG_MOD(mod, ERROR, __VA_ARGS__)
+#define LOGCIE_FATAL_MOD(mod, ...)   LOGCIE_LOG_MOD(mod, FATAL, __VA_ARGS__)
+
+#define LOGCIE_LOG(level, ...) LOGCIE_LOG_IMPL(level, __VA_ARGS__)
 
 // Separate variadic logs for compilers that do not support optional variadics in macros
 #ifdef LOGCIE_VA_LOGS
-#define LOGCIE_TRACE_VA(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
-#define LOGCIE_DEBUG_VA(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
-#define LOGCIE_VERBOSE_VA(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
-#define LOGCIE_INFO_VA(msg, ...)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
-#define LOGCIE_WARN_VA(msg, ...)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
-#define LOGCIE_ERROR_VA(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
-#define LOGCIE_FATAL_VA(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
-#define LOGCIE_LOG_VA(level, msg, ...) LOGCIE_##level##_VA(msg, __VA_ARGS__)
+#define LOGCIE_LOG_IMPL_VA(level, msg, ...)        logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
+#define LOGCIE_LOG_MOD_VA(module, level, msg, ...) logcie_log(LOGCIE_CREATE_LOG_MOD(module, LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
+
+#define LOGCIE_TRACE_VA(...)      LOGCIE_LOG_IMPL_VA(TRACE, __VA_ARGS__)
+#define LOGCIE_DEBUG_VA(...)      LOGCIE_LOG_IMPL_VA(DEBUG, __VA_ARGS__)
+#define LOGCIE_VERBOSE_VA(...)    LOGCIE_LOG_IMPL_VA(VERBOSE, __VA_ARGS__)
+#define LOGCIE_INFO_VA(...)       LOGCIE_LOG_IMPL_VA(INFO, __VA_ARGS__)
+#define LOGCIE_WARN_VA(...)       LOGCIE_LOG_IMPL_VA(WARN, __VA_ARGS__)
+#define LOGCIE_ERROR_VA(...)      LOGCIE_LOG_IMPL_VA(ERROR, __VA_ARGS__)
+#define LOGCIE_FATAL_VA(...)      LOGCIE_LOG_IMPL_VA(FATAL, __VA_ARGS__)
+#define LOGCIE_LOG_VA(level, ...) LOGCIE_LOG_IMPL_VA(level, __VA_ARGS__)
 #endif
 
 /**
@@ -739,97 +735,109 @@ typedef struct Logcie_FilterCombinationData {
  * @brief Filters out logs with two different filters combining them with 'or' function
  * @param data *Logcie_FilterCombinationData
  */
-LOGCIE_DEF uint8_t logcie_filter_or_fn(void *data, Logcie_Log *log);
+LOGCIE_DEF uint8_t logcie_filter_or_fn(const void *data, Logcie_Log *log);
 
 /**
  * @brief Filters out logs with two different filters combining them with 'and' function
  * @param data *Logcie_FilterCombinationData
  */
-LOGCIE_DEF uint8_t logcie_filter_and_fn(void *data, Logcie_Log *log);
+LOGCIE_DEF uint8_t logcie_filter_and_fn(const void *data, Logcie_Log *log);
 
 /**
  * @brief Negates result of a filter
  * @param data *Logcie_Filter
  */
-LOGCIE_DEF uint8_t logcie_filter_not_fn(void *data, Logcie_Log *log);
+LOGCIE_DEF uint8_t logcie_filter_not_fn(const void *data, Logcie_Log *log);
 
 /**
  * @brief Filters out logs if log level is less than specified level
  * @param data *Logcie_LogLevel
  */
-LOGCIE_DEF uint8_t logcie_filter_level_min_fn(void *data, Logcie_Log *log);
+LOGCIE_DEF uint8_t logcie_filter_level_min_fn(const void *data, Logcie_Log *log);
 
 /**
  * @brief Filters out logs if log level is more than specified level
  * @param data *Logcie_LogLevel
  */
-LOGCIE_DEF uint8_t logcie_filter_level_max_fn(void *data, Logcie_Log *log);
+LOGCIE_DEF uint8_t logcie_filter_level_max_fn(const void *data, Logcie_Log *log);
 
 /**
  * @brief Filters out logs if log module is equal to specified string
  * @param data cosnt char*
  */
-LOGCIE_DEF uint8_t logcie_filter_module_eq_fn(void *data, Logcie_Log *log);
+LOGCIE_DEF uint8_t logcie_filter_module_eq_fn(const void *data, Logcie_Log *log);
 
 /**
  * @brief Filters out logs if log messages contains specified string
  * @param data const char*
  */
-LOGCIE_DEF uint8_t logcie_filter_message_contains_fn(void *data, Logcie_Log *log);
+LOGCIE_DEF uint8_t logcie_filter_message_contains_fn(const void *data, Logcie_Log *log);
 
 typedef uint8_t(Logcie_FilterCustomPredicateFn)(Logcie_Log *log);
 
-/**
- * @brief Filters out logs if specified function returns 0
- * @param data *Logcie_FilterCustomPredicateFn
- */
-LOGCIE_DEF uint8_t logcie_filter_custom_fn(void *data, Logcie_Log *log);
-
 // Some handy filter "constructors"
 
-LOGCIE_DEF Logcie_Filter logcie_filter_and(Logcie_Filter a, Logcie_Filter b) {
-  static Logcie_FilterCombinationData storage;
-  storage.a = a;
-  storage.b = b;
-  return (Logcie_Filter){logcie_filter_and_fn, &storage};
-}
+#ifdef __cplusplus
+#define logcie_filter_and(a, b)                                      \
+  Logcie_Filter {                                                    \
+    .filter = [](const void *data, Logcie_Log *log) -> uint8_t {     \
+      (void)data;                                                    \
+      return (a).filter((a).data, log) && (b).filter((b).data, log); \
+    },                                                               \
+    .data = NULL,                                                    \
+  }
 
-LOGCIE_DEF Logcie_Filter logcie_filter_or(Logcie_Filter a, Logcie_Filter b) {
-  static Logcie_FilterCombinationData storage;
-  storage.a = a;
-  storage.b = b;
-  return (Logcie_Filter){logcie_filter_or_fn, &storage};
-}
+#define logcie_filter_or(a, b)                                       \
+  Logcie_Filter {                                                    \
+    .filter = [](const void *data, Logcie_Log *log) -> uint8_t {     \
+      (void)data;                                                    \
+      return (a).filter((a).data, log) || (b).filter((b).data, log); \
+    },                                                               \
+    .data = NULL,                                                    \
+  }
+#else
+#define logcie_filter_and(a, b)                         \
+  ((Logcie_Filter){                                     \
+    .filter = logcie_filter_and_fn,                     \
+    .data   = &(Logcie_FilterCombinationData){(a), (b)} \
+  })
 
-LOGCIE_DEF Logcie_Filter logcie_filter_not(Logcie_Filter const filter) {
-  static Logcie_Filter storage;
-  storage = filter;
-  return (Logcie_Filter){logcie_filter_or_fn, &storage};
-}
+#define logcie_filter_or(a, b)                          \
+  ((Logcie_Filter){                                     \
+    .filter = logcie_filter_or_fn,                      \
+    .data   = &(Logcie_FilterCombinationData){(a), (b)} \
+  })
+#endif
 
-LOGCIE_DEF Logcie_Filter logcie_filter_level_min(Logcie_LogLevel level) {
-  static Logcie_LogLevel storage;
-  storage = level;
-  return (Logcie_Filter){logcie_filter_level_min_fn, &storage};
-}
+#define logcie_filter_not(f)        \
+  ((Logcie_Filter){                 \
+    .filter = logcie_filter_not_fn, \
+    .data   = &f                    \
+  })
 
-LOGCIE_DEF Logcie_Filter logcie_filter_level_max(Logcie_LogLevel level) {
-  static Logcie_LogLevel storage;
-  storage = level;
-  return (Logcie_Filter){logcie_filter_level_max_fn, &storage};
-}
+#define logcie_filter_level_min(level)    \
+  ((Logcie_Filter){                       \
+    .filter = logcie_filter_level_min_fn, \
+    .data   = (void *)(level)             \
+  })
 
-LOGCIE_DEF Logcie_Filter logcie_filter_module_eq(const char *module) {
-  return (Logcie_Filter){logcie_filter_message_contains_fn, (void *)module};
-}
+#define logcie_filter_level_max(level)    \
+  ((Logcie_Filter){                       \
+    .filter = logcie_filter_level_max_fn, \
+    .data   = (void *)(level)             \
+  })
 
-LOGCIE_DEF Logcie_Filter logcie_filter_message_contains(const char *substr) {
-  return (Logcie_Filter){logcie_filter_message_contains_fn, (void *)substr};
-}
+#define logcie_filter_module_eq(module)   \
+  ((Logcie_Filter){                       \
+    .filter = logcie_filter_module_eq_fn, \
+    .data   = (module)                    \
+  })
 
-LOGCIE_DEF Logcie_Filter logcie_filter_custom(Logcie_FilterCustomPredicateFn *fn) {
-  return (Logcie_Filter){logcie_filter_custom_fn, &fn};
-}
+#define logcie_filter_message_contains(substr)   \
+  ((Logcie_Filter){                              \
+    .filter = logcie_filter_message_contains_fn, \
+    .data   = (substr)                           \
+  })
 
 /**
  * @brief Allows customization of log level colors. Must be array of size Count_LOGCIE_LEVEL.
@@ -859,8 +867,6 @@ LOGCIE_DEF void logcie_set_colors(const char **colors);
 
 #include <assert.h>
 #include <stdlib.h>
-
-static const char *default_module = "Logcie";
 
 #ifndef _LOGCIE_ASSERT
 #define _LOGCIE_ASSERT(bool, msg) assert(bool &&msg)
@@ -943,7 +949,7 @@ static inline const char *get_logcie_level_color(Logcie_LogLevel level) {
 }
 
 static Logcie_Sink default_stdout_sink = {
-  .formatter = {logcie_printf_formatter, (void *)("$c$L$r " LOGCIE_COLOR_GRAY "$f:$x$r: $m")},
+  .formatter = {logcie_printf_formatter, (void *)("$c$L$<6$r " LOGCIE_COLOR_GRAY "$f:$x$r: $m")},
   .writer    = {logcie_printf_writer, NULL},
   .filter    = {NULL, NULL},
 };
@@ -1151,7 +1157,7 @@ size_t logcie_printf_formatter(Logcie_Writer *writer, void *data, Logcie_Log log
         last_len = writer->write(writer->data, "%u", NULL, log.location.line);
         break;
       case 'M':
-        last_len = writer->write(writer->data, "%s", NULL, log.module ? log.module : default_module);
+        last_len = writer->write(writer->data, "%s", NULL, log.module ? log.module : "");
         break;
       case '<': {
         fmt++;
@@ -1203,60 +1209,53 @@ LOGCIE_DEF size_t logcie_printf_writer(void *user_data, const char *fmt, va_list
   return written;
 }
 
-LOGCIE_DEF uint8_t logcie_filter_not_fn(void *data, Logcie_Log *log) {
+LOGCIE_DEF uint8_t logcie_filter_not_fn(const void *data, Logcie_Log *log) {
   _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_not'");
   _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_not'");
   Logcie_Filter *filter = (Logcie_Filter *)data;
   return !filter->filter(filter->data, log);
 }
 
-LOGCIE_DEF uint8_t logcie_filter_and_fn(void *data, Logcie_Log *log) {
+LOGCIE_DEF uint8_t logcie_filter_and_fn(const void *data, Logcie_Log *log) {
   _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_and'");
   _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_and'");
   Logcie_FilterCombinationData *d = (Logcie_FilterCombinationData *)data;
   return d->a.filter(d->a.data, log) && d->b.filter(d->b.data, log);
 }
 
-LOGCIE_DEF uint8_t logcie_filter_or_fn(void *data, Logcie_Log *log) {
+LOGCIE_DEF uint8_t logcie_filter_or_fn(const void *data, Logcie_Log *log) {
   _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_or'");
   _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_or'");
   Logcie_FilterCombinationData *d = (Logcie_FilterCombinationData *)data;
   return d->a.filter(d->a.data, log) || d->b.filter(d->b.data, log);
 }
 
-LOGCIE_DEF uint8_t logcie_filter_level_min_fn(void *data, Logcie_Log *log) {
-  _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_level_min'");
+LOGCIE_DEF uint8_t logcie_filter_level_min_fn(const void *data, Logcie_Log *log) {
+  _LOGCIE_ASSERT((uintptr_t)data < Count_LOGCIE_LEVEL, "Param 'data' is not correct for filter 'logcie_filter_level_min'");
   _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_level_min'");
-  Logcie_LogLevel *level = (Logcie_LogLevel *)data;
-  return log->level >= *level;
+  Logcie_LogLevel level = (Logcie_LogLevel)(uintptr_t)data;
+  return log->level >= level;
 }
 
-LOGCIE_DEF uint8_t logcie_filter_level_max_fn(void *data, Logcie_Log *log) {
-  _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_level_max'");
+LOGCIE_DEF uint8_t logcie_filter_level_max_fn(const void *data, Logcie_Log *log) {
+  _LOGCIE_ASSERT((uintptr_t)data < Count_LOGCIE_LEVEL, "Param 'data' is not correct for filter 'logcie_filter_level_max'");
   _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_level_max'");
-  Logcie_LogLevel *level = (Logcie_LogLevel *)data;
-  return log->level <= *level;
+  Logcie_LogLevel level = (Logcie_LogLevel)(uintptr_t)data;
+  return log->level <= level;
 }
 
-LOGCIE_DEF uint8_t logcie_filter_module_eq_fn(void *data, Logcie_Log *log) {
+LOGCIE_DEF uint8_t logcie_filter_module_eq_fn(const void *data, Logcie_Log *log) {
   _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_module_eq'");
   _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_module_eq'");
   const char *module = (const char *)data;
   return log->module && strcmp(module, log->module) == 0;
 }
 
-LOGCIE_DEF uint8_t logcie_filter_message_contains_fn(void *data, Logcie_Log *log) {
+LOGCIE_DEF uint8_t logcie_filter_message_contains_fn(const void *data, Logcie_Log *log) {
   _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_message_contains'");
   _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_message_contains'");
   const char *str = (const char *)data;
   return log->msg && strstr(log->msg, str);
-}
-
-LOGCIE_DEF uint8_t logcie_filter_custom_fn(void *data, Logcie_Log *log) {
-  _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_custom'");
-  _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_custom'");
-  Logcie_FilterCustomPredicateFn *predicate = (Logcie_FilterCustomPredicateFn *)data;
-  return predicate(log);
 }
 
 // TODO: Abiblity to accept custom stuff in logging (logging arrays)

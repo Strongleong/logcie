@@ -1,31 +1,30 @@
 #include <stdint.h>
 #include <time.h>
 
+#define LOGCIE_MODULE "core"
 #define LOGCIE_IMPLEMENTATION
 #include <logcie.h>
 
-static const char *logcie_module = "core";
-
 void network_module() {
-  static const char *logcie_module = "network";
-  LOGCIE_TRACE("Network module started");
-  LOGCIE_ERROR("Uselss SSL error");
-  LOGCIE_WARN("Can not do safe connection, doing unsafe");
-  LOGCIE_VERBOSE("Redirecting");
-  LOGCIE_INFO("Connection is good");
+  static const char *module = "network";
+  LOGCIE_TRACE_MOD(module, "Network module started");
+  LOGCIE_ERROR_MOD(module, "Uselss SSL error");
+  LOGCIE_WARN_MOD(module, "Can not do safe connection, doing unsafe");
+  LOGCIE_VERBOSE_MOD(module, "Redirecting");
+  LOGCIE_INFO_MOD(module, "Connection is good");
 }
 
 void auth_module() {
-  static const char *logcie_module = "network";
+  static const char *module = "auth";
 
-  LOGCIE_TRACE("Auth module started");
-  LOGCIE_VERBOSE("Authintificating...");
-  LOGCIE_TRACE("Calling network_module");
+  LOGCIE_TRACE_MOD(module, "Auth module started");
+  LOGCIE_VERBOSE_MOD(module, "Authintificating...");
+  LOGCIE_TRACE_MOD(module, "Calling very CRITICAL network_module");
 
   network_module();
 
-  LOGCIE_DEBUG("Network module finished");
-  LOGCIE_DEBUG("User is %s", "authentificated");
+  LOGCIE_DEBUG_MOD(module, "Network module finished");
+  LOGCIE_DEBUG_MOD(module, "User is %s", "authentificated");
 }
 
 uint8_t filter_work_hours(Logcie_Log *log) {
@@ -38,7 +37,7 @@ typedef struct TimeoutFilterData {
   uint64_t last_time;
 } TimeoutFilterData;
 
-uint8_t filter_timout(void *data, Logcie_Log *log) {
+uint8_t filter_timout(const void *data, Logcie_Log *log) {
   TimeoutFilterData *d = (TimeoutFilterData *)data;
 
   if (log->time - d->last_time >= d->timeout_ms) {
@@ -50,8 +49,6 @@ uint8_t filter_timout(void *data, Logcie_Log *log) {
 }
 
 int main(void) {
-  // TODO: TBD
-
   Logcie_Sink prod_console = {
     .formatter = {logcie_printf_formatter, "$c$L$r $m"},
     .writer    = {logcie_printf_writer, stdout},
@@ -83,7 +80,7 @@ int main(void) {
   };
 
   Logcie_Sink max_one_log_per_second = {
-    .formatter = {logcie_printf_formatter, LOGCIE_COLOR_GRAY "$f:$x$r [$M:$c$L$r]  $m"},
+    .formatter = {logcie_printf_formatter, LOGCIE_COLOR_GRAY "(throttled) $f:$x$r [$M:$c$L$r]  $m"},
     .writer    = {logcie_printf_writer, stdout},
     .filter    = {filter_timout, &(TimeoutFilterData){.last_time = 0, .timeout_ms = 1000}}
   };
