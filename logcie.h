@@ -166,49 +166,62 @@
  *       compound literals and must remain valid during logging).
  *
  * Modules:
- *   Logcie has another important concept: modules. A module is simply a string used
- *   to label a *scope* where the log originated.
+ *   A module is a string label that identifies the origin of a log message,
+ *   such as "network", "core", or "database". It can be displayed with the
+ *   `$M` token and used in filters.
  *
- *   Modules allow you to group logs by subsystem (e.g., "network", "core", "database")
- *   and can be used in format strings or filters to provied additional context or control
- *   log output.
+ *   Logcie supports three ways to set the module, from simplest to most
+ *   explicit:
  *
- *   To define a module, declare a variable name `logcie_module` in your translation uint:
- *     ```c
- *     static const char *logcie_module = "network";
- *     ```
+ *   1. Per‑file default (via macro):
+ *      ```c
+ *      #define LOGCIE_MODULE "core"
+ *      #include "logcie.h"
+ *      ```
+ *      All classic macros (LOGCIE_INFO, LOGCIE_ERROR, …) in that file will
+ *      be tagged with "core".
  *
- *   When defined, this value will be attached to every log emitted from that file.
- *   If not defined, a default module name is used.
+ *   2. Per‑call explicit module:
+ *      ```c
+ *      LOGCIE_LOG_MOD("network", INFO, "Connected");
+ *      ```
+ *      (Use LOGCIE_LOG_MOD_VA when variadic macros are unavailable.)
+ *      This does not affect any other log line.
  *
- *   You can display the module in your logs using `$M` format token.
- *   For example:
+ *   3. Library integration (recommended for header‑only libraries):
+ *      ```c
+ *      #ifndef YOURLIB_LOG
+ *        #ifdef LOGCIE
+ *          #ifdef LOGCIE_VA_LOGS
+ *            #define YOURLIB_LOG(level, msg, ...) LOGCIE_LOG_MOD_VA("YOURLIB", level, msg, __VA_ARGS__)
+ *          #else
+ *            #define YOURLIB_LOG(level, ...)      LOGCIE_LOG_MOD("YOURLIB", level, __VA_ARGS__)
+ *          #endif
+ *        #else
+ *          #define YOURLIB_LOG(level, ...) (void*)0
+ *        #endif
+ *      #endif
+ *      ```
+ *      If you need to have fallback logging this can be used instead of `(void *)0`:
+ *
+ *      ```c
+ *      #define YOURLIB_LOG(level, ...)                \
+ *         do {                                       \
+ *           fprintf(stderr, #level ": "__VA_ARGS__); \
+ *           fprintf(stderr, "\n");                   \
+ *         } while (0)
+ *      ```
+ *
+ *      Just change YOURLLIB to something more fitting, then call `MYLIB_LOG(INFO, "Library ready");`.
+ *      The module string `"mylib"` is fixed and never clashes with user code.
+ *
+ *   You can display the module in your logs using the `$M` format token:
  *     "$d $t [$L] ($M) $m"
- *   will output
- *      2026-03-25 12:00:00 [INFO] (network) Connection established
+ *   produces
+ *     2026-03-25 12:00:00 [INFO] (network) Connection established
  *
- *   Modules can also be used in custom filters to selectively allow or block logs
+ *   Modules can also be used in filters to selectively allow or block logs
  *   from specific parts of your application.
- *
- *   Modules also make it easy to integrate Logcie-compatible logging into third-party
- *   libraries without creating tight dependencies.
- *
- *   A library can define its own module name and use logging macros (or wrapper macros)
- *   without needing direct knowledge of the application's logging setup.
- *
- *   Example (inside a library):
- *     ```c
- *     #ifndef MYLIB_LOG
- *       #ifdef LOGCIE
- *         static const char *logcie_module = "mylib";
- *         #define MYLIB_LOG(level, ...) LOGCIE_##level(__VA_ARGS__)
- *       #else
- *         #define MYLIB_LOG(level, ...)
- *       #endif
- *     #endif
- *
- *     MYLIB_LOG(INFO, "Library initialized");
- *     ```
  *
  * Example:
  *   You can have sink that will format log with "[$log level$] $log message$"
@@ -338,30 +351,22 @@ typedef enum Logcie_LogLevel {
 } Logcie_LogLevel;
 
 /**
- * @brief Defines the module name for the current translation unit.
+ * @brief Default module name for classic LOGCIE_* macros.
  *
- * When this variable is defined, all logs from this file will be tagged
- * with the specified module name, which can be displayed using $M in format strings
- * or can be used in filters.
+ * Define this macro **before** including logcie.h to set the module for all
+ * classic log calls in the file. If not defined, `"Logcie"` is used.
  *
- * For C++, we need a different approach
- * Users should define: const char *logcie_module = "module";
+ * @note This macro has no effect on LOGCIE_LOG_MOD / LOGCIE_LOG_MOD_VA,
+ *       which always take an explicit module argument.
  *
- * Example usage:
+ * Example:
  * @code
- * static const char *logcie_module = "network";
+ * #define LOGCIE_MODULE "network"
+ * #include "logcie.h"
  * @endcode
  */
-#ifdef __cplusplus
-#define LOGCIE_MODULE_DEF
-#else
-#define LOGCIE_MODULE_DEF static
-#endif
-
-#if defined(__has_attribute) && __has_attribute(unused)
-LOGCIE_MODULE_DEF const char __attribute__((unused)) * logcie_module;
-#else
-LOGCIE_MODULE_DEF const char *logcie_module;
+#ifndef LOGCIE_MODULE
+#define LOGCIE_MODULE "Logcie"
 #endif
 
 /**
@@ -509,17 +514,19 @@ struct Logcie_Log {
 };
 
 // Helper macro for constructing a log message
-#define LOGCIE_CREATE_LOG(lvl, txt, f, l) \
-  (Logcie_Log) {                          \
-    .level    = lvl,                      \
-    .msg      = txt,                      \
-    .time     = time(NULL),               \
-    .module   = logcie_module,            \
-    .location = {                         \
-      .file = f,                          \
-      .line = l,                          \
-    }                                     \
+#define LOGCIE_CREATE_LOG_MOD(mod, lvl, txt, f, l) \
+  (Logcie_Log) {                                   \
+    .level    = lvl,                               \
+    .msg      = txt,                               \
+    .time     = time(NULL),                        \
+    .module   = mod,                               \
+    .location = {                                  \
+      .file = f,                                   \
+      .line = l,                                   \
+    }                                              \
   }
+
+#define LOGCIE_CREATE_LOG(lvl, txt, f, l) LOGCIE_CREATE_LOG_MOD(LOGCIE_MODULE, lvl, txt, f, l)
 
 #ifndef PRINTF_TYPECHECK
 #if defined __has_attribute && __has_attribute(__format__)
@@ -530,51 +537,52 @@ struct Logcie_Log {
 #endif
 
 /**
- * @brief Convenience macros for each log level.
+ * @brief Compiler‑specific variadic handling for the core macro
  * These use __FILE__ and __LINE__ to capture call site.
  */
 #if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 202311L)
-#define LOGCIE_TRACE(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
-#define LOGCIE_DEBUG(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
-#define LOGCIE_VERBOSE(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
-#define LOGCIE_INFO(msg, ...)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
-#define LOGCIE_WARN(msg, ...)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
-#define LOGCIE_ERROR(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
-#define LOGCIE_FATAL(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL, msg, __FILE__, __LINE__), msg, __VA_OPT__(, ) __VA_ARGS__)
-#define LOGCIE_LOG(level, msg, ...) LOGCIE_##level(msg, __VA_OPT__(, ) __VA_ARGS__)
+#define LOGCIE_LOG_IMPL(level, msg, ...)        logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg __VA_OPT__(, ) __VA_ARGS__)
+#define LOGCIE_LOG_MOD(module, level, msg, ...) logcie_log(LOGCIE_CREATE_LOG_MOD(module, LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg __VA_OPT__(, ) __VA_ARGS__)
+#elif !defined(LOGCIE_PEDANTIC) && (defined(__GNUC__) || defined(__clang__))
+#define LOGCIE_LOG_IMPL(level, msg, ...)        logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
+#define LOGCIE_LOG_MOD(module, level, msg, ...) logcie_log(LOGCIE_CREATE_LOG_MOD(module, LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
 #else
-#if !defined(LOGCIE_PEDANTIC) && (defined(__GNUC__) || defined(__clang__))
-#define LOGCIE_TRACE(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
-#define LOGCIE_DEBUG(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
-#define LOGCIE_VERBOSE(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
-#define LOGCIE_INFO(msg, ...)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
-#define LOGCIE_WARN(msg, ...)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
-#define LOGCIE_ERROR(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
-#define LOGCIE_FATAL(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
-#define LOGCIE_LOG(level, msg, ...) LOGCIE_##level(msg, ##__VA_ARGS__)
-#else
-#define LOGCIE_TRACE(msg)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE, msg, __FILE__, __LINE__), msg)
-#define LOGCIE_DEBUG(msg)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG, msg, __FILE__, __LINE__), msg)
-#define LOGCIE_VERBOSE(msg)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__), msg)
-#define LOGCIE_INFO(msg)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO, msg, __FILE__, __LINE__), msg)
-#define LOGCIE_WARN(msg)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN, msg, __FILE__, __LINE__), msg)
-#define LOGCIE_ERROR(msg)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR, msg, __FILE__, __LINE__), msg)
-#define LOGCIE_FATAL(msg)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL, msg, __FILE__, __LINE__), msg)
-#define LOGCIE_LOG(level, msg) LOGCIE_##level(msg)
+#define LOGCIE_LOG_IMPL(level, msg)        logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg)
+#define LOGCIE_LOG_MOD(module, level, msg) logcie_log(LOGCIE_CREATE_LOG_MOD(module, LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg)
 #define LOGCIE_VA_LOGS
 #endif
-#endif
+
+#define LOGCIE_TRACE(...)   LOGCIE_LOG_IMPL(TRACE, __VA_ARGS__)
+#define LOGCIE_DEBUG(...)   LOGCIE_LOG_IMPL(DEBUG, __VA_ARGS__)
+#define LOGCIE_VERBOSE(...) LOGCIE_LOG_IMPL(VERBOSE, __VA_ARGS__)
+#define LOGCIE_INFO(...)    LOGCIE_LOG_IMPL(INFO, __VA_ARGS__)
+#define LOGCIE_WARN(...)    LOGCIE_LOG_IMPL(WARN, __VA_ARGS__)
+#define LOGCIE_ERROR(...)   LOGCIE_LOG_IMPL(ERROR, __VA_ARGS__)
+#define LOGCIE_FATAL(...)   LOGCIE_LOG_IMPL(FATAL, __VA_ARGS__)
+
+#define LOGCIE_TRACE_MOD(mod, ...)   LOGCIE_LOG_MOD(mod, TRACE, __VA_ARGS__)
+#define LOGCIE_DEBUG_MOD(mod, ...)   LOGCIE_LOG_MOD(mod, DEBUG, __VA_ARGS__)
+#define LOGCIE_VERBOSE_MOD(mod, ...) LOGCIE_LOG_MOD(mod, VERBOSE, __VA_ARGS__)
+#define LOGCIE_INFO_MOD(mod, ...)    LOGCIE_LOG_MOD(mod, INFO, __VA_ARGS__)
+#define LOGCIE_WARN_MOD(mod, ...)    LOGCIE_LOG_MOD(mod, WARN, __VA_ARGS__)
+#define LOGCIE_ERROR_MOD(mod, ...)   LOGCIE_LOG_MOD(mod, ERROR, __VA_ARGS__)
+#define LOGCIE_FATAL_MOD(mod, ...)   LOGCIE_LOG_MOD(mod, FATAL, __VA_ARGS__)
+
+#define LOGCIE_LOG(level, ...) LOGCIE_LOG_IMPL(level, __VA_ARGS__)
 
 // Separate variadic logs for compilers that do not support optional variadics in macros
 #ifdef LOGCIE_VA_LOGS
-#define LOGCIE_TRACE_VA(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_TRACE, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
-#define LOGCIE_DEBUG_VA(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_DEBUG, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
-#define LOGCIE_VERBOSE_VA(msg, ...)    logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_VERBOSE, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
-#define LOGCIE_INFO_VA(msg, ...)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_INFO, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
-#define LOGCIE_WARN_VA(msg, ...)       logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_WARN, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
-#define LOGCIE_ERROR_VA(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_ERROR, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
-#define LOGCIE_FATAL_VA(msg, ...)      logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_FATAL, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
-#define LOGCIE_LOG_VA(level, msg, ...) LOGCIE_##level##_VA(msg, __VA_ARGS__)
+#define LOGCIE_LOG_IMPL_VA(level, msg, ...)        logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
+#define LOGCIE_LOG_MOD_VA(module, level, msg, ...) logcie_log(LOGCIE_CREATE_LOG_MOD(module, LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
+
+#define LOGCIE_TRACE_VA(...)      LOGCIE_LOG_IMPL_VA(TRACE, __VA_ARGS__)
+#define LOGCIE_DEBUG_VA(...)      LOGCIE_LOG_IMPL_VA(DEBUG, __VA_ARGS__)
+#define LOGCIE_VERBOSE_VA(...)    LOGCIE_LOG_IMPL_VA(VERBOSE, __VA_ARGS__)
+#define LOGCIE_INFO_VA(...)       LOGCIE_LOG_IMPL_VA(INFO, __VA_ARGS__)
+#define LOGCIE_WARN_VA(...)       LOGCIE_LOG_IMPL_VA(WARN, __VA_ARGS__)
+#define LOGCIE_ERROR_VA(...)      LOGCIE_LOG_IMPL_VA(ERROR, __VA_ARGS__)
+#define LOGCIE_FATAL_VA(...)      LOGCIE_LOG_IMPL_VA(FATAL, __VA_ARGS__)
+#define LOGCIE_LOG_VA(level, ...) LOGCIE_LOG_IMPL_VA(level, __VA_ARGS__)
 #endif
 
 /**
@@ -816,7 +824,7 @@ typedef uint8_t(Logcie_FilterCustomPredicateFn)(Logcie_Log *log);
 #define logcie_filter_level_max(level)    \
   ((Logcie_Filter){                       \
     .filter = logcie_filter_level_max_fn, \
-    .data   = &(Logcie_LogLevel){(level)} \
+    .data   = (void *)(level)             \
   })
 
 #define logcie_filter_module_eq(module)   \
@@ -860,10 +868,8 @@ LOGCIE_DEF void logcie_set_colors(const char **colors);
 #include <assert.h>
 #include <stdlib.h>
 
-static const char *default_module = "Logcie";
-
 #ifndef _LOGCIE_ASSERT
-#define _LOGCIE_ASSERT(bool, msg) assert(bool && msg)
+#define _LOGCIE_ASSERT(bool, msg) assert(bool &&msg)
 #endif
 
 #ifdef _LOGCIE_DEBUG
@@ -1151,7 +1157,7 @@ size_t logcie_printf_formatter(Logcie_Writer *writer, void *data, Logcie_Log log
         last_len = writer->write(writer->data, "%u", NULL, log.location.line);
         break;
       case 'M':
-        last_len = writer->write(writer->data, "%s", NULL, log.module ? log.module : default_module);
+        last_len = writer->write(writer->data, "%s", NULL, log.module ? log.module : "");
         break;
       case '<': {
         fmt++;
@@ -1225,7 +1231,7 @@ LOGCIE_DEF uint8_t logcie_filter_or_fn(const void *data, Logcie_Log *log) {
 }
 
 LOGCIE_DEF uint8_t logcie_filter_level_min_fn(const void *data, Logcie_Log *log) {
-  _LOGCIE_ASSERT((uintptr_t)data < Count_LOGCIE_LEVEL, "Param 'data' is not correct for filter 'logcie_filter_level_max'");
+  _LOGCIE_ASSERT((uintptr_t)data < Count_LOGCIE_LEVEL, "Param 'data' is not correct for filter 'logcie_filter_level_min'");
   _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_level_min'");
   Logcie_LogLevel level = (Logcie_LogLevel)(uintptr_t)data;
   return log->level >= level;
