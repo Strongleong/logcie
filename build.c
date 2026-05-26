@@ -4,7 +4,6 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
-
 #include <sys/stat.h>
 #include <sys/wait.h>
 
@@ -33,19 +32,26 @@ typedef intptr_t pid_t;
 #define LOGCIE_IMPLEMENTATION
 #include "logcie.h"
 
+#define OPTLY_GEN_HELP_FLAG
 #define OPTLY_IMPLEMENTATION
 #include "./thirdparty/optly.h"
 
 #define ARR_LEN(array) ((int)sizeof(array) / (int)sizeof((array)[0]))
 
-#define CC           "clang"
-#define CXX          "g++"
-#define COMMON_FLAGS "-Wall", "-Wextra"
-#define CFLAGS       "-std=c11"
-#define CXXFLAGS     "-std=c++11"
-#define CLIBS        "-I."
+static OptlyCommand command = {
+  "build",
+  NULL,
+  .flags = optly_flags(
+    optly_flag_bool("debug", 'd', "Compile with debug flags"),
+    optly_flag_bool("silent", 's', "Compile without unnececary output"),
+    optly_flag_string("outdir", 'o', "Set output dir", .value.as_string = "." PATH_SEP "out" PATH_SEP),
+    optly_flag_string("c-compiler", 'c', "Set which C compier to use", .value.as_string = "clang"),
+    optly_flag_string("cpp-compiler", 'x', "Set which C++ compier to use", .value.as_string = "clang++"),
+    optly_flag_bool("dry-run", 'r', "Do not compile but show compile commands")
+  ),
+};
 
-static const char *logcie_module = "build";
+const char *logcie_module = "build";
 
 static Logcie_Sink stdout_sink = {
   .formatter = {logcie_printf_formatter, LOGCIE_COLOR_GRAY "[$M]$r $c$L$r:$<6$m"},
@@ -53,10 +59,25 @@ static Logcie_Sink stdout_sink = {
   .filter    = logcie_filter_level_min(LOGCIE_LEVEL_INFO),
 };
 
+static Logcie_Sink optly_sink = {
+  .formatter = {logcie_printf_formatter, LOGCIE_COLOR_GRAY "[$M]$r $c$L$r:$<6$m"},
+  .writer    = {logcie_printf_writer, NULL},
+  .filter    = logcie_filter_and(
+    logcie_filter_module_eq("optly"),
+    logcie_filter_level_min(LOGCIE_LEVEL_INFO)
+  )
+};
+
 void setup_logcie(void) {
   stdout_sink.writer.data = stdout;
 
+  if (optly_flag_value_bool(&command, "silent")) {
+    stdout_sink.filter.data = (void *)(uintptr_t)LOGCIE_LEVEL_WARN;
+  }
+
   logcie_add_sink(&stdout_sink);
+  logcie_add_sink(&optly_sink);
+
   LOGCIE_INFO("Build system started...");
 }
 
@@ -66,7 +87,12 @@ void setup_logcie(void) {
     fprintf(stderr, "%s:%d: TODO: %s\n", __FILE__, __LINE__, message); \
     abort();                                                           \
   } while (0)
-// #define UNREACHABLE(message) do { fprintf(stderr, "%s:%d: UNREACHABLE: %s\n", __FILE__, __LINE__, message); abort(); } while(0)
+
+#define UNREACHABLE(message)                                                  \
+  do {                                                                        \
+    fprintf(stderr, "%s:%d: UNREACHABLE: %s\n", __FILE__, __LINE__, message); \
+    abort();                                                                  \
+  } while (0)
 
 pid_t start_process(char *const argv[]) {
 #ifdef _WIN32
@@ -176,23 +202,32 @@ size_t cmd_to_string(char **cmd, char *str) {
   return len;
 }
 
-int main(void) {
+#define PATH_MAX_LEN 4096
+static char outdir[PATH_MAX_LEN] = {0};
+
+int main(int argc, char *argv[]) {
+  optly_parse_args(argc, argv, &command);
   setup_logcie();
 
-  char *sources = "./examples/";
-  char *out_dir = "./out/";
+  strncpy(outdir, optly_flag_value_string(&command, "outdir"), PATH_MAX_LEN);
+  size_t outdir_len = strlen(outdir);
 
-  if (!dir_exists(out_dir)) {
+  if (strcmp(&outdir[outdir_len - 1], PATH_SEP) != 0) {
+    outdir[outdir_len] = PATH_SEP[0];
+  }
+
+  if (!dir_exists(outdir)) {
     LOGCIE_WARN("Output direcotry does not exist. Creating...");
 
-    if (mkdir(out_dir, 0755) == -1) {
-      LOGCIE_FATAL("Can not create output directory %s: %s", out_dir, strerror(errno));
+    if (mkdir(outdir, 0755) == -1) {
+      LOGCIE_FATAL("Can not create output directory %s: %s", outdir, strerror(errno));
       return 1;
     }
   }
 
+  char   *sources[]   = {"./examples/", "./test.c", NULL};
   FTSENT *node        = NULL;
-  FTS    *file_system = fts_open(&sources, FTS_NOCHDIR, NULL);
+  FTS    *file_system = fts_open(sources, FTS_NOCHDIR, NULL);
 
   if (!file_system) {
     LOGCIE_FATAL("Can not open file system: %s", strerror(errno));
@@ -213,9 +248,9 @@ int main(void) {
           break;
         }
 
-        size_t out_len = node->fts_namelen + strlen(out_dir) - strlen(ext) + 1;
+        size_t out_len = node->fts_namelen + strlen(outdir) - strlen(ext) + 1;
         char   out[out_len];
-        char   in_len = node->fts_pathlen + node->fts_namelen + 1;
+        size_t in_len = node->fts_pathlen + node->fts_namelen + 1;
         char   in[in_len];
 
         bool cpp = strcmp(ext, ".cpp") == 0;
@@ -224,25 +259,43 @@ int main(void) {
           continue;
         }
 
-        char *cmd[] = {
-          cpp ? CXX : CC,
-          COMMON_FLAGS,
-          cpp ? CXXFLAGS : CFLAGS,
-          CLIBS,
-          in,
-          "-o",
-          out,
-          NULL,
-        };
+        char *cmd[32] = {0};
+        int   i       = 0;
 
-        snprintf(out, out_len, "%s%.*s", out_dir, (int)(node->fts_name - ext), node->fts_name);
+        cmd[i++] = cpp ? optly_flag_value_string(&command, "cpp-compiler")
+                       : optly_flag_value_string(&command, "c-compiler");
+        cmd[i++] = "-Wall";
+        cmd[i++] = "-Wextra";
+        cmd[i++] = cpp ? "-std=c++11" : "-std=c99";
+
+        if (optly_flag_value_bool(&command, "debug")) {
+          cmd[i++] = "-O3";
+          cmd[i++] = "-ggdb";
+          cmd[i++] = "-fsanitize=address";
+          cmd[i++] = "-fno-omit-frame-pointer";
+          cmd[i++] = "-D_LOGCIE_DEBUG";
+          cmd[i++] = "-Og";
+        } else {
+          cmd[i++] = "-O3";
+        }
+
+        cmd[i++] = "-I.";
+        cmd[i++] = in;
+        cmd[i++] = "-o";
+        cmd[i++] = out;
+        cmd[i++] = NULL;
+
+        snprintf(out, out_len, "%s%.*s", outdir, (int)(ext - node->fts_name), node->fts_name);
         snprintf(in, in_len, "%s", node->fts_accpath);
 
         char buf[256] = {0};
         cmd_to_string(cmd, buf);
-        LOGCIE_INFO("+ %s", buf);
+        LOGCIE_INFO("%s", buf);
 
-        run_cmd(cmd);
+        if (!optly_flag_value_bool(&command, "dry-run")) {
+          run_cmd(cmd);
+        }
+
         break;
       }
     }
