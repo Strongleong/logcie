@@ -29,6 +29,7 @@ typedef intptr_t pid_t;
 
 #define ARR_LEN(array) ((int)sizeof(array) / (int)sizeof((array)[0]))
 
+#define LOGCIE_MODULE "build"
 #define LOGCIE_IMPLEMENTATION
 #include "logcie.h"
 
@@ -51,16 +52,25 @@ static OptlyCommand command = {
   ),
 };
 
-const char *logcie_module = "build";
+static Logcie_LogLevel stdout_sink_log_level = LOGCIE_LEVEL_INFO;
+
+uint8_t stdout_sink_filter(const void *data, Logcie_Log *log) {
+  (void)data;
+  if (strcmp(log->module, "build") != 0) {
+    return false;
+  }
+
+  return logcie_filter_level_min_fn((void *)stdout_sink_log_level, log);
+}
 
 static Logcie_Sink stdout_sink = {
-  .formatter = {logcie_printf_formatter, LOGCIE_COLOR_GRAY "[$M]$r $c$L$r:$<6$m"},
+  .formatter = {logcie_printf_formatter, LOGCIE_COLOR_GRAY "(build) [$M]$r $c$L$r:$<6$m"},
   .writer    = {logcie_printf_writer, NULL},
-  .filter    = logcie_filter_level_min(LOGCIE_LEVEL_INFO),
+  .filter    = {stdout_sink_filter, NULL}
 };
 
 static Logcie_Sink optly_sink = {
-  .formatter = {logcie_printf_formatter, LOGCIE_COLOR_GRAY "[$M]$r $c$L$r:$<6$m"},
+  .formatter = {logcie_printf_formatter, LOGCIE_COLOR_GRAY "(optly) [$M]$r $c$L$r:$<6$m"},
   .writer    = {logcie_printf_writer, NULL},
   .filter    = logcie_filter_and(
     logcie_filter_module_eq("optly"),
@@ -70,10 +80,7 @@ static Logcie_Sink optly_sink = {
 
 void setup_logcie(void) {
   stdout_sink.writer.data = stdout;
-
-  if (optly_flag_value_bool(&command, "silent")) {
-    stdout_sink.filter.data = (void *)(uintptr_t)LOGCIE_LEVEL_WARN;
-  }
+  optly_sink.writer.data  = stdout;
 
   logcie_add_sink(&stdout_sink);
   logcie_add_sink(&optly_sink);
@@ -206,8 +213,12 @@ size_t cmd_to_string(char **cmd, char *str) {
 static char outdir[PATH_MAX_LEN] = {0};
 
 int main(int argc, char *argv[]) {
-  optly_parse_args(argc, argv, &command);
   setup_logcie();
+  optly_parse_args(argc, argv, &command);
+
+  if (optly_flag_value_bool(&command, "silent")) {
+    stdout_sink_log_level = LOGCIE_LEVEL_WARN;
+  }
 
   strncpy(outdir, optly_flag_value_string(&command, "outdir"), PATH_MAX_LEN);
   size_t outdir_len = strlen(outdir);
