@@ -148,7 +148,6 @@ If you want to keep both the default stdout sink and add additional sinks, you m
 ```c
 // Create a file sink for error logs
 Logcie_Sink error_sink = {
-    .min_level = LOGCIE_LEVEL_DEBUG,
     // nice format: date, time, level, module, message
     .formatter = {logcie_printf_formatter,  "$d $t [$L] $f:$x - $m"},
     .writer    = {logcie_printf_writer, fopen("errors.log", "a")},
@@ -169,63 +168,42 @@ logcie_add_sink(&default_sink);
 
 ## Module-Based Logging
 
- Logcie has another important concept: modules. A module is simply a string used to label a *scope* where the log originated.
+A module is a string label that identifies the origin of a log message,
+such as "network", "core", or "database". It can be displayed with the `$M` token
+and used in filters.
 
- Modules allow you to group logs by subsystem (e.g., "network", "core", "database")
- and can be used in format strings or filters to provied additional context or control log output.
+Logcie supports three ways to set the module, from simplest to most explicit:
 
- To define a module, declare a variable name `logcie_module` in your translation uint:
-
-```c
-static const char *logcie_module = "network";
-```
-
- When defined, this value will be attached to every log emitted from that file. If not defined, a default module name is used.
- Modules can also be used in custom filters to selectively allow or block logs from specific parts of your application.
+### Per‑file default (macro)
 
 ```c
-// In each source file, define a module name
-static const char *logcie_module = "network";
-
-Logcie_Sink file_sink = {
-    .sink      = stdout;
-    .min_level = LOGCIE_LEVEL_DEBUG;
-    .fmt       = "$d $t [$L] ($M) $m";  // nice format: date, time, level, module, message
-    .formatter = logcie_printf_formatter;
-};
-
-logcie_add_sink(&file_sink);
-
-// Then log as usual
-const char *hostname = "gnu.org";
-LOGCIE_INFO("Connection established to %s", hostname);
-
-// Output: 2025-12-25 01:15:10 [INFO] (network) Connection established to gnu.org
+#define LOGCIE_MODULE "core"
+#include "logcie.h"
 ```
 
-The module name will appear in logs when using the `$M` format token.
+All classic macros (`LOGCIE_INFO`, `LOGCIE_ERROR`, …) in that file will be tagged with `"core"`.
 
-### C++ Compatibility
-
-Logcie supports C++ with minor adjustments:
+### Per‑call explicit module
 
 ```c
-// In C++ files, define logcie_module differently:
-extern "C" {
-    const char *logcie_module = "module_name";
-}
-
-// Or if including in multiple files, use extern:
-// In header:
-extern "C" {
-    extern const char *logcie_module;
-}
-
-// In one source file:
-extern "C" {
-    const char *logcie_module = "module_name";
-}
+LOGCIE_LOG_MOD("network", INFO, "Connected");
+// Use LOGCIE_LOG_MOD_VA when variadic macros are unavailable.
 ```
+
+### Library integration
+
+See the [Usage in libraries](#usage-in-libraries) section for a ready‑to‑use snippet.
+
+The module name appears in logs when using the `$M` format token:
+
+```c
+LOGCIE_LOG_MOD("network", INFO, "Connection established to %s", "gnu.org");
+// With format "$d $t [$L] ($M) $m" produces:
+// 2026-05-26 12:00:00 [INFO] (network) Connection established to gnu.org
+```
+
+Modules can also be used in filters to selectively allow or block logs from specific
+parts of your application.
 
 ## Memory Management Notes
 
@@ -295,10 +273,6 @@ Here is a list of built-in filters:
   - logcie_filter_message_contains("text")
       Allows logs whosse messages contains the given substring
 
-  - logcie_filter_custom(fn)
-      Allows logs based on user-provied predicate function. This exists to
-      make it easier if you don't need custom data in your filter
-
 Combining filters:
 
   - logcie_filter_and(a, b) - Allows logs only if BOTH filters pass
@@ -338,7 +312,10 @@ Example:
 
  Logcie_Sink another_sink = {
    // ...
-   .filter = logcie_filter_custom(custom_filter_fn)
+   .filter = {
+     .filter = custom_filter_fn,
+     .data = NULL,
+   }
  }
  ```
 
@@ -366,18 +343,24 @@ You can add simple snippet to make your library support logcie
 #ifndef YOURLIB_LOG
   #ifdef LOGCIE
     #ifdef LOGCIE_VA_LOGS
-      #define YOURLIB_LOG(level, ...) LOGCIE_##level##_VA(__VA_ARGS__)
+      #define YOURLIB_LOG(level, msg, ...) LOGCIE_LOG_MOD_VA("YOURLIB", level, msg, __VA_ARGS__)
     #else
-      #define YOURLIB_LOG(level, ...) LOGCIE_##level(__VA_ARGS__)
+      #define YOURLIB_LOG(level, ...)      LOGCIE_LOG_MOD("YOURLIB", level, __VA_ARGS__)
     #endif
   #else
-    #define YOURLIB_LOG(level, ...)                \
-       do {                                       \
-         fprintf(stderr, #level ": "__VA_ARGS__); \
-         fprintf(stderr, "\n");                   \
-       } while (0)
+    #define YOURLIB_LOG(level, ...) (void*)0
   #endif
 #endif
+```
+
+If you need to have fallback logging this can be used instead of `(void *)0`:
+
+```c
+#define YOURLIB_LOG(level, ...)                \
+   do {                                       \
+     fprintf(stderr, #level ": "__VA_ARGS__); \
+     fprintf(stderr, "\n");                   \
+   } while (0)
 ```
 
 Just change YOURLLIB to something more fitting :)
