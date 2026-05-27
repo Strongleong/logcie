@@ -28,7 +28,6 @@ that supports multiple output sinks, customizable formatting, and flexible filte
   - [Default sink](#default_sink)
   - [Creating a Custom Sink](#creating-a-custom-sink)
 - [Module-Based Logging](#module-based-logging)
-  - [C++ Compatibility](#c++-compatibility)
 - [Memory Management Notes](#memory-management-notes)
 - [Format Tokens](#format-tokens)
   - [Format Examples](#format-examples)
@@ -65,10 +64,6 @@ int main() {
 // In any other file where you want to use logcie
 #include "logcie.h"
 ```
-
-## Building examples and tests
-
-## Installation
 
 ### Building examples and tests
 
@@ -121,17 +116,17 @@ Logcie is built arout three core components:
 
 ### Formatter
 
-Tranforms a log structure into formatted output and passes it to [Writer](#writer)
+Transforms a log structure into formatted output and passes it to [Writer](#writer)
 
 ### Writer
 
-Handles where fomratted output goes (FILE*, network, etc.).
+Handles where formatted output goes (FILE*, network, etc.).
 
-### Fitler
+### Filter
 
-Decides whether a log should be emmited.
+Decides whether a log should be emitted.
 
-A combination of these three components is called a **Sink**
+A combination of theese three components is called a **Sink**
 
 ### Recursive Logging
 
@@ -166,7 +161,7 @@ This is how default sinks looks like:
 ```c
 static Logcie_Sink default_stdout_sink = {
     .formatter = {logcie_printf_formatter, "$c$L$r " LOGCIE_COLOR_GRAY "$f:$x$r: $m"},
-    .writer    = {logcie_printf_writer, stdouit},
+    .writer    = {logcie_printf_writer, stdout},
     .filter    = {NULL, NULL},
 };
 ```
@@ -189,7 +184,7 @@ Logcie_Sink error_sink = {
     // nice format: date, time, level, module, message
     .formatter = {logcie_printf_formatter,  "$d $t [$L] $f:$x - $m"},
     .writer    = {logcie_printf_writer, fopen("errors.log", "a")},
-    .filter    = {logcie_filter_level_min, LOGCIE_LEVEL_ERROR}
+    .filter    = {logcie_filter_level_min_fn, LOGCIE_LEVEL_ERROR}
 };
 
 // Add it to the logger
@@ -309,13 +304,13 @@ Here is a list of built-in filters:
       Allows logs only from specific module (see below for learning about modules)
 
   - logcie_filter_message_contains("text")
-      Allows logs whosse messages contains the given substring
+      Allows logs whose messages contains the given substring
 
 Combining filters:
 
   - logcie_filter_and(a, b) - Allows logs only if BOTH filters pass
   - logcie_filter_or(a, b)  - Allows logs only if EITHER filters pass
-  - logcie_filter_not(a)    - Inverts theresult of a filter
+  - logcie_filter_not(a)    - Inverts the result of a filter
 
 Example:
  ```c
@@ -359,12 +354,12 @@ Example:
 
 ### Notes:
 
- - Filters are evealuated per sink, independently.
+ - Filters are eveluated per sink, independently.
  - Be careful when using temporary data in filters (they rely on compound literals and must remain valid during logging).
 
 ## Limitations
 
-- **Not thread-safe** - Concurrent calls to logging functions from multiple threads may interleave output. Thread safety and multithreading is planned for version 1.0.0
+- **Thread safety is opt‑in** – Define `LOGCIE_THREAD_SAFE` before the implementation to serialise all operations with a mutex.  Without it, concurrent calls may interleave or crash.
 - **Memory allocation** - The sink array uses `malloc()`/`realloc()` for dynamic growth
 - **No built-in log rotation** - File management must be handled by the application (or just use `logrotate`)
 - **Custom formatters require `va_list` handling** - Advanced usage requires understanding of variadic arguments
