@@ -4,30 +4,26 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <sys/wait.h>
-
-// TODO: Write my own file system ops lib and replace fts with it
-#include <fts.h>
 
 #ifdef _WIN32
-
 #include <direct.h>
 #include <process.h>
 #include <windows.h>
 
-typedef HANDLE pid_t;
+// ERROR from windows clashes with logging macros in optly
+#ifdef ERROR
+#undef ERROR
+#endif
 
 #define mkdir(path, mode) _mkdir(path)
 #define PATH_SEP          "\\"
-
 #else
-
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #define PATH_SEP "/"
-
-#endif
+#endif  // _WIN32
 
 #define ARR_LEN(array) ((int)sizeof(array) / (int)sizeof((array)[0]))
 
@@ -40,6 +36,8 @@ typedef HANDLE pid_t;
 #include "./thirdparty/optly.h"
 
 #define ARR_LEN(array) ((int)sizeof(array) / (int)sizeof((array)[0]))
+
+#define PATH_MAX_LEN 4096
 
 static OptlyCommand command = {
   "build",
@@ -91,6 +89,83 @@ void setup_logcie(void) {
   LOGCIE_INFO("Build system started...");
 }
 
+typedef struct {
+  char  path[PATH_MAX_LEN];
+  char *name;
+} WalkEntry;
+
+static bool walk_dir(const char *dir, bool (*cb)(const WalkEntry *entry, void *user), void *user) {
+#ifdef __WIN32
+  WIN32_FIND_DATA fd;
+  HANDLE          hFind;
+  char            search[PATH_MAX_LEN];
+  snprintf(search, sizeof(search), "%s\\*", dir);
+
+  hFind = FindFirstFile(search, &fd);
+  if (hFind == INVALID_HANDLE_VALUE) {
+    return false;
+  }
+
+  do {
+    if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0) {
+      continue;
+    }
+
+    WalkEntry entry;
+    snprintf(entry.path, sizeof(entry.path), "%s\\%s", dir, fd.cFileName);
+    entry.name = entry.path + strlen(dir) + 1;  // skip the dir part + '\'
+
+    if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+      if (!walk_dir(entry.path, cb, user)) {
+        FindClose(hFind);
+        return false;
+      }
+    } else {
+      if (!cb(&entry, user)) {
+        FindClose(hFind);
+        return false;
+      }
+    }
+  } while (FindNextFile(hFind, &fd));
+
+  FindClose(hFind);
+  return true;
+#else
+  DIR *d = opendir(dir);
+
+  if (!d) {
+    return false;
+  }
+
+  struct dirent *e;
+
+  while ((e = readdir(d)) != NULL) {
+    if (strcmp(e->d_name, ".") == 0 || strcmp(e->d_name, "..") == 0) {
+      continue;
+    }
+
+    WalkEntry entry;
+    snprintf(entry.path, sizeof(entry.path), "%s/%s", dir, e->d_name);
+    entry.name = entry.path + strlen(dir) + 1;
+
+    struct stat st;
+    if (stat(entry.path, &st) == -1) {
+      continue;
+    }
+
+    if (S_ISDIR(st.st_mode) && !walk_dir(entry.path, cb, user)) {
+      closedir(d);
+      return false;
+    } else if (!cb(&entry, user)) {
+      closedir(d);
+      return false;
+    }
+  }
+  closedir(d);
+  return true;
+#endif
+}
+
 #define UNUSED(value) (void)(value)
 #define TODO(message)                                                  \
   do {                                                                 \
@@ -135,11 +210,12 @@ pid_t start_process(char *const argv[]) {
   return -1;
 }
 
-bool wait_cmd(pid_t pid) {
+bool wait_cmd(intptr_t pid) {
   if (pid == -1) return false;
 
 #ifdef _WIN32
-  DWORD result = WaitForSingleObject(pid, INFINITE);
+  HANDLE hProcess = (HANDLE)pid;
+  DWORD  result   = WaitForSingleObject(hProcess, INFINITE);
 
   if (result == WAIT_FAILED) {
     LOGCIE_ERROR("Could not wait on child process");
@@ -148,7 +224,7 @@ bool wait_cmd(pid_t pid) {
 
   DWORD exit_status;
 
-  if (!GetExitCodeProcess(pid, &exit_status)) {
+  if (!GetExitCodeProcess(hProcess, &exit_status)) {
     LOGCIE_ERROR("Could not get process exit code");
     return false;
   }
@@ -158,13 +234,13 @@ bool wait_cmd(pid_t pid) {
     return false;
   }
 
-  CloseHandle(pid);
+  CloseHandle(hProcess);
 #else
   while (true) {
     int wstatus = 0;
 
     if (waitpid(pid, &wstatus, 0) < 0) {
-      LOGCIE_ERROR("Could not wait on command (pid: %d) :%s", pid, strerror(errno));
+      LOGCIE_ERROR("Could not wait on command (pid: %ld) :%s", pid, strerror(errno));
     }
 
     if (WIFEXITED(wstatus)) {
@@ -218,8 +294,81 @@ size_t cmd_to_string(char **cmd, char *str, size_t cap) {
   return len;
 }
 
-#define PATH_MAX_LEN 4096
 static char outdir[PATH_MAX_LEN] = {0};
+
+bool visit_file(const WalkEntry *entry, void *user) {
+  if (user && strcmp(entry->name, user) != 0) {
+    return true;
+  }
+
+  LOGCIE_VERBOSE("Compiling file %s", entry->name);
+
+  char *ext = strrchr(entry->name, '.');
+
+  if (!ext) {
+    return true;
+  }
+
+  size_t out_len = strlen(entry->name) + strlen(outdir) - strlen(ext) + 1;
+  char   out[out_len];
+  size_t in_len = strlen(entry->path) + 1;
+  char   in[in_len];
+
+  bool cpp = strcmp(ext, ".cpp") == 0;
+
+  if (!cpp && strcmp(ext, ".c") != 0) {
+    return true;
+  }
+
+  char *cmd[32] = {0};
+  int   i       = 0;
+
+  cmd[i++] = cpp ? optly_flag_value_string(&command, "cpp-compiler")
+                 : optly_flag_value_string(&command, "c-compiler");
+  cmd[i++] = "-Wall";
+  cmd[i++] = "-Wextra";
+  cmd[i++] = cpp ? "-std=c++11" : "-std=c99";
+
+  if (optly_flag_value_bool(&command, "pedantic")) {
+    cmd[i++] = "-pedantic";
+    cmd[i++] = "-DLOGCIE_PEDANTIC";
+  }
+
+  if (optly_flag_value_bool(&command, "debug")) {
+    cmd[i++] = "-ggdb";
+    cmd[i++] = "-fsanitize=address";
+    cmd[i++] = "-fno-omit-frame-pointer";
+    cmd[i++] = "-D_LOGCIE_DEBUG";
+    cmd[i++] = "-Og";
+  } else {
+    cmd[i++] = "-O3";
+  }
+
+#ifdef _WIN32
+  cmd[i++] = "-D__USE_MINGW_ANSI_STDIO";
+#endif
+
+  cmd[i++] = "-I.";
+  cmd[i++] = in;
+  cmd[i++] = "-o";
+  cmd[i++] = out;
+  cmd[i++] = NULL;
+
+  snprintf(out, out_len, "%s%.*s", outdir, (int)(ext - entry->name), entry->name);
+  snprintf(in, in_len, "%s", entry->path);
+
+  char buf[256] = {0};
+  cmd_to_string(cmd, buf, sizeof(buf));
+  LOGCIE_INFO("%s", buf);
+
+  if (!optly_flag_value_bool(&command, "dry-run")) {
+    if (!run_cmd(cmd)) {
+      return false;
+    }
+  }
+
+  return true;
+}
 
 int main(int argc, char *argv[]) {
   setup_logcie();
@@ -246,91 +395,10 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  char   *sources[]   = {"./examples/", "./test.c", NULL};
-  FTSENT *node        = NULL;
-  FTS    *file_system = fts_open(sources, FTS_NOCHDIR, NULL);
-
-  if (!file_system) {
-    LOGCIE_FATAL("Can not open file system: %s", strerror(errno));
-    return 1;
-  }
-
   bool is_all_ok = true;
 
-  while ((node = fts_read(file_system)) != NULL) {
-    switch (node->fts_info) {
-      case FTS_ERR:
-      case FTS_NS:
-        LOGCIE_ERROR("Could not read file %s: %s", node->fts_accpath, strerror(node->fts_errno));
-        break;
-      case FTS_F: {
-        LOGCIE_VERBOSE("Compiling file %s", node->fts_name);
-        char *ext = strrchr(node->fts_name, '.');
+  is_all_ok = walk_dir("./examples", visit_file, NULL) && is_all_ok;
+  is_all_ok = walk_dir(".", visit_file, "test.c") && is_all_ok;
 
-        if (!ext) {
-          break;
-        }
-
-        size_t out_len = node->fts_namelen + strlen(outdir) - strlen(ext) + 1;
-        char   out[out_len];
-        size_t in_len = node->fts_pathlen + node->fts_namelen + 1;
-        char   in[in_len];
-
-        bool cpp = strcmp(ext, ".cpp") == 0;
-
-        if (!cpp && strcmp(ext, ".c") != 0) {
-          continue;
-        }
-
-        char *cmd[32] = {0};
-        int   i       = 0;
-
-        cmd[i++] = cpp ? optly_flag_value_string(&command, "cpp-compiler")
-                       : optly_flag_value_string(&command, "c-compiler");
-        cmd[i++] = "-Wall";
-        cmd[i++] = "-Wextra";
-        cmd[i++] = cpp ? "-std=c++11" : "-std=c99";
-
-        if (optly_flag_value_bool(&command, "pedantic")) {
-          cmd[i++] = "-pedantic";
-          cmd[i++] = "-DLOGCIE_PEDANTIC";
-        }
-
-        if (optly_flag_value_bool(&command, "debug")) {
-          cmd[i++] = "-ggdb";
-          cmd[i++] = "-fsanitize=address";
-          cmd[i++] = "-fno-omit-frame-pointer";
-          cmd[i++] = "-D_LOGCIE_DEBUG";
-          cmd[i++] = "-Og";
-        } else {
-          cmd[i++] = "-O3";
-        }
-
-        cmd[i++] = "-I.";
-        cmd[i++] = "-pthread";
-        cmd[i++] = in;
-        cmd[i++] = "-o";
-        cmd[i++] = out;
-        cmd[i++] = NULL;
-
-        snprintf(out, out_len, "%s%.*s", outdir, (int)(ext - node->fts_name), node->fts_name);
-        snprintf(in, in_len, "%s", node->fts_accpath);
-
-        char buf[256] = {0};
-        cmd_to_string(cmd, buf, sizeof(buf));
-        LOGCIE_INFO("%s", buf);
-
-        if (!optly_flag_value_bool(&command, "dry-run")) {
-          if (!run_cmd(cmd)) {
-            is_all_ok = false;
-          }
-        }
-
-        break;
-      }
-    }
-  }
-
-  fts_close(file_system);
   return is_all_ok ? 0 : 1;
 }
