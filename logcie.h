@@ -82,7 +82,7 @@
  *                                   `$<n - Pads with n spaces
  *                                   `$$` - Literal dollar sign
  *
- *   Also by default, Logcie alredy has a Sink installed with the printf writer and formatter,
+ *   Also by default, Logcie already has a Sink installed with the printf writer and formatter,
  *   so you can start using it immediately after including the library.
  *
  *   Note: When you add your first Sink using `logcie_add_sink()`, the default printf Sink is removed.
@@ -117,7 +117,7 @@
  *   Filters allow you to control which logs are emitted to a specific Sink.
  *   Each Sink can have its own filter, enabling fine-grained routing of logs.
  *
- *   A filter is a structure that consist of pointer to filtering fucntion and
+ *   A filter is a structure that consist of pointer to filtering function and
  *   a pointer to custom data that filter might want to use.
  *
  *   A filtering function is simply a function that recieves a `Logcie_Log` and returns:
@@ -138,7 +138,7 @@
  *        Allows logs only from specific module (see below for learning about modules)
  *
  *    - logcie_filter_message_contains("text")
- *        Allows logs whosse messages contains the given substring
+ *        Allows logs whose messages contains the given substring
  *
  *   Combining filters:
  *
@@ -149,7 +149,7 @@
  *        Allows logs only if EITHER filters pass
  *
  *    - logcie_filter_not(a)
- *        Inverts theresult of a filter
+ *        Inverts the result of a filter
  *
  *   Example:
  *     ```c
@@ -181,7 +181,7 @@
  *     ```
  *
  *   Notes:
- *     - Filters are evealuated per sink, independently.
+ *     - Filters are evaluated per sink, independently.
  *     - Be careful when using temporary data in filters (they rely on
  *       compound literals and must remain valid during logging).
  *
@@ -263,7 +263,7 @@
  *       .writer = { logcie_printf_writer, fopen("./log.txt", "w") },
  *     };
  *
- *     // New sinks must be registred with `logcie_add_sink()`
+ *     // New sinks must be registered with `logcie_add_sink()`
  *     logcie_add_sink(&stdout_sink);
  *     logcie_add_sink(&file_sink);
  *     ```
