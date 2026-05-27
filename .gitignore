@@ -1,4 +1,5 @@
 build
+build.exe
 compile_commands.json
 out
 app.log
