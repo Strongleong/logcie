@@ -910,8 +910,13 @@ LOGCIE_DEF void logcie_set_colors(const char **colors);
 #define LOGCIE_MUTEX_LOCK(m)
 #define LOGCIE_MUTEX_UNLOCK(m)
 #else
-#ifdef _WIN32
-#error "Thread‑safe mode on Windows is not yet implemented"
+#if defined(_WIN32)
+#include <windows.h>
+#define LOGCIE_MUTEX_DECLARE(name) SRWLOCK name = SRWLOCK_INIT
+#define LOGCIE_MUTEX_INIT(m)
+#define LOGCIE_MUTEX_DESTROY(m)
+#define LOGCIE_MUTEX_LOCK(m)   AcquireSRWLockExclusive(&(m))
+#define LOGCIE_MUTEX_UNLOCK(m) ReleaseSRWLockExclusive(&(m))
 #else
 #include <pthread.h>
 #define LOGCIE_MUTEX_DECLARE(name) pthread_mutex_t name = PTHREAD_MUTEX_INITIALIZER
