@@ -885,6 +885,27 @@ LOGCIE_DEF void logcie_set_colors(const char **colors);
 #define _LOGCIE_ARR_LEN(array) ((int)sizeof(array) / (int)sizeof((array)[0]))
 #endif
 
+#ifndef LOGCIE_THREAD_SAFE
+#define LOGCIE_MUTEX_DECLARE(name)
+#define LOGCIE_MUTEX_INIT(m)
+#define LOGCIE_MUTEX_DESTROY(m)
+#define LOGCIE_MUTEX_LOCK(m)
+#define LOGCIE_MUTEX_UNLOCK(m)
+#else
+#ifdef _WIN32
+#error "Thread‑safe mode on Windows is not yet implemented"
+#else
+#include <pthread.h>
+#define LOGCIE_MUTEX_DECLARE(name) pthread_mutex_t name = PTHREAD_MUTEX_INITIALIZER
+#define LOGCIE_MUTEX_INIT(m)       pthread_mutex_init(&(m), NULL)
+#define LOGCIE_MUTEX_DESTROY(m)    pthread_mutex_destroy(&(m))
+#define LOGCIE_MUTEX_LOCK(m)       pthread_mutex_lock(&(m))
+#define LOGCIE_MUTEX_UNLOCK(m)     pthread_mutex_unlock(&(m))
+#endif
+#endif
+
+LOGCIE_MUTEX_DECLARE(logcie_mutex);
+
 #if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
 #define LOGCIE_THREAD_LOCAL _Thread_local
 #elif defined(_MSC_VER)
@@ -943,6 +964,8 @@ static const char *logcie_default_level_color[] = {
 static const char **logcie_level_color = logcie_default_level_color;
 
 void logcie_set_colors(const char **colors) {
+  LOGCIE_MUTEX_LOCK(logcie_mutex);
+
   if (colors) {
     // If compiled with -fsanitize=address and colors array is wrong it will crash
     // If it is compiled without -fsanitize=address then color would be NULL (I hope)
@@ -952,6 +975,8 @@ void logcie_set_colors(const char **colors) {
   } else {
     logcie_level_color = logcie_default_level_color;
   }
+
+  LOGCIE_MUTEX_UNLOCK(logcie_mutex);
 }
 
 static inline const char *get_logcie_level_color(Logcie_LogLevel level) {
@@ -993,19 +1018,30 @@ static Logcie_Logger logcie = {
 };
 
 size_t logcie_get_sink_count(void) {
-  return logcie.sinks_len;
+  LOGCIE_MUTEX_LOCK(logcie_mutex);
+  size_t count = logcie.sinks_len;
+  LOGCIE_MUTEX_UNLOCK(logcie_mutex);
+
+  return count;
 }
 
 Logcie_Sink *logcie_get_sink(size_t index) {
+  LOGCIE_MUTEX_LOCK(logcie_mutex);
+
   if (index >= logcie.sinks_len) {
+    LOGCIE_MUTEX_UNLOCK(logcie_mutex);
     return NULL;
   }
 
+  LOGCIE_MUTEX_UNLOCK(logcie_mutex);
   return logcie.sinks[index];
 }
 
 uint8_t logcie_add_sink(Logcie_Sink *sink) {
+  LOGCIE_MUTEX_LOCK(logcie_mutex);
+
   if (sink == NULL) {
+    LOGCIE_MUTEX_UNLOCK(logcie_mutex);
     return 0;
   }
 
@@ -1028,29 +1064,39 @@ uint8_t logcie_add_sink(Logcie_Sink *sink) {
   logcie.sinks[logcie.sinks_len] = sink;
   logcie.sinks_len++;
 
+  LOGCIE_MUTEX_UNLOCK(logcie_mutex);
   return 1;
 }
 
 uint8_t logcie_remove_sink(Logcie_Sink *sink) {
+  LOGCIE_MUTEX_LOCK(logcie_mutex);
+
   if (sink == &default_stdout_sink) {
+    LOGCIE_MUTEX_UNLOCK(logcie_mutex);
     return 0;  // unreachable
   }
 
   for (size_t i = 0; i < logcie.sinks_len; i++) {
     if (logcie.sinks[i] == sink) {
+      LOGCIE_MUTEX_UNLOCK(logcie_mutex);
       return logcie_remove_sink_by_index(i);
     }
   }
 
+  LOGCIE_MUTEX_UNLOCK(logcie_mutex);
   return 0;
 }
 
 uint8_t logcie_remove_sink_by_index(size_t index) {
+  LOGCIE_MUTEX_LOCK(logcie_mutex);
+
   if (index >= logcie.sinks_len) {
+    LOGCIE_MUTEX_UNLOCK(logcie_mutex);
     return 0;
   }
 
   if (logcie.sinks_cap == 1 && index == 0) {
+    LOGCIE_MUTEX_UNLOCK(logcie_mutex);
     return 0;
   }
 
@@ -1059,17 +1105,21 @@ uint8_t logcie_remove_sink_by_index(size_t index) {
   }
 
   logcie.sinks_len--;
+  LOGCIE_MUTEX_UNLOCK(logcie_mutex);
   return 1;
 }
 
 void logcie_remove_all_sinks(void) {
+  LOGCIE_MUTEX_LOCK(logcie_mutex);
+
   if (logcie.sinks_cap > 1) {
     free(logcie.sinks);
     logcie.sinks_cap = 1;
     logcie.sinks_len = 1;
     logcie.sinks     = &default_stdout_sink_ptr;
-    return;
   }
+
+  LOGCIE_MUTEX_UNLOCK(logcie_mutex);
 }
 
 size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
@@ -1080,6 +1130,8 @@ size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
 
   logcie_log_depth++;
 #endif
+
+  LOGCIE_MUTEX_LOCK(logcie_mutex);
 
   va_list args;
   va_start(args, fmt);
@@ -1101,6 +1153,8 @@ size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
 
     va_end(args_copy);
   }
+
+  LOGCIE_MUTEX_UNLOCK(logcie_mutex);
 
 #ifndef LOGCIE_ALLOW_RECURSIVE_LOGGING
   logcie_log_depth--;
