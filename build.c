@@ -307,6 +307,7 @@ int main(int argc, char *argv[]) {
         }
 
         cmd[i++] = "-I.";
+        cmd[i++] = "-pthread";
         cmd[i++] = in;
         cmd[i++] = "-o";
         cmd[i++] = out;
