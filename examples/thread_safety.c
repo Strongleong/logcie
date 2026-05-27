@@ -25,6 +25,13 @@ static void *worker(void *arg) {
   return NULL;
 }
 
+static size_t null_writer(void *user_data, const char *fmt, va_list *va, ...) {
+  (void)user_data;
+  (void)fmt;
+  (void)va;
+  return 0;
+}
+
 // Constantly creates a sink, registers it, then immediatly frees it.
 // Without LOGCIE_THREAD_SAFE a worker thread may still be inside the
 // sink when free() is called - use-after-free
@@ -40,23 +47,15 @@ static void *destroyer(void *arg) {
 
     *sink = (Logcie_Sink){
       .formatter = {logcie_printf_formatter, "[$L] $M: $m"},
-      .writer    = {logcie_printf_writer, NULL},
+      .writer    = {null_writer, (void*)1},
       .filter    = logcie_filter_level_min(LOGCIE_LEVEL_INFO)
     };
-
-    sink->writer.data = fopen("/dev/null", "w");
-
-    if (!sink->writer.data) {
-      free(sink);
-      continue;
-    }
 
     logcie_add_sink(sink);
 
     // Give workers a chance to hit the sink
     sleep(0);
     logcie_remove_sink(sink);
-    fclose(sink->writer.data);
 
     // Freed while still potentially in use
     free(sink);
