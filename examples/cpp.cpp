@@ -37,7 +37,7 @@ int main() {
   LOGCIE_INFO("Application starting");
   LOGCIE_VERBOSE("Initializing subsystems");
   LOGCIE_WARN("Warning: you are cool!");
-  LOGCIE_DEBUG("Very IMPORTANT: active sinks: %zu", logcie_get_sink_count());
+  LOGCIE_DEBUG("Very IMPORTANT: active sinks: %lu", (unsigned long)logcie_get_sink_count());
 
   return 0;
 }

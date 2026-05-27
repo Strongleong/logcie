@@ -344,10 +344,6 @@ bool visit_file(const WalkEntry *entry, void *user) {
     cmd[i++] = "-O3";
   }
 
-#ifdef _WIN32
-  cmd[i++] = "-D__USE_MINGW_ANSI_STDIO";
-#endif
-
   cmd[i++] = "-I.";
   cmd[i++] = in;
   cmd[i++] = "-o";

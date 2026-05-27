@@ -80,7 +80,7 @@ int main() {
   // Log some messages
   LOGCIE_INFO("Application starting");
   LOGCIE_VERBOSE("Initializing subsystems");
-  LOGCIE_DEBUG("Active sinks: %zu", logcie_get_sink_count());
+  LOGCIE_DEBUG("Active sinks: %lu", (unsigned long)logcie_get_sink_count());
 
   // A another user logs in
   current_user = &normal_user;
