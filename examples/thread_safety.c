@@ -1,4 +1,5 @@
 #include <pthread.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <unistd.h>
 
@@ -10,7 +11,6 @@
 #include <logcie.h>
 
 #define NUM_THREADS     4
-#define LOGS_PER_THREAD 1000
 
 static volatile int running = 1;
 
@@ -18,7 +18,7 @@ static volatile int running = 1;
 static void *worker(void *arg) {
   int id = *(int *)arg;
 
-  for (int i = 0; i < LOGS_PER_THREAD && running; i++) {
+  for (int i = 0; running; i++) {
     LOGCIE_INFO_MOD("worker", "thread %d message %d", id, i);
   }
 
@@ -47,7 +47,7 @@ static void *destroyer(void *arg) {
 
     *sink = (Logcie_Sink){
       .formatter = {logcie_printf_formatter, "[$L] $M: $m"},
-      .writer    = {null_writer, (void*)1},
+      .writer    = {null_writer, (void *)1},
       .filter    = logcie_filter_level_min(LOGCIE_LEVEL_INFO)
     };
 
@@ -93,6 +93,6 @@ int main(void) {
   }
 
   pthread_join(destroyer_thread, NULL);
-  LOGCIE_INFO("Finished. If you was a crash, thread safety is mandatory");
+  LOGCIE_INFO("Finished. If you saw a crash or garbled output, thread safety is mandatory");
   return 0;
 }

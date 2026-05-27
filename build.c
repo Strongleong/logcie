@@ -336,7 +336,9 @@ bool visit_file(const WalkEntry *entry, void *user) {
 
   if (optly_flag_value_bool(&command, "debug")) {
     cmd[i++] = "-ggdb";
+#ifndef _WIN32
     cmd[i++] = "-fsanitize=address";
+#endif
     cmd[i++] = "-fno-omit-frame-pointer";
     cmd[i++] = "-D_LOGCIE_DEBUG";
     cmd[i++] = "-Og";
