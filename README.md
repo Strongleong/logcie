@@ -23,11 +23,12 @@ that supports multiple output sinks, customizable formatting, and flexible filte
   - [Formatter](#formatter)
   - [Writer](#writer)
   - [Filter](#filter)
+- [Configuration Macros](#configuration-macros)
+- [Recursive Logging](#recursive-logging)
 - [Sinks and Output Configuration](#sinks-and-output-configuration)
   - [Default sink](#default_sink)
   - [Creating a Custom Sink](#creating-a-custom-sink)
 - [Module-Based Logging](#module-based-logging)
-  - [C++ Compatibility](#c++-compatibility)
 - [Memory Management Notes](#memory-management-notes)
 - [Format Tokens](#format-tokens)
   - [Format Examples](#format-examples)
@@ -65,11 +66,24 @@ int main() {
 #include "logcie.h"
 ```
 
+## Configuration Macros
+
+Define any of these **before** you include `logcie.h` (or before
+`#define LOGCIE_IMPLEMENTATION`) to customise Logcie.
+
+| Macro                            | Description                                                                                                        | Default                  |
+| -------                          | -------------                                                                                                      | ---------                |
+| `LOGCIE_MODULE`                  | Module name attached to classic macros (`LOGCIE_INFO`, …). (see [Module-Based Logging](#module-based-logging))     | `"Logcie"`               |
+| `LOGCIE_DEFAULT_SINK_FORMAT`     | Format string for the automatic stdout sink.                                                                       | `"$c$L$r … $f:$x$r: $m"` |
+| `LOGCIE_THREAD_SAFE`             | Enables a mutex around all sink operations and log calls (requires pthreads).                                      | *(not defined)*          |
+| `LOGCIE_ALLOW_RECURSIVE_LOGGING` | Allows logging calls inside formatters/writers/filters (dangerous!). (see [Recursive Logging](#recursive-logging)) | *(not defined)*          |
+| `LOGCIE_DEF`                     | Linkage qualifier for public functions (e.g. `static`).                                                            | `extern`                 |
+| `LOGCIE_PEDANTIC`                | Forces the strict C99 macro fallback (`LOGCIE_*_VA`) even on GCC/Clang.                                            | *(not defined)*          |
+| `LOGCIE_COLOR_*`                 | ANSI escape codes for each level colour. You can override them or use `logcie_set_colors()`.                       | *(see source)*           |
+
+> **Note:** The compiler‑pedantic fallback (`LOGCIE_VA_LOGS`) is automatically defined when variadic macros are not available – you don’t need to touch it.
+
 ## Building examples and tests
-
-## Installation
-
-### Building examples and tests
 
 On Linux you can compile the build system with:
 
@@ -116,21 +130,40 @@ Logcie defines seven log levels in increasing order of severity:
 
 ## Architecture Overview
 
-Logcie is built arout three core components:
+Logcie is built around three core components:
 
 ### Formatter
 
-Tranforms a log structure into formatted output and passes it to [Writer](#writer)
+Transforms a log structure into formatted output and passes it to [Writer](#writer)
 
 ### Writer
 
-Handles where fomratted output goes (FILE*, network, etc.).
+Handles where formatted output goes (FILE*, network, etc.).
 
-### Fitler
+### Filter
 
-Decides whether a log should be emmited.
+Decides whether a log should be emitted.
 
 A combination of these three components is called a **Sink**
+
+### Recursive Logging
+
+> Recursive logging from formatters, writers or filters is not supported!
+
+By default, Logcie suppresses recursive log attempts to avoid infinite recursion
+and deadlocks. Recursive calls return `0` and produce no output.
+
+If you want to avoid the small overhead of the recursion check,
+or if you intentionally rely on recursive logging and you know what you are doing
+you can disable the recursion guard:
+
+
+```c
+#define LOGCIE_ALLOW_RECURSIVE_LOGGING
+```
+
+Disabling the recursion guard may cause infinite recursion, deadlocks,
+or stack overflows.
 
 ## Sinks and Output Configuration
 
@@ -146,7 +179,7 @@ This is how default sinks looks like:
 ```c
 static Logcie_Sink default_stdout_sink = {
     .formatter = {logcie_printf_formatter, "$c$L$r " LOGCIE_COLOR_GRAY "$f:$x$r: $m"},
-    .writer    = {logcie_printf_writer, stdouit},
+    .writer    = {logcie_printf_writer, stdout},
     .filter    = {NULL, NULL},
 };
 ```
@@ -169,7 +202,7 @@ Logcie_Sink error_sink = {
     // nice format: date, time, level, module, message
     .formatter = {logcie_printf_formatter,  "$d $t [$L] $f:$x - $m"},
     .writer    = {logcie_printf_writer, fopen("errors.log", "a")},
-    .filter    = {logcie_filter_level_min, LOGCIE_LEVEL_ERROR}
+    .filter    = {logcie_filter_level_min_fn, LOGCIE_LEVEL_ERROR}
 };
 
 // Add it to the logger
@@ -268,10 +301,10 @@ Format strings use `$` tokens to insert log metadata. The default formatter supp
 Filters allow you to control which logs are emitted to a specific Sink.
 Each Sink can have its own filter, enabling fine-grained routing of logs.
 
-A filter is a structure that consist of pointer to filtering fucntion and
+A filter is a structure that consist of pointer to filtering function and
 a pointer to custom data that filter might want to use.
 
-A filtering function is simply a function that recieves a `Logcie_Log` and returns:
+A filtering function is simply a function that receives a `Logcie_Log` and returns:
  - 1 (true)  - to allow the log
  - 0 (false) - to suppress the log
 
@@ -289,13 +322,13 @@ Here is a list of built-in filters:
       Allows logs only from specific module (see below for learning about modules)
 
   - logcie_filter_message_contains("text")
-      Allows logs whosse messages contains the given substring
+      Allows logs whose messages contains the given substring
 
 Combining filters:
 
   - logcie_filter_and(a, b) - Allows logs only if BOTH filters pass
   - logcie_filter_or(a, b)  - Allows logs only if EITHER filters pass
-  - logcie_filter_not(a)    - Inverts theresult of a filter
+  - logcie_filter_not(a)    - Inverts the result of a filter
 
 Example:
  ```c
@@ -339,12 +372,12 @@ Example:
 
 ### Notes:
 
- - Filters are evealuated per sink, independently.
+ - Filters are evaluated per sink, independently.
  - Be careful when using temporary data in filters (they rely on compound literals and must remain valid during logging).
 
 ## Limitations
 
-- **Not thread-safe** - Concurrent calls to logging functions from multiple threads may interleave output. Thread safety and multithreading is planned for version 1.0.0
+- **Thread safety is opt‑in** – Define `LOGCIE_THREAD_SAFE` before the implementation to serialise all operations with a mutex.  Without it, concurrent calls may interleave or crash.
 - **Memory allocation** - The sink array uses `malloc()`/`realloc()` for dynamic growth
 - **No built-in log rotation** - File management must be handled by the application (or just use `logrotate`)
 - **Custom formatters require `va_list` handling** - Advanced usage requires understanding of variadic arguments

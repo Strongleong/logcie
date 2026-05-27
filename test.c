@@ -202,14 +202,19 @@ static Logcie_TestCase tests[] = {
    .module         = NULL,
    .sink_min_level = LOGCIE_LEVEL_TRACE,
    .fmt            = "$M $m",
-   .expected       = "  fallback"},
+   .expected       = " fallback"},
   {.name           = "File token",
    .level          = LOGCIE_LEVEL_INFO,
    .msg            = "file test",
    .module         = "core",
    .sink_min_level = LOGCIE_LEVEL_TRACE,
    .fmt            = "$f $m",
-   .expected       = "./test.c file test"},
+#ifdef _WIN32
+   .expected = ".\\test.c file test"
+#else
+   .expected = "./test.c file test"
+#endif
+  },
   {
     .name           = "Line token",
     .level          = LOGCIE_LEVEL_INFO,

@@ -6,10 +6,6 @@
  *   It supports multiple log levels, ANSI color output, flexible formatting, and
  *   customizable filters and sinks for advanced logging use cases.
  *
- *   NOTE: This library is NOT thread-safe in version 0.x.
- *       Concurrent calls from multiple threads may interleave output.
- *       Thread safety is planned for version 1.0.
- *
  * Basic usage:
  *   #define LOGCIE_IMPLEMENTATION
  *   #include "logcie.h"
@@ -27,6 +23,18 @@
  *     ERROR   - Error conditions that prevent normal operation
  *     FATAL   - Fatal conditions requiring immediate shutdown
  *
+  Configuration macros (define before including the header):
+ *   LOGCIE_MODULE                  Module name for classic macros (default "Logcie")
+ *   LOGCIE_DEFAULT_SINK_FORMAT     Format string for the automatic stdout sink
+ *   LOGCIE_DEF                     Linkage of public functions (default extern)
+ *   LOGCIE_THREAD_SAFE             Enable mutex‑based thread safety (needs pthreads)
+ *   LOGCIE_ALLOW_RECURSIVE_LOGGING Allow logging from inside writers/formatters
+ *   LOGCIE_PEDANTIC                Force strict C99 fallback (LOGCIE_*_VA macros)
+ *   LOGCIE_COLOR_*                 ANSI escape codes per level (also logcie_set_colors)
+ *
+ *   The library automatically defines LOGCIE_VA_LOGS when variadic macros are not
+ *   available – you do not need to touch it.
+ *
  * How it works:
  *   The core of this library is `Formatter`, `Writer` and `Filter`.
  *
@@ -41,6 +49,30 @@
  *   You can have as many sinks as you want. Logcie will send logs to every sinks available.
  *
  *   Logcie itself is basically an array of Sinks and system of distributing logs to those Sinks.
+ *
+ *   NOTE: Recursive logging from formatters, writers or filters is not supported!
+ *
+ *  By default Logcie suppresses recursive log attempts to avoid infinite recursion
+ *  and deadlocks. Recursive calls return 0 and produce no output.
+ *
+ *  If you want to avoid the small overhead of the recursion check,
+ *  or if you intentionally rely on recursive logging and you know what you are doing
+ *  you can disable the recursion guard:
+ *   ```c
+ *   #define LOGCIE_ALLOW_RECURSIVE_LOGGING
+ *   ```
+ *  Disabling the recursion guard may cause infinite recursion, deadlocks,
+ *  or stack overflows.
+ *
+ *   Thread safety:
+ *     Thread safety is opt‑in. You can enable it like this:
+ *      ```c
+ *      #define LOGCIE_THREAD_SAFE
+ *      ```
+ *     Without it, concurrent calls may interleave or crash.
+ *     But even with the thread safety enabled, removing a sink while
+ *     threads are logging is unsafe – set up sinks before starting threads
+ *     and tear them down after joining.
  *
  * Defaults:
  *   It would not be that great if Logcie was just empty framework and you need to set it up by yourself,
@@ -62,7 +94,7 @@
  *                                   `$<n - Pads with n spaces
  *                                   `$$` - Literal dollar sign
  *
- *   Also by default, Logcie alredy has a Sink installed with the printf writer and formatter,
+ *   Also by default, Logcie already has a Sink installed with the printf writer and formatter,
  *   so you can start using it immediately after including the library.
  *
  *   Note: When you add your first Sink using `logcie_add_sink()`, the default printf Sink is removed.
@@ -97,7 +129,7 @@
  *   Filters allow you to control which logs are emitted to a specific Sink.
  *   Each Sink can have its own filter, enabling fine-grained routing of logs.
  *
- *   A filter is a structure that consist of pointer to filtering fucntion and
+ *   A filter is a structure that consist of pointer to filtering function and
  *   a pointer to custom data that filter might want to use.
  *
  *   A filtering function is simply a function that recieves a `Logcie_Log` and returns:
@@ -118,7 +150,7 @@
  *        Allows logs only from specific module (see below for learning about modules)
  *
  *    - logcie_filter_message_contains("text")
- *        Allows logs whosse messages contains the given substring
+ *        Allows logs whose messages contains the given substring
  *
  *   Combining filters:
  *
@@ -129,7 +161,7 @@
  *        Allows logs only if EITHER filters pass
  *
  *    - logcie_filter_not(a)
- *        Inverts theresult of a filter
+ *        Inverts the result of a filter
  *
  *   Example:
  *     ```c
@@ -161,7 +193,7 @@
  *     ```
  *
  *   Notes:
- *     - Filters are evealuated per sink, independently.
+ *     - Filters are evaluated per sink, independently.
  *     - Be careful when using temporary data in filters (they rely on
  *       compound literals and must remain valid during logging).
  *
@@ -243,7 +275,7 @@
  *       .writer = { logcie_printf_writer, fopen("./log.txt", "w") },
  *     };
  *
- *     // New sinks must be registred with `logcie_add_sink()`
+ *     // New sinks must be registered with `logcie_add_sink()`
  *     logcie_add_sink(&stdout_sink);
  *     logcie_add_sink(&file_sink);
  *     ```
@@ -275,9 +307,6 @@
  *
  *        // Or do it by pointer
  *        logcie_remove_sink(&file_sink);
- *
- *        // If you malloc'ed your sink there is handy way to remove it and free
- *        logcie_remove_and_free_sink(&file_sink);
  *        ```
  *
  * Author: Nikita (Strongleong) Chulkov nikita_chul@mail.ru
@@ -661,18 +690,6 @@ LOGCIE_DEF uint8_t logcie_remove_sink(Logcie_Sink *sink);
 LOGCIE_DEF uint8_t logcie_remove_sink_by_index(size_t index);
 
 /**
- * @brief Removes and frees a sink from the logger (if it was dynamically allocated).
- *
- * Combines logcie_remove_sink() with free() for convenience when working
- * with heap-allocated sinks.
- *
- * @param sink Pointer to the sink to remove and free
- * @return 1 if sink was found and removed, 0 otherwise
- * @note Only use this if the sink was allocated with malloc() or similar.
- */
-LOGCIE_DEF uint8_t logcie_remove_and_free_sink(Logcie_Sink *sink);
-
-/**
  * @brief Removes all sinks except the default stdout sink.
  *
  * Resets the logger to its initial state with only the default stdout sink.
@@ -886,6 +903,45 @@ LOGCIE_DEF void logcie_set_colors(const char **colors);
 #define _LOGCIE_ARR_LEN(array) ((int)sizeof(array) / (int)sizeof((array)[0]))
 #endif
 
+#ifndef LOGCIE_THREAD_SAFE
+#define LOGCIE_MUTEX_DECLARE(name)
+#define LOGCIE_MUTEX_INIT(m)
+#define LOGCIE_MUTEX_DESTROY(m)
+#define LOGCIE_MUTEX_LOCK(m)
+#define LOGCIE_MUTEX_UNLOCK(m)
+#else
+#if defined(_WIN32)
+#include <windows.h>
+#define LOGCIE_MUTEX_DECLARE(name) SRWLOCK name = SRWLOCK_INIT
+#define LOGCIE_MUTEX_INIT(m)
+#define LOGCIE_MUTEX_DESTROY(m)
+#define LOGCIE_MUTEX_LOCK(m)   AcquireSRWLockExclusive(&(m))
+#define LOGCIE_MUTEX_UNLOCK(m) ReleaseSRWLockExclusive(&(m))
+#else
+#include <pthread.h>
+#define LOGCIE_MUTEX_DECLARE(name) pthread_mutex_t name = PTHREAD_MUTEX_INITIALIZER
+#define LOGCIE_MUTEX_INIT(m)       pthread_mutex_init(&(m), NULL)
+#define LOGCIE_MUTEX_DESTROY(m)    pthread_mutex_destroy(&(m))
+#define LOGCIE_MUTEX_LOCK(m)       pthread_mutex_lock(&(m))
+#define LOGCIE_MUTEX_UNLOCK(m)     pthread_mutex_unlock(&(m))
+#endif
+#endif
+
+LOGCIE_MUTEX_DECLARE(logcie_mutex);
+
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define LOGCIE_THREAD_LOCAL _Thread_local
+#elif defined(_MSC_VER)
+#define LOGCIE_THREAD_LOCAL __declspec(thread)
+#elif defined(__GNUC__)
+#define LOGCIE_THREAD_LOCAL __thread
+#else
+#define LOGCIE_THREAD_LOCAL
+#warning "No thread local storage support"
+#endif
+
+static LOGCIE_THREAD_LOCAL int logcie_log_depth = 0;
+
 static const char *logcie_level_label[] = {
   "trace",
   "debug",
@@ -931,6 +987,8 @@ static const char *logcie_default_level_color[] = {
 static const char **logcie_level_color = logcie_default_level_color;
 
 void logcie_set_colors(const char **colors) {
+  LOGCIE_MUTEX_LOCK(logcie_mutex);
+
   if (colors) {
     // If compiled with -fsanitize=address and colors array is wrong it will crash
     // If it is compiled without -fsanitize=address then color would be NULL (I hope)
@@ -940,6 +998,8 @@ void logcie_set_colors(const char **colors) {
   } else {
     logcie_level_color = logcie_default_level_color;
   }
+
+  LOGCIE_MUTEX_UNLOCK(logcie_mutex);
 }
 
 static inline const char *get_logcie_level_color(Logcie_LogLevel level) {
@@ -981,19 +1041,30 @@ static Logcie_Logger logcie = {
 };
 
 size_t logcie_get_sink_count(void) {
-  return logcie.sinks_len;
+  LOGCIE_MUTEX_LOCK(logcie_mutex);
+  size_t count = logcie.sinks_len;
+  LOGCIE_MUTEX_UNLOCK(logcie_mutex);
+
+  return count;
 }
 
 Logcie_Sink *logcie_get_sink(size_t index) {
+  LOGCIE_MUTEX_LOCK(logcie_mutex);
+
   if (index >= logcie.sinks_len) {
+    LOGCIE_MUTEX_UNLOCK(logcie_mutex);
     return NULL;
   }
 
+  LOGCIE_MUTEX_UNLOCK(logcie_mutex);
   return logcie.sinks[index];
 }
 
 uint8_t logcie_add_sink(Logcie_Sink *sink) {
+  LOGCIE_MUTEX_LOCK(logcie_mutex);
+
   if (sink == NULL) {
+    LOGCIE_MUTEX_UNLOCK(logcie_mutex);
     return 0;
   }
 
@@ -1016,24 +1087,11 @@ uint8_t logcie_add_sink(Logcie_Sink *sink) {
   logcie.sinks[logcie.sinks_len] = sink;
   logcie.sinks_len++;
 
+  LOGCIE_MUTEX_UNLOCK(logcie_mutex);
   return 1;
 }
 
-uint8_t logcie_remove_sink(Logcie_Sink *sink) {
-  if (sink == &default_stdout_sink) {
-    return 0;  // unreachable
-  }
-
-  for (size_t i = 0; i < logcie.sinks_len; i++) {
-    if (logcie.sinks[i] == sink) {
-      return logcie_remove_sink_by_index(i);
-    }
-  }
-
-  return 0;
-}
-
-uint8_t logcie_remove_sink_by_index(size_t index) {
+static uint8_t logcie_remove_sink_by_index_locked(size_t index) {
   if (index >= logcie.sinks_len) {
     return 0;
   }
@@ -1042,7 +1100,7 @@ uint8_t logcie_remove_sink_by_index(size_t index) {
     return 0;
   }
 
-  for (size_t i = index; i < logcie.sinks_len; i++) {
+  for (size_t i = index; i < logcie.sinks_len - 1; i++) {
     logcie.sinks[i] = logcie.sinks[i + 1];
   }
 
@@ -1050,26 +1108,56 @@ uint8_t logcie_remove_sink_by_index(size_t index) {
   return 1;
 }
 
-uint8_t logcie_remove_and_free_sink(Logcie_Sink *sink) {
-  if (logcie_remove_sink(sink)) {
-    free(sink);
-    return 1;
+uint8_t logcie_remove_sink(Logcie_Sink *sink) {
+  if (sink == &default_stdout_sink) {
+    return 0;  // unreachable
   }
 
+  LOGCIE_MUTEX_LOCK(logcie_mutex);
+
+  for (size_t i = 0; i < logcie.sinks_len; i++) {
+    if (logcie.sinks[i] == sink) {
+      uint8_t res = logcie_remove_sink_by_index_locked(i);
+      LOGCIE_MUTEX_UNLOCK(logcie_mutex);
+      return res;
+    }
+  }
+
+  LOGCIE_MUTEX_UNLOCK(logcie_mutex);
   return 0;
 }
 
+uint8_t logcie_remove_sink_by_index(size_t index) {
+  LOGCIE_MUTEX_LOCK(logcie_mutex);
+  uint8_t res = logcie_remove_sink_by_index_locked(index);
+  LOGCIE_MUTEX_UNLOCK(logcie_mutex);
+  return res;
+}
+
 void logcie_remove_all_sinks(void) {
+  LOGCIE_MUTEX_LOCK(logcie_mutex);
+
   if (logcie.sinks_cap > 1) {
     free(logcie.sinks);
     logcie.sinks_cap = 1;
     logcie.sinks_len = 1;
     logcie.sinks     = &default_stdout_sink_ptr;
-    return;
   }
+
+  LOGCIE_MUTEX_UNLOCK(logcie_mutex);
 }
 
 size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
+#ifndef LOGCIE_ALLOW_RECURSIVE_LOGGING
+  if (logcie_log_depth > 0) {
+    return 0;
+  }
+
+  logcie_log_depth++;
+#endif
+
+  LOGCIE_MUTEX_LOCK(logcie_mutex);
+
   va_list args;
   va_start(args, fmt);
 
@@ -1090,6 +1178,12 @@ size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
 
     va_end(args_copy);
   }
+
+  LOGCIE_MUTEX_UNLOCK(logcie_mutex);
+
+#ifndef LOGCIE_ALLOW_RECURSIVE_LOGGING
+  logcie_log_depth--;
+#endif
 
   va_end(args);
   return 0;
