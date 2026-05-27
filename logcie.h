@@ -1068,18 +1068,35 @@ uint8_t logcie_add_sink(Logcie_Sink *sink) {
   return 1;
 }
 
-uint8_t logcie_remove_sink(Logcie_Sink *sink) {
-  LOGCIE_MUTEX_LOCK(logcie_mutex);
+static uint8_t logcie_remove_sink_by_index_locked(size_t index) {
+  if (index >= logcie.sinks_len) {
+    return 0;
+  }
 
+  if (logcie.sinks_cap == 1 && index == 0) {
+    return 0;
+  }
+
+  for (size_t i = index; i < logcie.sinks_len - 1; i++) {
+    logcie.sinks[i] = logcie.sinks[i + 1];
+  }
+
+  logcie.sinks_len--;
+  return 1;
+}
+
+uint8_t logcie_remove_sink(Logcie_Sink *sink) {
   if (sink == &default_stdout_sink) {
-    LOGCIE_MUTEX_UNLOCK(logcie_mutex);
     return 0;  // unreachable
   }
 
+  LOGCIE_MUTEX_LOCK(logcie_mutex);
+
   for (size_t i = 0; i < logcie.sinks_len; i++) {
     if (logcie.sinks[i] == sink) {
+      uint8_t res = logcie_remove_sink_by_index_locked(i);
       LOGCIE_MUTEX_UNLOCK(logcie_mutex);
-      return logcie_remove_sink_by_index(i);
+      return res;
     }
   }
 
@@ -1089,24 +1106,9 @@ uint8_t logcie_remove_sink(Logcie_Sink *sink) {
 
 uint8_t logcie_remove_sink_by_index(size_t index) {
   LOGCIE_MUTEX_LOCK(logcie_mutex);
-
-  if (index >= logcie.sinks_len) {
-    LOGCIE_MUTEX_UNLOCK(logcie_mutex);
-    return 0;
-  }
-
-  if (logcie.sinks_cap == 1 && index == 0) {
-    LOGCIE_MUTEX_UNLOCK(logcie_mutex);
-    return 0;
-  }
-
-  for (size_t i = index; i < logcie.sinks_len; i++) {
-    logcie.sinks[i] = logcie.sinks[i + 1];
-  }
-
-  logcie.sinks_len--;
+  uint8_t res = logcie_remove_sink_by_index_locked(index);
   LOGCIE_MUTEX_UNLOCK(logcie_mutex);
-  return 1;
+  return res;
 }
 
 void logcie_remove_all_sinks(void) {
