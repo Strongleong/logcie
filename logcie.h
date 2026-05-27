@@ -6,10 +6,6 @@
  *   It supports multiple log levels, ANSI color output, flexible formatting, and
  *   customizable filters and sinks for advanced logging use cases.
  *
- *   NOTE: This library is NOT thread-safe in version 0.x.
- *       Concurrent calls from multiple threads may interleave output.
- *       Thread safety is planned for version 1.0.
- *
  * Basic usage:
  *   #define LOGCIE_IMPLEMENTATION
  *   #include "logcie.h"
@@ -55,6 +51,16 @@
  *   ```
  *  Disabling the recursion guard may cause infinite recursion, deadlocks,
  *  or stack overflows.
+ *
+ *   Thread safety:
+ *     Thread safety is opt‑in. You can enable it like this:
+ *      ```c
+ *      #define LOGCIE_THREAD_SAFE
+ *      ```
+ *     Without it, concurrent calls may interleave or crash.
+ *     But even with the thread safety enabled, removing a sink while
+ *     threads are logging is unsafe – set up sinks before starting threads
+ *     and tear them down after joining.
  *
  * Defaults:
  *   It would not be that great if Logcie was just empty framework and you need to set it up by yourself,
