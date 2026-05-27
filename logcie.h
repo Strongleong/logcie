@@ -289,9 +289,6 @@
  *
  *        // Or do it by pointer
  *        logcie_remove_sink(&file_sink);
- *
- *        // If you malloc'ed your sink there is handy way to remove it and free
- *        logcie_remove_and_free_sink(&file_sink);
  *        ```
  *
  * Author: Nikita (Strongleong) Chulkov nikita_chul@mail.ru
@@ -673,18 +670,6 @@ LOGCIE_DEF uint8_t logcie_remove_sink(Logcie_Sink *sink);
  * @note Index 0 is the default stdout sink and cannot be removed
  */
 LOGCIE_DEF uint8_t logcie_remove_sink_by_index(size_t index);
-
-/**
- * @brief Removes and frees a sink from the logger (if it was dynamically allocated).
- *
- * Combines logcie_remove_sink() with free() for convenience when working
- * with heap-allocated sinks.
- *
- * @param sink Pointer to the sink to remove and free
- * @return 1 if sink was found and removed, 0 otherwise
- * @note Only use this if the sink was allocated with malloc() or similar.
- */
-LOGCIE_DEF uint8_t logcie_remove_and_free_sink(Logcie_Sink *sink);
 
 /**
  * @brief Removes all sinks except the default stdout sink.
@@ -1075,15 +1060,6 @@ uint8_t logcie_remove_sink_by_index(size_t index) {
 
   logcie.sinks_len--;
   return 1;
-}
-
-uint8_t logcie_remove_and_free_sink(Logcie_Sink *sink) {
-  if (logcie_remove_sink(sink)) {
-    free(sink);
-    return 1;
-  }
-
-  return 0;
 }
 
 void logcie_remove_all_sinks(void) {
