@@ -23,6 +23,18 @@
  *     ERROR   - Error conditions that prevent normal operation
  *     FATAL   - Fatal conditions requiring immediate shutdown
  *
+  Configuration macros (define before including the header):
+ *   LOGCIE_MODULE                  Module name for classic macros (default "Logcie")
+ *   LOGCIE_DEFAULT_SINK_FORMAT     Format string for the automatic stdout sink
+ *   LOGCIE_DEF                     Linkage of public functions (default extern)
+ *   LOGCIE_THREAD_SAFE             Enable mutex‑based thread safety (needs pthreads)
+ *   LOGCIE_ALLOW_RECURSIVE_LOGGING Allow logging from inside writers/formatters
+ *   LOGCIE_PEDANTIC                Force strict C99 fallback (LOGCIE_*_VA macros)
+ *   LOGCIE_COLOR_*                 ANSI escape codes per level (also logcie_set_colors)
+ *
+ *   The library automatically defines LOGCIE_VA_LOGS when variadic macros are not
+ *   available – you do not need to touch it.
+ *
  * How it works:
  *   The core of this library is `Formatter`, `Writer` and `Filter`.
  *
