@@ -23,7 +23,7 @@
  *     ERROR   - Error conditions that prevent normal operation
  *     FATAL   - Fatal conditions requiring immediate shutdown
  *
-  Configuration macros (define before including the header):
+ * Configuration macros (define before including the header):
  *   LOGCIE_MODULE                  Module name for classic macros (default "Logcie")
  *   LOGCIE_DEFAULT_SINK_FORMAT     Format string for the automatic stdout sink
  *   LOGCIE_DEF                     Linkage of public functions (default extern)
@@ -1197,6 +1197,7 @@ size_t logcie_printf_formatter(Logcie_Writer *writer, void *data, Logcie_Log log
   size_t output_len = 0;
   size_t last_len   = 0;
 
+  // NOTE: time functions are safe if formatter is called from logcie_log
   struct tm local_tm = *localtime(&log.time);
   struct tm utc_tm   = *gmtime(&log.time);
 
