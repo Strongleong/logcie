@@ -1,0 +1,22 @@
+:test basic_info
+
+:command compile
+
+:blob executable 2
+cc
+
+:blob args 26
+basic_info.c -o basic_info -I../..
+
+:int return 0
+
+:command run
+
+:blob executable 12
+./basic_info
+
+:int return 0
+
+:blob stdout_contains 11
+Hello world
+
