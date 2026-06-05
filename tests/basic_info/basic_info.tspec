@@ -1,11 +1,16 @@
 :test basic_info
 
+:command pre
+
+:blob executable 3
+pwd
+
 :command compile
 
 :blob executable 2
 cc
 
-:blob args 26
+:blob args 34
 basic_info.c -o basic_info -I../..
 
 :int return 0
@@ -20,3 +25,15 @@ basic_info.c -o basic_info -I../..
 :blob stdout_contains 11
 Hello world
 
+
+:test timer
+
+:command sleep
+
+:blob executable 5
+sleep
+
+:blob args 1
+5
+
+:int timeout_ms 200

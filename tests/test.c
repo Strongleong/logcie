@@ -1,16 +1,17 @@
+#include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <unistd.h>
-
-#define _POSIX_C_SOURCE 200809L
-
+#include <libgen.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #ifndef TSPEC_LOG
 #ifdef LOGCIE
@@ -28,7 +29,7 @@
 #endif
 #endif
 
-#define TSPEC_TRACE(...)  //                           TSPEC_LOG(TRACE, __VA_ARGS__)
+#define TSPEC_TRACE(...)   TSPEC_LOG(TRACE, __VA_ARGS__)
 #define TSPEC_DEBUG(...)   TSPEC_LOG(DEBUG, __VA_ARGS__)
 #define TSPEC_VERBOSE(...) TSPEC_LOG(VERBOSE, __VA_ARGS__)
 #define TSPEC_INFO(...)    TSPEC_LOG(INFO, __VA_ARGS__)
@@ -45,7 +46,8 @@
 #define TSPEC_MAX_ARGV       64
 
 typedef struct {
-  uint8_t data[TSPEC_MAX_BLOB_SIZE];
+  // NOTE: +1 at the end for \0 to keep data debug-printable
+  uint8_t data[TSPEC_MAX_BLOB_SIZE + 1];
   size_t  size;
 } TspecBlob;
 
@@ -55,6 +57,7 @@ typedef enum {
   TSPEC_ASSERTION_STDERR,
   TSPEC_ASSERTION_STDOUT_CONTAINS,
   TSPEC_ASSERTION_STDERR_CONTAINS,
+  TspecAssertionType_Count,
 } TspecAssertionType;
 
 typedef struct {
@@ -103,18 +106,20 @@ typedef struct {
   FILE *file;
   char  line_buffer[TSPEC_MAX_LINE_SIZE];
   int   line_number;
+
+  const char *file_path;
 } TspecFileReader;
 
 static int tspec_reader_open(TspecFileReader *reader, const char *path) {
-  TSPEC_TRACE("tspec_reader_open");
-  if (!reader) {
-    return 0;
-  }
+  TSPEC_TRACE("tspec_reader_open(\"%s\")", path);
+  assert(reader);
 
   memset(reader, 0, sizeof(*reader));
-  reader->file = fopen(path, "rb");
+  reader->file_path = path;
+  reader->file      = fopen(path, "rb");
 
   if (!reader->file) {
+    TSPEC_ERROR("Failed to open '%s': %s", path, strerror(errno));
     return 0;
   }
 
@@ -122,10 +127,9 @@ static int tspec_reader_open(TspecFileReader *reader, const char *path) {
 }
 
 static void tspec_reader_close(TspecFileReader *reader) {
-  TSPEC_TRACE("tspec_reader_close");
-  if (!reader) {
-    return;
-  }
+  TSPEC_TRACE("tspec_reader_close()");
+  assert(reader);
+  assert(reader->file);
 
   if (reader->file) {
     fclose(reader->file);
@@ -134,10 +138,9 @@ static void tspec_reader_close(TspecFileReader *reader) {
 }
 
 static const char *tspec_reader_next_line(TspecFileReader *reader) {
-  TSPEC_TRACE("tspec_reader_next_line");
-  if (!reader || !reader->file) {
-    return NULL;
-  }
+  TSPEC_TRACE("tspec_reader_next_line()");
+  assert(reader);
+  assert(reader->file);
 
   if (!fgets(reader->line_buffer, sizeof(reader->line_buffer), reader->file)) {
     return NULL;
@@ -154,34 +157,37 @@ static const char *tspec_reader_next_line(TspecFileReader *reader) {
 }
 
 static int tspec_reader_read_blob(TspecFileReader *reader, size_t size, TspecBlob *blob) {
-  TSPEC_TRACE("tspec_reader_read_blob");
+  TSPEC_TRACE("tspec_reader_read_blob(\"%s\", %zu)", reader->line_buffer, size);
 
-  if (!reader || !blob) {
-    return 0;
-  }
+  assert(reader);
+  assert(reader->file);
+  assert(blob);
 
   if (size > TSPEC_MAX_BLOB_SIZE) {
+    TSPEC_ERROR("%s:%d: Blob size %zu exceeds max", reader->file_path, reader->line_number, size);
     return 0;
   }
 
   if (fread(blob->data, 1, size, reader->file) != size) {
+    TSPEC_ERROR("%s:%d: fread failed: %s", reader->file_path, reader->line_number, strerror(errno));
     return 0;
   }
 
   blob->data[size] = '\0';
-  blob->size       = size + 1;
+  blob->size       = size;
 
+  TSPEC_DEBUG("Parsed blob data (%zu bytes): '%s'", blob->size, blob->data);
   int c = fgetc(reader->file);
 
   if (c != '\n') {
-    return 0;
+    TSPEC_WARN("%s:%d: Blob is probably not fully parsed", reader->file_path, reader->line_number);
   }
 
   return 1;
 }
 
 static const char *tspec_skip_ws(const char *s) {
-  TSPEC_TRACE("tspec_skip_ws");
+  TSPEC_TRACE("tspec_skip_ws(\"%s\")", s);
 
   while (*s == ' ' || *s == '\t') {
     s++;
@@ -191,7 +197,7 @@ static const char *tspec_skip_ws(const char *s) {
 }
 
 static int tspec_parse_control_line(const char *line, const char *tag, const char **out) {
-  TSPEC_TRACE("tspec_parse_control_line");
+  TSPEC_TRACE("tspec_parse_control_line(\"%s\", \"%s\")", line, tag);
 
   line = tspec_skip_ws(line);
 
@@ -223,7 +229,7 @@ static int tspec_parse_control_line(const char *line, const char *tag, const cha
 }
 
 static int tspec_parse_int(const char *s, int32_t *out) {
-  TSPEC_TRACE("tspec_parse_int");
+  TSPEC_TRACE("tspec_parse_int(\"%s\")", s);
 
   char *end   = NULL;
   long  value = strtol(s, &end, 10);
@@ -242,11 +248,10 @@ static int tspec_parse_int(const char *s, int32_t *out) {
 }
 
 static size_t tspec_parse_size(const char *s) {
-  TSPEC_TRACE("tspec_parse_size");
+  TSPEC_TRACE("tspec_parse_size(\"%s\")", s);
 
-  char *end = NULL;
-
-  long value = strtol(s, &end, 10);
+  char *end   = NULL;
+  long  value = strtol(s, &end, 10);
 
   if (end == s || *end != '\0' || value < 0) {
     return 0;
@@ -255,16 +260,31 @@ static size_t tspec_parse_size(const char *s) {
   return (size_t)value;
 }
 
-static int tspec_tokenize_args(const TspecBlob *blob, char argv[TSPEC_MAX_ARGV][TSPEC_MAX_ARG_SIZE], char **argv_ptrs) {
-  TSPEC_TRACE("tspec_tokenize_args");
+static int tspec_parse_cmd_blob(TspecFileReader *reader, const char *line, TspecBlob *dest) {
+  TSPEC_TRACE("tspec_parse_cmd_blob(\"%s\")", line);
 
-  if (!blob) {
-    return -1;
+  assert(reader);
+  assert(reader->file);
+  assert(dest);
+
+  size_t size = tspec_parse_size(line);
+
+  if (size == 0) {
+    TSPEC_ERROR("%s:%d: Invalid blob size", reader->file_path, reader->line_number);
+    return 0;
   }
 
-  const uint8_t *p    = blob->data;
-  const uint8_t *end  = blob->data + blob->size;
-  int            argc = 0;
+  return tspec_reader_read_blob(reader, size, dest);
+}
+
+static int tspec_tokenize_args(const TspecBlob *blob, char argv[TSPEC_MAX_ARGV][TSPEC_MAX_ARG_SIZE], char **argv_ptrs) {
+  TSPEC_TRACE("tspec_tokenize_args(\"%s\")", blob->data);
+  assert(blob);
+
+  const uint8_t *p   = blob->data;
+  const uint8_t *end = blob->data + blob->size;
+
+  int argc = 0;
 
   while (p < end && argc < TSPEC_MAX_ARGV - 1) {
     while (p < end && *p == ' ') {
@@ -278,7 +298,7 @@ static int tspec_tokenize_args(const TspecBlob *blob, char argv[TSPEC_MAX_ARGV][
     char   *out      = argv[argc];
     uint8_t in_quote = 0;
 
-    argv_ptrs[argc] = out;
+    argv_ptrs[argc++] = out;
 
     while (p < end) {
       if (*p == '"' && in_quote && p + 1 < end && p[1] == '"') {
@@ -294,19 +314,38 @@ static int tspec_tokenize_args(const TspecBlob *blob, char argv[TSPEC_MAX_ARGV][
       }
 
       if (!in_quote && *p == ' ') {
+        p++;
         break;
       }
 
       *out++ = *p++;
     }
+
+    *out = '\0';
   }
 
   argv_ptrs[argc] = NULL;
   return argc;
 }
 
+static int tspec_chdir_to_spec(const char *spec_path) {
+  size_t spec_path_len = strlen(spec_path);
+  char   path_copy[spec_path_len + 1];
+  strcpy(path_copy, spec_path);
+
+  char *dir = dirname(path_copy);
+
+  if (chdir(dir) != 0) {
+    TSPEC_ERROR("chdir to '%s' failed: %s", dir, strerror(errno));
+    return 0;
+  }
+
+  return 1;
+}
+
 static TspecExecResult tspec_execute_command(const TspecCommand *cmd) {
-  TSPEC_TRACE("tspec_execute_command");
+  TSPEC_TRACE("tspec_execute_command(\"%s\")", cmd->executable.data);
+  TSPEC_VERBOSE("Executing command: '%s%s%s'", cmd->executable.data, cmd->args.size > 1 ? " " : "", cmd->args.data);
 
   TspecExecResult result = {0};
 
@@ -319,19 +358,28 @@ static TspecExecResult tspec_execute_command(const TspecCommand *cmd) {
   int argc = tspec_tokenize_args(&cmd->args, argv_storage, argv + 1);
 
   if (argc < 0) {
+    TSPEC_ERROR("Failed to tokenize args for command '%s'", cmd->name);
     result.return_code = -1;
     return result;
+  }
+
+  TSPEC_DEBUG("argc: %d", argc + 1);
+
+  for (int i = 0; i <= argc; i++) {
+    TSPEC_DEBUG("argv[%d]: %s", i, argv[i]);
   }
 
   int stdout_pipe[2];
   int stderr_pipe[2];
 
   if (pipe(stdout_pipe) == -1) {
+    TSPEC_ERROR("pipe(stdout) failed for '%s': %s", cmd->name, strerror(errno));
     result.return_code = -1;
     return result;
   }
 
   if (pipe(stderr_pipe) == -1) {
+    TSPEC_ERROR("pipe(stderr) failed for '%s': %s", cmd->name, strerror(errno));
     close(stdout_pipe[0]);
     close(stdout_pipe[1]);
 
@@ -342,6 +390,7 @@ static TspecExecResult tspec_execute_command(const TspecCommand *cmd) {
   pid_t pid = fork();
 
   if (pid == -1) {
+    TSPEC_ERROR("fork failed for '%s': %s", cmd->name, strerror(errno));
     close(stdout_pipe[0]);
     close(stdout_pipe[1]);
 
@@ -362,6 +411,21 @@ static TspecExecResult tspec_execute_command(const TspecCommand *cmd) {
     close(stdout_pipe[1]);
     close(stderr_pipe[1]);
 
+    if (cmd->timeout_ms > 0) {
+      struct itimerval timer;
+
+      timer.it_value.tv_sec  = cmd->timeout_ms / 1000;
+      timer.it_value.tv_usec = (cmd->timeout_ms % 1000) * 1000;
+
+      timer.it_interval.tv_sec  = 0;
+      timer.it_interval.tv_usec = 0;
+
+      if (setitimer(ITIMER_REAL, &timer, NULL) == -1) {
+        fprintf(stderr, "setitimer failed: %s\n", strerror(errno));
+        _exit(126);
+      }
+    }
+
     execvp(executable, argv);
     _exit(127);
   }
@@ -375,23 +439,44 @@ static TspecExecResult tspec_execute_command(const TspecCommand *cmd) {
 
   if (WIFEXITED(status)) {
     result.return_code = WEXITSTATUS(status);
+    TSPEC_DEBUG("Process exited with code %d", result.return_code);
   } else if (WIFSIGNALED(status)) {
-    result.return_code = -WTERMSIG(status);
+    int sig            = WTERMSIG(status);
+    result.return_code = -sig;
+
+    if (sig == SIGALRM) {
+      result.timed_out = 1;
+      TSPEC_WARN("Process timed out after %d ms", cmd->timeout_ms);
+    } else {
+      TSPEC_WARN("Process killed by signal %d", sig);
+    }
   } else {
     result.return_code = -1;
+    TSPEC_ERROR("Process exited abnormally");
   }
 
   ssize_t bytes = read(stdout_pipe[0], result.stdout_blob.data, TSPEC_MAX_BLOB_SIZE);
 
   if (bytes > 0) {
     result.stdout_blob.size = (size_t)bytes;
+
+    if (bytes == TSPEC_MAX_BLOB_SIZE) {
+      TSPEC_WARN("stdout truncated");
+    }
   }
 
   bytes = read(stderr_pipe[0], result.stderr_blob.data, TSPEC_MAX_BLOB_SIZE);
 
   if (bytes > 0) {
     result.stderr_blob.size = (size_t)bytes;
+
+    if (bytes == TSPEC_MAX_BLOB_SIZE) {
+      TSPEC_WARN("stderr truncated");
+    }
   }
+
+  TSPEC_DEBUG("stdout (%zu bytes): %s", result.stdout_blob.size, result.stdout_blob.data);
+  TSPEC_DEBUG("stderr (%zu bytes): %s", result.stderr_blob.size, result.stderr_blob.data);
 
   close(stdout_pipe[0]);
   close(stderr_pipe[0]);
@@ -400,7 +485,7 @@ static TspecExecResult tspec_execute_command(const TspecCommand *cmd) {
 }
 
 static int tspec_blob_equals(const TspecBlob *a, const TspecBlob *b) {
-  TSPEC_TRACE("tspec_blob_equals");
+  TSPEC_TRACE("tspec_blob_equals(\"%s\", \"%s\")", a->data, b->data);
 
   if (a->size != b->size) {
     return 0;
@@ -410,7 +495,7 @@ static int tspec_blob_equals(const TspecBlob *a, const TspecBlob *b) {
 }
 
 static int tspec_blob_contains(const TspecBlob *haystack, const TspecBlob *needle) {
-  TSPEC_TRACE("tspec_blob_contains");
+  TSPEC_TRACE("tspec_blob_contains(\"%s\", \"%s\")", haystack->data, needle->data);
 
   if (needle->size > haystack->size) {
     return 0;
@@ -429,8 +514,55 @@ static int tspec_blob_contains(const TspecBlob *haystack, const TspecBlob *needl
   return 0;
 }
 
+static TspecAssertion *tspec_cmd_add_assertion(TspecCommand *cmd) {
+  TSPEC_TRACE("tspec_cmd_add_assertion()");
+  assert(cmd);
+
+  if (cmd->assertion_count >= TSPEC_MAX_ASSERTIONS) {
+    TSPEC_ERROR("too many assertions in command '%s'", cmd->name);
+    return NULL;
+  }
+
+  return &cmd->assertions[cmd->assertion_count++];
+}
+
+static int tspec_parse_blob_assertion(TspecFileReader *reader, TspecCommand *cmd, const char *line, TspecAssertionType type) {
+  TSPEC_TRACE("tspec_parse_blob_assertion(\"%s\")", line);
+
+  assert(TspecAssertionType_Count == 5);
+  assert(reader);
+  assert(reader->file);
+  assert(cmd);
+
+  TspecAssertion *a = tspec_cmd_add_assertion(cmd);
+
+  if (!a) {
+    return 0;
+  }
+
+  a->type     = type;
+  size_t size = tspec_parse_size(line);
+
+  if (size == 0) {
+    TSPEC_ERROR("%s:%d: Invalid blob size for assertion", reader->file_path, reader->line_number);
+    cmd->assertion_count--;
+    return 0;
+  }
+
+  if (!tspec_reader_read_blob(reader, size, &a->value.blob_value)) {
+    TSPEC_ERROR("%s:%d: Failed reading blob assertion", reader->file_path, reader->line_number);
+    cmd->assertion_count--;
+    return 0;
+  }
+
+  TSPEC_DEBUG("Blob assertion: %s", a->value.blob_value.data);
+  return 1;
+}
+
 static int tspec_validate_assertions(const TspecCommand *cmd, const TspecExecResult *result) {
-  TSPEC_TRACE("tspec_validate_assertions");
+  TSPEC_TRACE("tspec_validate_assertions(\"%s\")", cmd->executable.data);
+
+  assert(TspecAssertionType_Count == 5);
 
   for (size_t i = 0; i < cmd->assertion_count; i++) {
     const TspecAssertion *assertion = &cmd->assertions[i];
@@ -438,7 +570,7 @@ static int tspec_validate_assertions(const TspecCommand *cmd, const TspecExecRes
     switch (assertion->type) {
       case TSPEC_ASSERTION_RETURN: {
         if (result->return_code != assertion->value.int_value) {
-          TSPEC_FATAL("expected return %d but got %d", assertion->value.int_value, result->return_code);
+          TSPEC_ERROR("expected return %d but got %d", assertion->value.int_value, result->return_code);
           return 0;
         }
 
@@ -447,7 +579,9 @@ static int tspec_validate_assertions(const TspecCommand *cmd, const TspecExecRes
 
       case TSPEC_ASSERTION_STDOUT: {
         if (!tspec_blob_equals(&result->stdout_blob, &assertion->value.blob_value)) {
-          TSPEC_FATAL("stdout mismatch");
+          TSPEC_ERROR("stdout mismatch");
+          TSPEC_DEBUG("expected (%zu bytes): '%s'", assertion->value.blob_value.size, assertion->value.blob_value.data);
+          TSPEC_DEBUG("actual   (%zu bytes): '%s'", result->stdout_blob.size, result->stdout_blob.data);
           return 0;
         }
 
@@ -456,7 +590,9 @@ static int tspec_validate_assertions(const TspecCommand *cmd, const TspecExecRes
 
       case TSPEC_ASSERTION_STDERR: {
         if (!tspec_blob_equals(&result->stderr_blob, &assertion->value.blob_value)) {
-          TSPEC_FATAL("stderr mismatch");
+          TSPEC_ERROR("stderr mismatch");
+          TSPEC_DEBUG("expected (%zu bytes): '%s'", assertion->value.blob_value.size, assertion->value.blob_value.data);
+          TSPEC_DEBUG("actual   (%zu bytes): '%s'", result->stderr_blob.size, result->stderr_blob.data);
           return 0;
         }
 
@@ -465,7 +601,7 @@ static int tspec_validate_assertions(const TspecCommand *cmd, const TspecExecRes
 
       case TSPEC_ASSERTION_STDOUT_CONTAINS: {
         if (!tspec_blob_contains(&result->stdout_blob, &assertion->value.blob_value)) {
-          TSPEC_FATAL("stdout missing substring");
+          TSPEC_ERROR("stdout missing substring: '%s'", assertion->value.blob_value.data);
           return 0;
         }
 
@@ -474,7 +610,7 @@ static int tspec_validate_assertions(const TspecCommand *cmd, const TspecExecRes
 
       case TSPEC_ASSERTION_STDERR_CONTAINS: {
         if (!tspec_blob_contains(&result->stderr_blob, &assertion->value.blob_value)) {
-          TSPEC_FATAL("stderr missing substring");
+          TSPEC_ERROR("stderr missing substring: '%s'", assertion->value.blob_value.data);
           return 0;
         }
 
@@ -490,11 +626,12 @@ static int tspec_validate_assertions(const TspecCommand *cmd, const TspecExecRes
 }
 
 static int tspec_parse_file(const char *path, TspecFile *spec) {
-  TSPEC_TRACE("tspec_parse_file");
+  TSPEC_TRACE("tspec_parse_file(\"%s\")", path);
   TspecFileReader reader = {0};
 
+  assert(TspecAssertionType_Count == 5);
+
   if (!tspec_reader_open(&reader, path)) {
-    TSPEC_ERROR("failed to open %s: %s", path, strerror(errno));
     return 0;
   }
 
@@ -508,15 +645,20 @@ static int tspec_parse_file(const char *path, TspecFile *spec) {
   while ((line = tspec_reader_next_line(&reader)) != NULL) {
     line = tspec_skip_ws(line);
 
-    if (*line != '\0') {
+    if (*line == '\0') {
       continue;
     }
 
     if (tspec_parse_control_line(line, "test", &line)) {
-      TSPEC_TRACE("Found test: %s", line);
+      if (*line == '\0') {
+        TSPEC_ERROR("%s:%d: Empty test name", reader.file_path, reader.line_number);
+        return 0;
+      }
+
+      TSPEC_VERBOSE("Found test: %s", line);
 
       if (spec->test_count >= TSPEC_MAX_TESTS) {
-        TSPEC_ERROR("too many tests");
+        TSPEC_ERROR("%s:%d: Too many tests", reader.file_path, reader.line_number);
         return 0;
       }
 
@@ -528,15 +670,20 @@ static int tspec_parse_file(const char *path, TspecFile *spec) {
     }
 
     if (tspec_parse_control_line(line, "command", &line)) {
-      TSPEC_TRACE("Found command: %s", line);
+      if (*line == '\0') {
+        TSPEC_ERROR("%s:%d: Empty command name", reader.file_path, reader.line_number);
+        return 0;
+      }
+
+      TSPEC_VERBOSE("Found command: %s", line);
 
       if (!current_test) {
-        TSPEC_ERROR(":command outside test");
+        TSPEC_ERROR("%s:%d: :command outside test", reader.file_path, reader.line_number);
         return 0;
       }
 
       if (current_test->command_count >= TSPEC_MAX_COMMANDS) {
-        TSPEC_ERROR("too many commands");
+        TSPEC_ERROR("%s:%d: Too many commands", reader.file_path, reader.line_number);
         return 0;
       }
 
@@ -552,30 +699,28 @@ static int tspec_parse_file(const char *path, TspecFile *spec) {
     }
 
     if (tspec_parse_control_line(line, "blob executable", &line)) {
-      size_t size = tspec_parse_size(line);
-
-      if (!tspec_reader_read_blob(&reader, size, &current_cmd->executable)) {
-        TSPEC_ERROR("failed reading executable blob");
+      if (!tspec_parse_cmd_blob(&reader, line, &current_cmd->executable)) {
+        TSPEC_ERROR("%s:%d: Failed reading executable blob", reader.file_path, reader.line_number);
         return 0;
       }
 
+      TSPEC_DEBUG("Found executable: %s", current_cmd->executable.data);
       continue;
     }
 
     if (tspec_parse_control_line(line, "blob args", &line)) {
-      size_t size = tspec_parse_size(line);
-
-      if (!tspec_reader_read_blob(&reader, size, &current_cmd->args)) {
-        TSPEC_ERROR("failed reading args blob");
+      if (!tspec_parse_cmd_blob(&reader, line, &current_cmd->args)) {
+        TSPEC_ERROR("%s:%d: Failed reading args blob", reader.file_path, reader.line_number);
         return 0;
       }
 
+      TSPEC_DEBUG("Found args: %s", current_cmd->args.data);
       continue;
     }
 
     if (tspec_parse_control_line(line, "int timeout_ms", &line)) {
       if (!tspec_parse_int(line, &current_cmd->timeout_ms)) {
-        TSPEC_ERROR("invalid timeout_ms");
+        TSPEC_ERROR("%s:%d: Invalid timeout_ms", reader.file_path, reader.line_number);
         return 0;
       }
 
@@ -583,34 +728,26 @@ static int tspec_parse_file(const char *path, TspecFile *spec) {
     }
 
     if (tspec_parse_control_line(line, "int return", &line)) {
-      if (current_cmd->assertion_count >= TSPEC_MAX_ASSERTIONS) {
-        TSPEC_ERROR("too many assertions");
+      TspecAssertion *a = tspec_cmd_add_assertion(current_cmd);
+
+      if (!a) {
         return 0;
       }
 
-      TspecAssertion *a = &current_cmd->assertions[current_cmd->assertion_count++];
-      a->type           = TSPEC_ASSERTION_RETURN;
+      a->type = TSPEC_ASSERTION_RETURN;
 
       if (!tspec_parse_int(line, &a->value.int_value)) {
-        TSPEC_ERROR("invalid return value");
+        TSPEC_ERROR("%s:%d: Invalid return value", reader.file_path, reader.line_number);
+        current_cmd->assertion_count--;
         return 0;
       }
 
+      TSPEC_DEBUG("Expected return: %d", a->value.int_value);
       continue;
     }
 
     if (tspec_parse_control_line(line, "blob stdout_contains", &line)) {
-      if (current_cmd->assertion_count >= TSPEC_MAX_ASSERTIONS) {
-        TSPEC_ERROR("too many assertions");
-        return 0;
-      }
-
-      TspecAssertion *a = &current_cmd->assertions[current_cmd->assertion_count++];
-      a->type           = TSPEC_ASSERTION_STDOUT_CONTAINS;
-      size_t size       = tspec_parse_size(line);
-
-      if (!tspec_reader_read_blob(&reader, size, &a->value.blob_value)) {
-        TSPEC_ERROR("failed reading stdout_contains");
+      if (!tspec_parse_blob_assertion(&reader, current_cmd, line, TSPEC_ASSERTION_STDOUT_CONTAINS)) {
         return 0;
       }
 
@@ -618,25 +755,14 @@ static int tspec_parse_file(const char *path, TspecFile *spec) {
     }
 
     if (tspec_parse_control_line(line, "blob stderr_contains", &line)) {
-      if (current_cmd->assertion_count >= TSPEC_MAX_ASSERTIONS) {
-        TSPEC_ERROR("too many assertions");
-        return 0;
-      }
-
-      TspecAssertion *a = &current_cmd->assertions[current_cmd->assertion_count++];
-
-      a->type     = TSPEC_ASSERTION_STDERR_CONTAINS;
-      size_t size = tspec_parse_size(line);
-
-      if (!tspec_reader_read_blob(&reader, size, &a->value.blob_value)) {
-        TSPEC_ERROR("failed reading stderr_contains");
+      if (!tspec_parse_blob_assertion(&reader, current_cmd, line, TSPEC_ASSERTION_STDERR_CONTAINS)) {
         return 0;
       }
 
       continue;
     }
 
-    TSPEC_ERROR("unknown directive on line %d: '%s'", reader.line_number, reader.line_buffer);
+    TSPEC_ERROR("%s:%d: Unknown directive '%s'", reader.file_path, reader.line_number, reader.line_buffer);
     return 0;
   }
 
@@ -645,40 +771,46 @@ static int tspec_parse_file(const char *path, TspecFile *spec) {
 }
 
 static int tspec_run_file(const TspecFile *spec) {
-  printf("hi!\n");
+  TSPEC_INFO("Running %zu test%s", spec->test_count, spec->test_count == 1 ? "" : "s");
+
   for (size_t i = 0; i < spec->test_count; i++) {
     const TspecTest *test = &spec->tests[i];
-    TSPEC_INFO("running test %s", test->name);
+    TSPEC_INFO("[%zu/%zu] test: %s (%zu command%s)", i + 1, spec->test_count, test->name, test->command_count, test->command_count == 1 ? "" : "s");
 
     for (size_t j = 0; j < test->command_count; j++) {
       const TspecCommand *cmd = &test->commands[j];
-      TSPEC_INFO("running command %s", cmd->name);
+      TSPEC_INFO("  [%zu/%zu] command: %s", j + 1, test->command_count, cmd->name);
 
       TspecExecResult result = tspec_execute_command(cmd);
 
-      if (!tspec_validate_assertions(cmd, &result)) {
-        TSPEC_FATAL("test %s failed", test->name);
+      if (result.timed_out || !tspec_validate_assertions(cmd, &result)) {
+        TSPEC_ERROR("Test %s failed at command %s", test->name, cmd->name);
         return 0;
       }
 
-      TSPEC_INFO("%s", cmd->name);
+      TSPEC_VERBOSE("Command %s passed", cmd->name);
     }
+
+    TSPEC_VERBOSE("Test %s passed", test->name);
   }
 
+  TSPEC_INFO("All done!");
   return 1;
 }
 
 static TspecFile spec;
 
 int main(int argc, char **argv) {
-  printf("Heyo!\n");
-
   if (argc != 2) {
     fprintf(stderr, "usage: %s <file.tspec>\n", argv[0]);
     return 1;
   }
 
   if (!tspec_parse_file(argv[1], &spec)) {
+    return 1;
+  }
+
+  if (!tspec_chdir_to_spec(argv[1])) {
     return 1;
   }
 
