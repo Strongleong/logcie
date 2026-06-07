@@ -1,17 +1,24 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <libgen.h>
+#include <poll.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+#include <unistd.h>
+
+// --
+
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <unistd.h>
 
 #ifndef TSPEC_LOG
 #ifdef LOGCIE
@@ -343,6 +350,62 @@ static int tspec_chdir_to_spec(const char *spec_path) {
   return 1;
 }
 
+static uint64_t tspec_time_ms(void) {
+  struct timespec ts;
+
+  if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
+    return 0;
+  }
+
+  return (uint64_t)ts.tv_sec * 1000u +
+         (uint64_t)ts.tv_nsec / 1000000u;
+}
+
+static void tspec_set_nonblocking(int fd) {
+  int flags = fcntl(fd, F_GETFL);
+
+  if (flags == -1) {
+    return;
+  }
+
+  fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+}
+
+static void tspec_drain_fd(int fd, TspecBlob *blob, const char *name) {
+  char tmp[4096];
+
+  for (;;) {
+    ssize_t n = read(fd, tmp, sizeof(tmp));
+
+    if (n > 0) {
+      size_t avail = TSPEC_MAX_BLOB_SIZE - blob->size;
+
+      if (avail > 0) {
+        size_t copy = (size_t)n;
+
+        if (copy > avail) {
+          copy = avail;
+        }
+
+        memcpy(blob->data + blob->size, tmp, copy);
+        blob->size += copy;
+        blob->data[blob->size] = '\0';
+
+        if ((size_t)n > copy) {
+          TSPEC_WARN("%s exceeded buffer, truncating", name);
+        }
+      }
+    } else if (n == 0) {
+      break;  // EOF
+    } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+      break;  // no more data available
+    } else {
+      TSPEC_ERROR("%s read error: %s", name, strerror(errno));
+      break;
+    }
+  }
+}
+
 static TspecExecResult tspec_execute_command(const TspecCommand *cmd) {
   TSPEC_TRACE("tspec_execute_command(\"%s\")", cmd->executable.data);
   TSPEC_VERBOSE("Executing command: '%s%s%s'", cmd->executable.data, cmd->args.size > 1 ? " " : "", cmd->args.data);
@@ -411,31 +474,66 @@ static TspecExecResult tspec_execute_command(const TspecCommand *cmd) {
     close(stdout_pipe[1]);
     close(stderr_pipe[1]);
 
-    if (cmd->timeout_ms > 0) {
-      struct itimerval timer;
-
-      timer.it_value.tv_sec  = cmd->timeout_ms / 1000;
-      timer.it_value.tv_usec = (cmd->timeout_ms % 1000) * 1000;
-
-      timer.it_interval.tv_sec  = 0;
-      timer.it_interval.tv_usec = 0;
-
-      if (setitimer(ITIMER_REAL, &timer, NULL) == -1) {
-        fprintf(stderr, "setitimer failed: %s\n", strerror(errno));
-        _exit(126);
-      }
-    }
+    setpgid(0, 0);
 
     execvp(executable, argv);
     _exit(127);
+  } else {
+    setpgid(pid, pid);
   }
 
   close(stdout_pipe[1]);
   close(stderr_pipe[1]);
 
-  int status = 0;
+  tspec_set_nonblocking(stdout_pipe[0]);
+  tspec_set_nonblocking(stderr_pipe[0]);
 
-  waitpid(pid, &status, 0);
+  int      status   = 0;
+  uint64_t start_ms = tspec_time_ms();
+
+  struct timespec ts;
+  ts.tv_sec  = 0;
+  ts.tv_nsec = 10000000L; /* 10 ms */
+
+  TSPEC_DEBUG("Timeout is set to %dms", cmd->timeout_ms);
+
+  while (1) {
+    tspec_drain_fd(stdout_pipe[0], &result.stdout_blob, "stdout");
+    tspec_drain_fd(stderr_pipe[0], &result.stderr_blob, "stderr");
+
+    pid_t r = waitpid(pid, &status, WNOHANG);
+
+    if (r == pid) {
+      break;
+    }
+
+    if (r == -1) {
+      TSPEC_ERROR("waitpid failed: %s", strerror(errno));
+      result.return_code = -1;
+      break;
+    }
+
+    uint64_t time_diff_ms = tspec_time_ms() - start_ms;
+
+    if (cmd->timeout_ms > 0 && time_diff_ms >= (uint64_t)cmd->timeout_ms) {
+      TSPEC_WARN("Process timed out after %zums", time_diff_ms);
+
+      kill(-pid, SIGKILL);
+
+      if (waitpid(pid, &status, 0) == -1) {
+        TSPEC_ERROR("waitpid after kill failed: %s", strerror(errno));
+      }
+
+      result.timed_out   = 1;
+      result.return_code = -SIGKILL;
+      break;
+    }
+
+    nanosleep(&ts, NULL);
+  }
+
+  tspec_drain_fd(stdout_pipe[0], &result.stdout_blob, "stdout");
+  tspec_drain_fd(stderr_pipe[0], &result.stderr_blob, "stderr");
 
   if (WIFEXITED(status)) {
     result.return_code = WEXITSTATUS(status);
@@ -446,33 +544,13 @@ static TspecExecResult tspec_execute_command(const TspecCommand *cmd) {
 
     if (sig == SIGALRM) {
       result.timed_out = 1;
-      TSPEC_WARN("Process timed out after %d ms", cmd->timeout_ms);
+      TSPEC_WARN("Process timed out after %d seconds", cmd->timeout_ms);
     } else {
       TSPEC_WARN("Process killed by signal %d", sig);
     }
   } else {
     result.return_code = -1;
     TSPEC_ERROR("Process exited abnormally");
-  }
-
-  ssize_t bytes = read(stdout_pipe[0], result.stdout_blob.data, TSPEC_MAX_BLOB_SIZE);
-
-  if (bytes > 0) {
-    result.stdout_blob.size = (size_t)bytes;
-
-    if (bytes == TSPEC_MAX_BLOB_SIZE) {
-      TSPEC_WARN("stdout truncated");
-    }
-  }
-
-  bytes = read(stderr_pipe[0], result.stderr_blob.data, TSPEC_MAX_BLOB_SIZE);
-
-  if (bytes > 0) {
-    result.stderr_blob.size = (size_t)bytes;
-
-    if (bytes == TSPEC_MAX_BLOB_SIZE) {
-      TSPEC_WARN("stderr truncated");
-    }
   }
 
   TSPEC_DEBUG("stdout (%zu bytes): %s", result.stdout_blob.size, result.stdout_blob.data);
@@ -720,7 +798,7 @@ static int tspec_parse_file(const char *path, TspecFile *spec) {
 
     if (tspec_parse_control_line(line, "int timeout_ms", &line)) {
       if (!tspec_parse_int(line, &current_cmd->timeout_ms)) {
-        TSPEC_ERROR("%s:%d: Invalid timeout_ms", reader.file_path, reader.line_number);
+        TSPEC_ERROR("%s:%d: Invalid timeout", reader.file_path, reader.line_number);
         return 0;
       }
 

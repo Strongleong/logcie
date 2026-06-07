@@ -288,15 +288,14 @@ Table of Contents
 
    Type:  integer
 
-   The maximum wall-clock time, in milliseconds, that the process is
-   allowed to run.  If the process does not terminate within this
-   duration, the test runner MUST attempt to terminate the process and
-   MUST mark the command as failed.  If not specified, no time limit is
-   imposed.
+   The maximum wall-clock time, in miliseconds, that the process is allowed
+   to run. If the process does not terminate within this duration, the
+   test runner MUST attempt to terminate the process and MUST mark the
+   command as failed. If not specified, no time limit is imposed.
 
    Example:
 
-   :int timeout_ms 5000
+   :int timeout_ms 5
 
 9.2. Assertions
 

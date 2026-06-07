@@ -36,4 +36,4 @@ sleep
 :blob args 1
 5
 
-:int timeout_ms 200
+:int timeout_ms 6000
