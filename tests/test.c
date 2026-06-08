@@ -173,8 +173,8 @@ static uint8_t tspec_reader_read_blob(TspecFileReader *reader, size_t size, Tspe
     return 0;
   }
 
-  blob->data[size + 1] = '\0';
-  blob->size           = size;
+  blob->data[size] = '\0';
+  blob->size       = size;
 
   if (fread(blob->data, 1, size, reader->file) != size) {
     TSPEC_ERROR("%s:%d: fread failed: %s", reader->file_path, reader->line_number, strerror(errno));
