@@ -22,6 +22,28 @@ basic_info.c -o basic_info -I../..
 
 :int return 0
 
-:blob stdout_contains 11
+:blob stdout_contains 12
 Hello world
+
+
+:test std exact
+:command stdout
+:blob executable 4
+echo
+:blob args 19
+testing yolo stdout
+:blob stdout 20
+testing yolo stdout
+
+:blob stderr 0
+
+:command stderr
+:blob executable 4
+bash
+:blob args 33
+-c "echo testing yolo stderr >&2"
+:blob stdout 0
+
+:blob stderr 20
+testing yolo stderr
 
