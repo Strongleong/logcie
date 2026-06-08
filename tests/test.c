@@ -89,18 +89,18 @@ typedef struct {
 } TspecCommand;
 
 typedef struct {
-  int return_code;
+  int32_t return_code;
 
   TspecBlob stdout_blob;
   TspecBlob stderr_blob;
 
-  int timed_out;
+  uint8_t timed_out;
 } TspecExecResult;
 
 typedef struct {
-  FILE *file;
-  char  line_buffer[TSPEC_MAX_LINE_SIZE];
-  int   line_number;
+  FILE    *file;
+  char     line_buffer[TSPEC_MAX_LINE_SIZE];
+  uint32_t line_number;
 
   const char *file_path;
 } TspecFileReader;
@@ -110,7 +110,7 @@ typedef struct {
   size_t command_count[TSPEC_MAX_TESTS];
 } TspecStats;
 
-static int tspec_reader_open(TspecFileReader *reader, const char *path) {
+static uint8_t tspec_reader_open(TspecFileReader *reader, const char *path) {
   TSPEC_TRACE("tspec_reader_open(\"%s\")", path);
   assert(reader);
 
@@ -156,7 +156,7 @@ static const char *tspec_reader_next_line(TspecFileReader *reader) {
   return reader->line_buffer;
 }
 
-static int tspec_reader_read_blob(TspecFileReader *reader, size_t size, TspecBlob *blob) {
+static uint8_t tspec_reader_read_blob(TspecFileReader *reader, size_t size, TspecBlob *blob) {
   TSPEC_TRACE("tspec_reader_read_blob(\"%s\", %zu)", reader->line_buffer, size);
 
   assert(reader);
@@ -177,7 +177,7 @@ static int tspec_reader_read_blob(TspecFileReader *reader, size_t size, TspecBlo
   blob->size       = size;
 
   TSPEC_DEBUG("Parsed blob data (%zu bytes): '%s'", blob->size, blob->data);
-  int c = fgetc(reader->file);
+  int32_t c = fgetc(reader->file);
 
   if (c != '\n') {
     TSPEC_WARN("%s:%d: Blob is probably not fully parsed", reader->file_path, reader->line_number);
@@ -196,7 +196,7 @@ static const char *tspec_skip_ws(const char *s) {
   return s;
 }
 
-static int tspec_parse_control_line(const char *line, const char *tag, const char **out) {
+static uint8_t tspec_parse_control_line(const char *line, const char *tag, const char **out) {
   TSPEC_TRACE("tspec_parse_control_line(\"%s\", \"%s\")", line, tag);
 
   line = tspec_skip_ws(line);
@@ -228,7 +228,7 @@ static int tspec_parse_control_line(const char *line, const char *tag, const cha
   return 1;
 }
 
-static int tspec_parse_int(const char *s, int32_t *out) {
+static uint8_t tspec_parse_int(const char *s, int32_t *out) {
   TSPEC_TRACE("tspec_parse_int(\"%s\")", s);
 
   char *end   = NULL;
@@ -260,7 +260,7 @@ static size_t tspec_parse_size(const char *s) {
   return (size_t)value;
 }
 
-static int tspec_parse_cmd_blob(TspecFileReader *reader, const char *line, TspecBlob *dest) {
+static uint8_t tspec_parse_cmd_blob(TspecFileReader *reader, const char *line, TspecBlob *dest) {
   TSPEC_TRACE("tspec_parse_cmd_blob(\"%s\")", line);
 
   assert(reader);
@@ -277,7 +277,7 @@ static int tspec_parse_cmd_blob(TspecFileReader *reader, const char *line, Tspec
   return tspec_reader_read_blob(reader, size, dest);
 }
 
-static int tspec_collect_stats(const char *path, TspecStats *stats, TspecFileReader *reader) {
+static uint8_t tspec_collect_stats(const char *path, TspecStats *stats, TspecFileReader *reader) {
   TSPEC_TRACE("tspec_collect_stats(\"%s\")", path);
 
   assert(path);
@@ -319,14 +319,14 @@ static int tspec_collect_stats(const char *path, TspecStats *stats, TspecFileRea
   return 1;
 }
 
-static int tspec_tokenize_args(const TspecBlob *blob, char argv[TSPEC_MAX_ARGV][TSPEC_MAX_ARG_SIZE], char **argv_ptrs) {
+static uint32_t tspec_tokenize_args(const TspecBlob *blob, char argv[TSPEC_MAX_ARGV][TSPEC_MAX_ARG_SIZE], char **argv_ptrs) {
   TSPEC_TRACE("tspec_tokenize_args(\"%s\")", blob->data);
   assert(blob);
 
   const uint8_t *p   = blob->data;
   const uint8_t *end = blob->data + blob->size;
 
-  int argc = 0;
+  uint32_t argc = 0;
 
   while (p < end && argc < TSPEC_MAX_ARGV - 1) {
     while (p < end && *p == ' ') {
@@ -370,7 +370,7 @@ static int tspec_tokenize_args(const TspecBlob *blob, char argv[TSPEC_MAX_ARGV][
   return argc;
 }
 
-static int tspec_chdir_to_spec(const char *spec_path) {
+static uint8_t tspec_chdir_to_spec(const char *spec_path) {
   TSPEC_TRACE("tspec_chdir_to_spec(\"%s\")", spec_path);
 
   size_t spec_path_len = strlen(spec_path);
@@ -400,10 +400,10 @@ static uint64_t tspec_time_ms(void) {
          (uint64_t)ts.tv_nsec / 1000000u;
 }
 
-static void tspec_set_nonblocking(int fd) {
+static void tspec_set_nonblocking(int32_t fd) {
   TSPEC_TRACE("tspec_set_nonblocking(%d)", fd);
 
-  int flags = fcntl(fd, F_GETFL);
+  int32_t flags = fcntl(fd, F_GETFL);
 
   if (flags == -1) {
     return;
@@ -412,7 +412,7 @@ static void tspec_set_nonblocking(int fd) {
   fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 }
 
-static void tspec_drain_fd(int fd, TspecBlob *blob, const char *name) {
+static void tspec_drain_fd(int32_t fd, TspecBlob *blob, const char *name) {
   TSPEC_TRACE("tspec_drain_fd(%d, \"%s\")", fd, name);
   char tmp[4096];
 
@@ -460,7 +460,7 @@ static TspecExecResult tspec_execute_command(const TspecCommand *cmd) {
   char  argv_storage[TSPEC_MAX_ARGV][TSPEC_MAX_ARG_SIZE];
   argv[0] = executable;
 
-  int argc = tspec_tokenize_args(&cmd->args, argv_storage, argv + 1);
+  uint32_t argc = tspec_tokenize_args(&cmd->args, argv_storage, argv + 1);
 
   if (argc < 0) {
     TSPEC_ERROR("Failed to tokenize args for command '%s'", cmd->name);
@@ -470,12 +470,12 @@ static TspecExecResult tspec_execute_command(const TspecCommand *cmd) {
 
   TSPEC_DEBUG("argc: %d", argc + 1);
 
-  for (int i = 0; i <= argc; i++) {
+  for (uint32_t i = 0; i <= argc; i++) {
     TSPEC_DEBUG("argv[%d]: %s", i, argv[i]);
   }
 
-  int stdout_pipe[2];
-  int stderr_pipe[2];
+  int32_t stdout_pipe[2];
+  int32_t stderr_pipe[2];
 
   if (pipe(stdout_pipe) == -1) {
     TSPEC_ERROR("pipe(stdout) failed for '%s': %s", cmd->name, strerror(errno));
@@ -530,7 +530,7 @@ static TspecExecResult tspec_execute_command(const TspecCommand *cmd) {
   tspec_set_nonblocking(stdout_pipe[0]);
   tspec_set_nonblocking(stderr_pipe[0]);
 
-  int      status   = 0;
+  int32_t  status   = 0;
   uint64_t start_ms = tspec_time_ms();
 
   struct timespec ts;
@@ -583,7 +583,7 @@ static TspecExecResult tspec_execute_command(const TspecCommand *cmd) {
     result.return_code = WEXITSTATUS(status);
     TSPEC_DEBUG("Process exited with code %d", result.return_code);
   } else if (WIFSIGNALED(status)) {
-    int sig            = WTERMSIG(status);
+    int32_t sig        = WTERMSIG(status);
     result.return_code = -sig;
 
     if (sig == SIGALRM) {
@@ -606,7 +606,7 @@ static TspecExecResult tspec_execute_command(const TspecCommand *cmd) {
   return result;
 }
 
-static int tspec_blob_equals(const TspecBlob *a, const TspecBlob *b) {
+static uint8_t tspec_blob_equals(const TspecBlob *a, const TspecBlob *b) {
   TSPEC_TRACE("tspec_blob_equals(\"%s\", \"%s\")", a->data, b->data);
 
   if (a->size != b->size) {
@@ -616,7 +616,7 @@ static int tspec_blob_equals(const TspecBlob *a, const TspecBlob *b) {
   return memcmp(a->data, b->data, a->size) == 0;
 }
 
-static int tspec_blob_contains(const TspecBlob *haystack, const TspecBlob *needle) {
+static uint8_t tspec_blob_contains(const TspecBlob *haystack, const TspecBlob *needle) {
   TSPEC_TRACE("tspec_blob_contains(\"%s\", \"%s\")", haystack->data, needle->data);
 
   if (needle->size > haystack->size) {
@@ -648,7 +648,7 @@ static TspecAssertion *tspec_cmd_add_assertion(TspecCommand *cmd) {
   return &cmd->assertions[cmd->assertion_count++];
 }
 
-static int tspec_parse_blob_assertion(TspecFileReader *reader, TspecCommand *cmd, const char *line, TspecAssertionType type) {
+static uint8_t tspec_parse_blob_assertion(TspecFileReader *reader, TspecCommand *cmd, const char *line, TspecAssertionType type) {
   TSPEC_TRACE("tspec_parse_blob_assertion(\"%s\")", line);
 
   assert(TspecAssertionType_Count == 5);
@@ -681,7 +681,7 @@ static int tspec_parse_blob_assertion(TspecFileReader *reader, TspecCommand *cmd
   return 1;
 }
 
-static int tspec_validate_assertions(const TspecCommand *cmd, const TspecExecResult *result) {
+static uint8_t tspec_validate_assertions(const TspecCommand *cmd, const TspecExecResult *result) {
   TSPEC_TRACE("tspec_validate_assertions(\"%s\")", cmd->executable.data);
 
   assert(TspecAssertionType_Count == 5);
@@ -747,7 +747,7 @@ static int tspec_validate_assertions(const TspecCommand *cmd, const TspecExecRes
   return 1;
 }
 
-static int tspec_finish_command(TspecCommand *cmd) {
+static uint8_t tspec_finish_command(TspecCommand *cmd) {
   TSPEC_TRACE("tspec_finish_command(\"%s\")", cmd->executable.data);
   TspecExecResult result = tspec_execute_command(cmd);
 
@@ -758,7 +758,7 @@ static int tspec_finish_command(TspecCommand *cmd) {
   return 1;
 }
 
-static int tspec_stream_run(const char *path, TspecStats *stats, TspecFileReader *reader) {
+static uint8_t tspec_stream_run(const char *path, TspecStats *stats, TspecFileReader *reader) {
   TSPEC_TRACE("tspec_stream_run(\"%s\")", path);
 
   assert(path);
@@ -770,8 +770,8 @@ static int tspec_stream_run(const char *path, TspecStats *stats, TspecFileReader
   size_t current_test_index = (size_t)-1;
   size_t current_cmd_index  = (size_t)-1;
 
-  int have_test = 0;
-  int have_cmd  = 0;
+  uint8_t have_test = 0;
+  uint8_t have_cmd  = 0;
 
   const char *line;
 
@@ -929,7 +929,7 @@ static int tspec_stream_run(const char *path, TspecStats *stats, TspecFileReader
   return 1;
 }
 
-static int tspec_run_spec_from_path(const char *path) {
+static uint8_t tspec_run_spec_from_path(const char *path) {
   TSPEC_TRACE("tspec_run_spec_from_path(\"%s\")", path);
 
   TspecStats      stats  = {0};
@@ -948,18 +948,18 @@ static int tspec_run_spec_from_path(const char *path) {
   }
 
   fseek(reader.file, 0, 0);
-  int res = tspec_stream_run(path, &stats, &reader);
+  uint8_t res = tspec_stream_run(path, &stats, &reader);
   tspec_reader_close(&reader);
   return res;
 }
 
-int main(int argc, char **argv) {
+int32_t main(int32_t argc, char **argv) {
   if (argc != 2) {
     fprintf(stderr, "usage: %s <file.tspec>\n", argv[0]);
     return 1;
   }
 
-  int res = tspec_run_spec_from_path(argv[1]);
+  uint8_t res = tspec_run_spec_from_path(argv[1]);
 
   fflush(stderr);
   fflush(stdout);
