@@ -150,6 +150,11 @@ static const char *tspec_reader_next_line(TspecFileReader *reader) {
   size_t len = strlen(reader->line_buffer);
 
   if (len > 0 && reader->line_buffer[len - 1] == '\n') {
+    if (reader->line_buffer[len - 2] == '\r') {
+      TSPEC_FATAL("%s:%d: CRLF line endings are not allowed", reader->file_path, reader->line_number);
+      return NULL;
+    }
+
     reader->line_buffer[len - 1] = '\0';
   }
 
@@ -180,7 +185,8 @@ static uint8_t tspec_reader_read_blob(TspecFileReader *reader, size_t size, Tspe
   int32_t c = fgetc(reader->file);
 
   if (c != '\n') {
-    TSPEC_WARN("%s:%d: Blob is probably not fully parsed", reader->file_path, reader->line_number);
+    TSPEC_ERROR("%s:%d: Blob is not fully parsed", reader->file_path, reader->line_number);
+    return 0;
   }
 
   return 1;
@@ -269,7 +275,7 @@ static uint8_t tspec_parse_cmd_blob(TspecFileReader *reader, const char *line, T
 
   size_t size = tspec_parse_size(line);
 
-  if (size == 0) {
+  if (size < 0) {
     TSPEC_ERROR("%s:%d: Invalid blob size", reader->file_path, reader->line_number);
     return 0;
   }
@@ -665,7 +671,7 @@ static uint8_t tspec_parse_blob_assertion(TspecFileReader *reader, TspecCommand 
   a->type     = type;
   size_t size = tspec_parse_size(line);
 
-  if (size == 0) {
+  if (size < 0) {
     TSPEC_ERROR("%s:%d: Invalid blob size for assertion", reader->file_path, reader->line_number);
     cmd->assertion_count--;
     return 0;
@@ -784,6 +790,11 @@ static uint8_t tspec_stream_run(const char *path, TspecStats *stats, TspecFileRe
 
     if (tspec_parse_control_line(line, "test", &line)) {
       if (have_cmd) {
+        if (current_cmd.executable.size == 0) {
+          TSPEC_FATAL("%s:%d: No executable for command %s", reader->file_path, reader->line_number, current_cmd.name);
+          return 0;
+        }
+
         TSPEC_INFO("  [%zu/%zu] command: %s", current_cmd_index + 1, stats->command_count[current_test_index], current_cmd.name);
 
         if (!tspec_finish_command(&current_cmd)) {
@@ -826,6 +837,11 @@ static uint8_t tspec_stream_run(const char *path, TspecStats *stats, TspecFileRe
       }
 
       if (have_cmd) {
+        if (current_cmd.executable.size == 0) {
+          TSPEC_FATAL("%s:%d: No executable for command %s", reader->file_path, reader->line_number, current_cmd.name);
+          return 0;
+        }
+
         TSPEC_INFO("  [%zu/%zu] command: %s", current_cmd_index + 1, stats->command_count[current_test_index], current_cmd.name);
 
         if (!tspec_finish_command(&current_cmd)) {
@@ -917,6 +933,11 @@ static uint8_t tspec_stream_run(const char *path, TspecStats *stats, TspecFileRe
   }
 
   if (have_cmd) {
+    if (current_cmd.executable.size == 0) {
+      TSPEC_FATAL("%s:%d: No executable for command %s", reader->file_path, reader->line_number, current_cmd.name);
+      return 0;
+    }
+
     TSPEC_INFO("  [%zu/%zu] command: %s", current_cmd_index + 1, stats->command_count[current_test_index], current_cmd.name);
 
     if (!tspec_finish_command(&current_cmd)) {

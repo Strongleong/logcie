@@ -120,10 +120,12 @@ Table of Contents
 
 4.  File Encoding
 
-   A .tspec file is a binary-safe text file.  Control lines (those
-   beginning with a colon, see Section 5) MUST consist of ASCII
-   characters.  The content portions of blob fields may contain
-   arbitrary bytes, including NUL (0x00).
+   A .tspec file is a binary-safe structured file format.
+   Control directives are textual. Blob content may contain
+   arbitrary bytes. Control lines (those beginning with a colon,
+   see Section 5) MUST consist of ASCII characters.  The content
+   portions of blob fields may contain arbitrary bytes,
+   including NUL (0x00).
 
    Lines MUST be terminated by a single line feed character (U+000A,
    "\n").  Carriage return (U+000D) is not part of the line ending.
@@ -141,11 +143,7 @@ Table of Contents
    by the tokens ":test". Within a test section, commands are introduced
    by ":command" directives. Filesystem validation directives following a
    command apply to that command until another ":command", ":test", or EOF
-   is encountered. Comments and blank lines are not defined; parsers MUST treat
-   any line that does not match a known token as an error unless
-   explicitly instructed to ignore unknown tokens for forward
-   compatibility (see Section 13).
-
+   is encountered. Blank lines MAY appear anywhere and MUST be ignored.
    Parsers MUST ignore horizontal whitespace preceding the ":" character
    of a control directive.
 
@@ -155,9 +153,11 @@ Table of Contents
        :command <name>
            fields...
        filesystem checks...
+
        :command <name>
            fields...
        filesystem checks...
+
     :test <name>
        ...
 
@@ -187,7 +187,7 @@ Table of Contents
    :blob <name> <size>
    <content>
 
-   <size> is a positive decimal integer indicating the number of bytes
+   <size> is a non-negative decimal integer indicating the number of bytes
    that follow.  Immediately after the newline terminating the first
    line, exactly <size> bytes of content are read.  The content MUST be
    followed by a newline character (U+000A), which is not included in
@@ -204,9 +204,10 @@ Table of Contents
 
    :test <name>
 
-   where <name> is a sequence of non-space ASCII characters.  The test
-   name MUST be unique within the file.  The section ends with the next
-   :test token or with EOF.
+   where <name> is a sequence of non-space ASCII characters.
+   The section ends with the next :test token or with EOF.
+
+   The remainder of the line after the directive forms the name.
 
    A test section contains one or more command sections and their
    associated filesystem checks.  The commands are executed in the
@@ -221,13 +222,15 @@ Table of Contents
 
    :command <name>
 
-   where <name> is a sequence of non-space ASCII characters.  The command
-   name MUST be unique within the enclosing test section. The section ends
-   with the next :command token, :test token or with EOF.
+   where <name> is a sequence of non-space ASCII characters. The section
+   ends with the next :command token, :test token or with EOF.
+
+   The remainder of the line after the directive forms the name.
 
    Within the command section, a set of fields define the process
-   invocation and expected results.  Exactly one "executable" field
-   MUST be present.  Other fields are optional.  The order of fields
+   invocation and expected results. If multiple executable fields appear,
+   behavior is implementation-defined, with the last occurrence RECOMMENDED
+   to take precedence. Other fields are optional. The order of fields
    within a command section is not significant.
 
 9.  Command Fields
@@ -240,9 +243,9 @@ Table of Contents
 
    The fields in this subsection describe the program to execute and
    the environment in which it runs.  Collectively they form the
-   execution profile for a command.  A command section MUST contain
-   exactly one "executable" field.  Other execution configuration
-   fields are OPTIONAL and MUST NOT appear more than once.
+   execution profile for a command. A command section SHOULD contain
+   exactly one executable field. If multiple executable fields appear,
+   the last one takes precedence.
 
 9.1.1.  executable
 
@@ -342,7 +345,7 @@ Table of Contents
    Type:  blob
 
    This field is reserved for future versions and is NOT RECOMMENDED
-   to use.
+   to use. Implementation SHOULD reject it until stdin is not defined.
 
 9.2.5.  stdout_contains
 
@@ -483,9 +486,6 @@ Table of Contents
       valid directives defined by this specification MUST cause a
       parse error unless the parser is explicitly configured to allow
       unknown directives.
-
-   o  Required fields (e.g., "executable") that are missing or duplicated
-      MUST cause the parser to reject the file.
 
    o  Binary content sizes MUST be honoured exactly; reading fewer or
       more bytes than declared is an error.
