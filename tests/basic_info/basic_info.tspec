@@ -1,32 +1,26 @@
 :test basic_info
 
 :command pre
-
 :blob executable 3
 pwd
 
 :command compile
-
 :blob executable 2
 cc
-
-:blob args 34
-basic_info.c -o basic_info -I../..
-
+:blob args 48
+basic_info.c -o .side_effects/basic_info -I../..
 :int return 0
 
 :command run
-
-:blob executable 12
-./basic_info
-
+:blob executable 24
+.side_effects/basic_info
 :int return 0
-
 :blob stdout_contains 12
 Hello world
 
 
-:test std exact
+:test std_exact
+
 :command stdout
 :blob executable 4
 echo
@@ -36,6 +30,7 @@ testing yolo stdout
 testing yolo stdout
 
 :blob stderr 0
+
 
 :command stderr
 :blob executable 4
@@ -47,3 +42,28 @@ bash
 :blob stderr 20
 testing yolo stderr
 
+
+:test files
+
+:command make_file
+:blob executable 5
+touch
+:blob args 18
+.side_effects/file
+:file 18 .side_effects/file
+:file_missing 28 .side_effects/does_not_exist
+
+:command write_content
+:blob executable 4
+bash
+:blob args 38
+-c "printf hi > .side_effects/out.txt"
+:file_contains 21 .side_effects/out.txt 2
+hi
+
+:command remove_file
+:blob executable 2
+rm
+:blob args 18
+.side_effects/file
+:file_missing 18 .side_effects/file

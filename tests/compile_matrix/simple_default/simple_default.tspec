@@ -1,0 +1,17 @@
+:test simple_default
+
+:command compile
+:blob executable 2
+cc
+:blob args 66
+simple.c -std=c11 -Wall -Wextra -I../../.. -o .side_effects/simple
+:int return 0
+
+:command run
+:blob executable 20
+.side_effects/simple
+:int return 0
+:blob stdout_contains 19
+Application started
+:blob stdout_contains 21
+Fatal error, aborting

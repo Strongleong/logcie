@@ -1,0 +1,11 @@
+:test simple_strict_pedantic_must_fail
+
+:command compile
+:blob executable 2
+cc
+:blob args 70
+simple.c -std=c99 -pedantic -Werror -I../../.. -o .side_effects/simple
+:int return 1
+:blob stderr_contains 38
+requires at least one argument for the
+:file_missing 20 .side_effects/simple

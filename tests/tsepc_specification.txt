@@ -503,3 +503,98 @@ Table of Contents
      Future extensions MAY introduce new directives and field types.
      Parsers compliant with an earlier revision of this specification
      MUST reject unknown directives unless explicitly configured otherwise.
+
+Appendix A.  Runner Conventions (Non-Normative)
+
+   This appendix describes conventions used by the reference test runner
+   ("tspec"/"test") for organizing and discovering .tspec files, and for
+   isolating the side effects tests produce. Nothing here is part of the
+   .tspec wire format itself; it is tooling policy layered on top of it,
+   and other implementations are free to organize test suites differently.
+
+A.1.  Test Discovery
+
+   Given a directory, the runner recursively finds every file matching
+   "*.tspec" and treats each as an independent unit of work. Directory
+   entries beginning with "." (including the runner's own scratch
+   directory, see A.2) are never descended into.
+
+   By convention, each logical test case lives in its own directory
+   alongside any source files, fixtures, or other inputs it needs. A
+   single directory MAY contain more than one .tspec file; each is
+   discovered and run independently. Files or directories are discovered
+   in a deterministic (sorted) order, so repeated runs over an unchanged
+   tree produce results in the same order.
+
+A.2.  Side-Effect Isolation
+
+   Before executing a .tspec file, the runner recursively deletes and
+   recreates a directory named ".side_effects" inside that file's own
+   directory (the same directory execution is chdir'd into per Section 5
+   of this specification). This gives every run of every test a clean,
+   empty scratch space, so tests are repeatable and do not accumulate
+   stray artifacts across runs or leave build output sitting in version
+   control.
+
+   The runner only owns the lifecycle of this directory (create, wipe,
+   recreate); it does not inspect or rewrite paths inside .tspec files.
+   Test authors are expected to direct any file a command creates,
+   compiles, or touches into ".side_effects/" explicitly, e.g.:
+
+     :blob args 40
+     main.c -o .side_effects/main -I../..
+
+     :file 21 .side_effects/main.log
+
+   ".side_effects" SHOULD be excluded from version control (e.g. via
+   .gitignore).
+
+A.3.  Outcome Semantics Across a Suite
+
+   Per Section 7, a failing command aborts only the remaining commands of
+   its own test section; the runner continues on to subsequent :test
+   sections in the same file, and to subsequent files when running a
+   whole directory. Results are aggregated across the full run: total
+   tests executed, tests passed, and tests failed. A .tspec file that
+   fails to parse (a genuine format error, as opposed to a failed
+   assertion) aborts only that file; other discovered files still run.
+   This is what makes it meaningful to point the runner at a whole tree
+   of test directories and get back a single pass/fail count.
+
+A.4.  A Note on Captured Output
+
+   stdout/stderr captured from an executed command is held in a
+   fixed-size buffer (see Section 3, "simple parser implementation" and
+   binary-safety goals). If a command produces more output than that
+   buffer holds, only the earliest bytes are retained and the rest is
+   discarded. stdout_contains / stderr_contains / stdout / stderr
+A.5.  Concurrency Readiness
+
+   The reference runner currently processes discovered files one at a
+   time. Its internals are nonetheless structured so that running each
+   file on its own thread later is a small change rather than a rewrite:
+
+   o  Nothing in the run path mutates process-wide state. In particular,
+      the runner never calls chdir() on itself -- the current working
+      directory is shared by every thread in a process, so doing so
+      would make concurrent file processing race on it. Instead, each
+      file's directory is resolved once (via realpath) into a plain
+      string ("base_dir") that is passed explicitly to whatever needs
+      it: it is chdir()'d into inside a freshly-forked *child* process
+      right before that child execs a command (safe -- a child's chdir
+      affects only itself), and it is prepended to any path the runner
+      checks directly (:file, :file_missing, :file_contains, and the
+      .side_effects directory of A.2).
+
+   o  Running one file never depends on another. Opening, scanning, and
+      streaming a .tspec file, and accumulating that file's own pass/
+      fail counts, all happen through call-local variables passed by
+      pointer -- there is no shared mutable structure a second file's
+      processing could interfere with.
+
+   o  Suite-wide totals are accumulated by summing each file's own
+      independently-computed result after the fact, not by having every
+      file increment one shared counter as it goes. A future thread pool
+      can therefore let each worker return its own tally and have only
+      the (trivially lockable, or lock-free via joining) final summation
+      touch shared state.
