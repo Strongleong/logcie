@@ -25,6 +25,7 @@
  *
  * Configuration macros (define before including the header):
  *   LOGCIE_MODULE                  Module name for classic macros (default "Logcie")
+ *   LOGCIE_MODULE_SEPARATOR        Moudle names separator for hierarchical module filtering (default '.')
  *   LOGCIE_DEFAULT_SINK_FORMAT     Format string for the automatic stdout sink
  *   LOGCIE_DEF                     Linkage of public functions (default extern)
  *   LOGCIE_THREAD_SAFE             Enable mutex‑based thread safety (needs pthreads)
