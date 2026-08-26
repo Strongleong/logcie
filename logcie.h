@@ -812,7 +812,15 @@ typedef uint8_t(Logcie_FilterCustomPredicateFn)(Logcie_Log *log);
     },                                                               \
     .data = NULL,                                                    \
   }
-#else
+#define logcie_filter_not(f)                                     \
+  Logcie_Filter {                                                \
+    .filter = [](const void *data, Logcie_Log *log) -> uint8_t { \
+      (void)data;                                                \
+      return (uint8_t)!(f).filter((f).data, log);                \
+    },                                                           \
+    .data = NULL,                                                \
+  }
+#else // __cplusplus
 #define logcie_filter_and(a, b)                         \
   ((Logcie_Filter){                                     \
     .filter = logcie_filter_and_fn,                     \
@@ -824,13 +832,13 @@ typedef uint8_t(Logcie_FilterCustomPredicateFn)(Logcie_Log *log);
     .filter = logcie_filter_or_fn,                      \
     .data   = &(Logcie_FilterCombinationData){(a), (b)} \
   })
-#endif
 
 #define logcie_filter_not(f)        \
   ((Logcie_Filter){                 \
     .filter = logcie_filter_not_fn, \
-    .data   = &f                    \
+    .data   = &(f)                  \
   })
+#endif // __cplusplus
 
 #define logcie_filter_level_min(level)    \
   ((Logcie_Filter){                       \
@@ -904,7 +912,7 @@ LOGCIE_DEF void logcie_set_colors(const char **colors);
 #endif
 
 #ifndef LOGCIE_THREAD_SAFE
-#define LOGCIE_MUTEX_DECLARE(name)
+#define LOGCIE_MUTEX_DECLARE(name) struct logcie_unused_##name // NOTE: To fix dandling `;`
 #define LOGCIE_MUTEX_INIT(m)
 #define LOGCIE_MUTEX_DESTROY(m)
 #define LOGCIE_MUTEX_LOCK(m)
@@ -940,7 +948,9 @@ LOGCIE_MUTEX_DECLARE(logcie_mutex);
 #warning "No thread local storage support"
 #endif
 
+#ifndef LOGCIE_ALLOW_RECURSIVE_LOGGING
 static LOGCIE_THREAD_LOCAL int logcie_log_depth = 0;
+#endif
 
 static const char *logcie_level_label[] = {
   "trace",
@@ -1192,7 +1202,6 @@ size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
 size_t logcie_printf_formatter(Logcie_Writer *writer, void *data, Logcie_Log log, va_list *args) {
   const char *fmt = (const char *)data;
   _LOGCIE_ASSERT(writer, "Sink have no writer");
-  _LOGCIE_ASSERT(writer->data, "printf sink have nowhere to print");
 
   size_t output_len = 0;
   size_t last_len   = 0;
