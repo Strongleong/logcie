@@ -148,6 +148,9 @@
  *
  *    - logcie_filter_module_eq("module")
  *        Allows logs only from specific module (see below for learning about modules)
+*
+ *    - logcie_filter_module_prefix_eq("module")
+ *        Allows logs only from specific module root (see below for learning about modules)
  *
  *    - logcie_filter_message_contains("text")
  *        Allows logs whose messages contains the given substring
