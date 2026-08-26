@@ -1,0 +1,44 @@
+:test build
+:command compile
+:blob executable 2
+cc
+:blob args 73
+-std=c11 -Wall -Wextra -Werror -I../.. routing.c -o .side_effects/routing
+:int return 0
+:test a_prefix_matches_the_module_and_everything_under_it
+:command run
+:blob executable 21
+.side_effects/routing
+:blob args 5
+under
+:int return 0
+:blob stdout 63
+net/INFO/root
+net.http/INFO/child
+net.http.tls/INFO/grandchild
+
+:test a_prefix_stops_at_a_separator_so_net_does_not_match_network
+:command run
+:blob executable 21
+.side_effects/routing
+:blob args 9
+not_under
+:int return 0
+:blob stdout 44
+network/INFO/not a child
+app/INFO/unrelated
+
+:test the_empty_prefix_is_the_root_and_matches_everything
+:command run
+:blob executable 21
+.side_effects/routing
+:blob args 12
+empty_prefix
+:int return 0
+:blob stdout 107
+net/INFO/root
+net.http/INFO/child
+net.http.tls/INFO/grandchild
+network/INFO/not a child
+app/INFO/unrelated
+
