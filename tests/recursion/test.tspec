@@ -1,0 +1,16 @@
+:test logging_from_inside_a_writer_is_suppressed_not_recursed
+:command compile
+:blob executable 2
+cc
+:blob args 77
+-std=c11 -Wall -Wextra -Werror -I../.. recursion.c -o .side_effects/recursion
+:int return 0
+:command run
+:blob executable 23
+.side_effects/recursion
+:int timeout_ms 5000
+:int return 0
+:blob stdout 15
+outer
+survived
+

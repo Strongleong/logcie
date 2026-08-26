@@ -1,0 +1,16 @@
+:test date_time_and_zone_tokens_match_the_clock
+:command compile
+:blob executable 2
+cc
+:blob args 79
+-std=c11 -Wall -Wextra -Werror -I../.. timestamps.c -o .side_effects/timestamps
+:int return 0
+:command run
+:blob executable 24
+.side_effects/timestamps
+:int return 0
+:blob stdout 24
+date=ok
+time=ok
+zone=ok
+

@@ -1,0 +1,135 @@
+:test gcc_c99
+:command compile
+:blob executable 3
+gcc
+:blob args 69
+-std=c99 -Wall -Wextra -Werror  -I../.. matrix.c -o .side_effects/c99
+:int return 0
+:command run
+:blob executable 17
+.side_effects/c99
+:int return 0
+:blob stdout 18
+INFO n=1
+WARN s=x
+
+:test gcc_c11
+:command compile
+:blob executable 3
+gcc
+:blob args 69
+-std=c11 -Wall -Wextra -Werror  -I../.. matrix.c -o .side_effects/c11
+:int return 0
+:command run
+:blob executable 17
+.side_effects/c11
+:int return 0
+:blob stdout 18
+INFO n=1
+WARN s=x
+
+:test gcc_c17
+:command compile
+:blob executable 3
+gcc
+:blob args 69
+-std=c17 -Wall -Wextra -Werror  -I../.. matrix.c -o .side_effects/c17
+:int return 0
+:command run
+:blob executable 17
+.side_effects/c17
+:int return 0
+:blob stdout 18
+INFO n=1
+WARN s=x
+
+:test gcc_c99_pedantic
+:command compile
+:blob executable 3
+gcc
+:blob args 105
+-std=c99 -pedantic -Wall -Wextra -Werror -DLOGCIE_PEDANTIC -I../.. matrix.c -o .side_effects/c99_pedantic
+:int return 0
+:command run
+:blob executable 26
+.side_effects/c99_pedantic
+:int return 0
+:blob stdout 18
+INFO n=1
+WARN s=x
+
+:test gcc_c11_pedantic
+:command compile
+:blob executable 3
+gcc
+:blob args 105
+-std=c11 -pedantic -Wall -Wextra -Werror -DLOGCIE_PEDANTIC -I../.. matrix.c -o .side_effects/c11_pedantic
+:int return 0
+:command run
+:blob executable 26
+.side_effects/c11_pedantic
+:int return 0
+:blob stdout 18
+INFO n=1
+WARN s=x
+
+:test gcc_c99_thread_safe
+:command compile
+:blob executable 3
+gcc
+:blob args 111
+-std=c99 -Wall -Wextra -Werror -DLOGCIE_THREAD_SAFE -I../.. matrix.c -o .side_effects/c99_thread_safe -lpthread
+:int return 0
+:command run
+:blob executable 29
+.side_effects/c99_thread_safe
+:int return 0
+:blob stdout 18
+INFO n=1
+WARN s=x
+
+:test gcc_c11_thread_safe
+:command compile
+:blob executable 3
+gcc
+:blob args 111
+-std=c11 -Wall -Wextra -Werror -DLOGCIE_THREAD_SAFE -I../.. matrix.c -o .side_effects/c11_thread_safe -lpthread
+:int return 0
+:command run
+:blob executable 29
+.side_effects/c11_thread_safe
+:int return 0
+:blob stdout 18
+INFO n=1
+WARN s=x
+
+:test gcc_c11_pedantic_thread_safe
+:command compile
+:blob executable 3
+gcc
+:blob args 148
+-std=c11 -pedantic -Wall -Wextra -Werror -DLOGCIE_PEDANTIC -DLOGCIE_THREAD_SAFE -I../.. matrix.c -o .side_effects/c11_pedantic_thread_safe -lpthread
+:int return 0
+:command run
+:blob executable 38
+.side_effects/c11_pedantic_thread_safe
+:int return 0
+:blob stdout 18
+INFO n=1
+WARN s=x
+
+:test gcc_c11_allow_recursive
+:command compile
+:blob executable 3
+gcc
+:blob args 117
+-std=c11 -Wall -Wextra -Werror -DLOGCIE_ALLOW_RECURSIVE_LOGGING -I../.. matrix.c -o .side_effects/c11_allow_recursive
+:int return 0
+:command run
+:blob executable 33
+.side_effects/c11_allow_recursive
+:int return 0
+:blob stdout 18
+INFO n=1
+WARN s=x
+
