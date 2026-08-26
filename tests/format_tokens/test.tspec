@@ -1,0 +1,109 @@
+:test build
+:command compile
+:blob executable 2
+cc
+:blob args 71
+-std=c11 -Wall -Wextra -Werror -I../.. tokens.c -o .side_effects/tokens
+:int return 0
+:test message_token
+:command run
+:blob executable 20
+.side_effects/tokens
+:blob args 4
+"$m"
+:int return 0
+:blob stdout 6
+msg=7
+
+:test level_uppercase_token
+:command run
+:blob executable 20
+.side_effects/tokens
+:blob args 4
+"$L"
+:int return 0
+:blob stdout 5
+INFO
+
+:test level_lowercase_token
+:command run
+:blob executable 20
+.side_effects/tokens
+:blob args 4
+"$l"
+:int return 0
+:blob stdout 5
+info
+
+:test module_token
+:command run
+:blob executable 20
+.side_effects/tokens
+:blob args 4
+"$M"
+:int return 0
+:blob stdout 4
+net
+
+:test literal_dollar_token
+:command run
+:blob executable 20
+.side_effects/tokens
+:blob args 4
+"$$"
+:int return 0
+:blob stdout 2
+$
+
+:test colour_tokens
+:command run
+:blob executable 20
+.side_effects/tokens
+:blob args 8
+"$c$L$r"
+:int return 0
+:blob stdout 17
+[36;20mINFO[0m
+
+:test padding_token
+:command run
+:blob executable 20
+.side_effects/tokens
+:blob args 9
+"[$L$<6]"
+:int return 0
+:blob stdout 8
+[INFO ]
+
+:test file_token_is_the_path_given_to_the_compiler
+:command run
+:blob executable 20
+.side_effects/tokens
+:blob args 4
+"$f"
+:int return 0
+:blob stdout 9
+tokens.c
+
+:test line_token_is_the_line_of_the_log_call
+:command run
+:blob executable 20
+.side_effects/tokens
+:blob args 4
+"$x"
+:int return 0
+:blob stdout 3
+21
+
+:test an_unknown_token_warns_and_is_skipped
+:command run
+:blob executable 20
+.side_effects/tokens
+:blob args 6
+"$Q$m"
+:int return 0
+:blob stdout 6
+msg=7
+
+:blob stderr_contains 23
+unknown format sequence

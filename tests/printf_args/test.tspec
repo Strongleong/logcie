@@ -1,0 +1,21 @@
+:test printf_specifiers_reach_the_message
+:command compile
+:blob executable 2
+cc
+:blob args 74
+-std=c11 -Wall -Wextra -Werror -I../.. printf_args.c -o .side_effects/args
+:int return 0
+:command run
+:blob executable 18
+.side_effects/args
+:int return 0
+:blob stdout 119
+no args at all
+int=-7 uint=7
+str=text char=x
+hex=ff oct=10
+float=1.50
+width=   42 left=42   |
+percent=%
+many=1 2 3 4 5
+

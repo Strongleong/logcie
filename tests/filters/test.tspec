@@ -1,0 +1,96 @@
+:test build
+:command compile
+:blob executable 2
+cc
+:blob args 73
+-std=c11 -Wall -Wextra -Werror -I../.. filters.c -o .side_effects/filters
+:int return 0
+:test a_sink_without_a_filter_takes_everything
+:command run
+:blob executable 21
+.side_effects/filters
+:blob args 4
+none
+:int return 0
+:blob stdout 72
+INFO/core/plain
+INFO/net/needle here
+ERROR/core/boom
+ERROR/net/net boom
+
+:test level_min_drops_everything_below_it
+:command run
+:blob executable 21
+.side_effects/filters
+:blob args 8
+min_warn
+:int return 0
+:blob stdout 35
+ERROR/core/boom
+ERROR/net/net boom
+
+:test level_max_drops_everything_above_it
+:command run
+:blob executable 21
+.side_effects/filters
+:blob args 8
+max_info
+:int return 0
+:blob stdout 37
+INFO/core/plain
+INFO/net/needle here
+
+:test module_eq_keeps_one_module
+:command run
+:blob executable 21
+.side_effects/filters
+:blob args 9
+module_eq
+:int return 0
+:blob stdout 40
+INFO/net/needle here
+ERROR/net/net boom
+
+:test message_contains_matches_the_text
+:command run
+:blob executable 21
+.side_effects/filters
+:blob args 8
+contains
+:int return 0
+:blob stdout 21
+INFO/net/needle here
+
+:test and_requires_both
+:command run
+:blob executable 21
+.side_effects/filters
+:blob args 3
+and
+:int return 0
+:blob stdout 19
+ERROR/net/net boom
+
+:test or_requires_either
+:command run
+:blob executable 21
+.side_effects/filters
+:blob args 2
+or
+:int return 0
+:blob stdout 56
+INFO/net/needle here
+ERROR/core/boom
+ERROR/net/net boom
+
+:test not_inverts
+:command run
+:blob executable 21
+.side_effects/filters
+:blob args 3
+not
+:int return 0
+:blob stdout 32
+INFO/core/plain
+ERROR/core/boom
+

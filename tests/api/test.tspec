@@ -1,0 +1,20 @@
+:test sink_lookup_colours_and_removal_by_index
+:command compile
+:blob executable 2
+cc
+:blob args 65
+-std=c11 -Wall -Wextra -Werror -I../.. api.c -o .side_effects/api
+:int return 0
+:command run
+:blob executable 17
+.side_effects/api
+:int return 0
+:blob stdout 149
+default_sink_exists=1
+out_of_range_is_null=1
+get_sink_returns_ours=1
+<info>INFO[0m custom
+[36;20mINFO[0m restored
+remove_by_index=1
+count_after=0
+

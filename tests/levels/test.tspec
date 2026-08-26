@@ -1,0 +1,20 @@
+:test every_level_prints_its_own_name
+:command compile
+:blob executable 2
+cc
+:blob args 71
+-std=c11 -Wall -Wextra -Werror -I../.. levels.c -o .side_effects/levels
+:int return 0
+:command run
+:blob executable 20
+.side_effects/levels
+:int return 0
+:blob stdout 81
+TRACE trace
+DEBUG debug
+VERB verbose
+INFO info
+WARN warn
+ERROR error
+FATAL fatal
+

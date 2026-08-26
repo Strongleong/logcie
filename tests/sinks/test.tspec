@@ -1,0 +1,22 @@
+:test adding_the_first_sink_replaces_the_default_one
+:command compile
+:blob executable 2
+cc
+:blob args 69
+-std=c11 -Wall -Wextra -Werror -I../.. sinks.c -o .side_effects/sinks
+:int return 0
+:command run
+:blob executable 19
+.side_effects/sinks
+:int return 0
+:blob stdout 107
+initial=1
+after_first_add=1
+a:one
+after_second_add=2
+a:two
+b:two
+after_remove=1
+b:three
+after_remove_all=1
+

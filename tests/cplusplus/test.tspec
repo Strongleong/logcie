@@ -1,0 +1,28 @@
+:test the_cplusplus_path_compiles_and_filters
+:command compile
+:blob executable 3
+c++
+:blob args 69
+-std=c++17 -Wall -Wextra -Werror -I../.. cpp.cpp -o .side_effects/cpp
+:int return 0
+:command run
+:blob executable 17
+.side_effects/cpp
+:int return 0
+:blob stdout 15
+INFO/core/kept
+
+:test logcie_filter_not_compiles_in_cplusplus
+:command compile
+:blob executable 3
+c++
+:blob args 80
+-std=c++17 -Wall -Wextra -Werror -I../.. cpp_filter_not.cpp -o .side_effects/not
+:int return 0
+:command run
+:blob executable 17
+.side_effects/not
+:int return 0
+:blob stdout 10
+loud/kept
+

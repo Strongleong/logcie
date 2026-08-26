@@ -1,0 +1,34 @@
+:test a_format_mismatch_is_a_compile_error
+:command compile
+:blob executable 2
+cc
+:blob args 72
+-std=c11 -Wall -Wextra -Werror -I../.. bad_format.c -o .side_effects/bad
+:int return 1
+:blob stderr_contains 6
+format
+:file_missing 17 .side_effects/bad
+:test using_logcie_without_the_implementation_fails_to_link
+:command compile_only
+:blob executable 2
+cc
+:blob args 87
+-std=c11 -Wall -Wextra -Werror -I../.. -c no_implementation.c -o .side_effects/noimpl.o
+:int return 0
+:command link
+:blob executable 2
+cc
+:blob args 60
+-std=c11 -I../.. no_implementation.c -o .side_effects/noimpl
+:int return 1
+:blob stderr_contains 10
+logcie_log
+:test defining_the_implementation_twice_fails_to_link
+:command link
+:blob executable 2
+cc
+:blob args 68
+-std=c11 -I../.. two_implementations.c twin.c -o .side_effects/twins
+:int return 1
+:blob stderr_contains 19
+multiple definition

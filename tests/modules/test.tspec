@@ -1,0 +1,30 @@
+:test the_module_is_per_translation_unit
+:command compile
+:blob executable 2
+cc
+:blob args 78
+-std=c11 -Wall -Wextra -Werror -I../.. main.c other.c -o .side_effects/modules
+:int return 0
+:command run
+:blob executable 21
+.side_effects/modules
+:int return 0
+:blob stdout 48
+core:from main
+net:from other
+explicit:per call
+
+:test the_module_defaults_to_logcie
+:command compile
+:blob executable 2
+cc
+:blob args 80
+-std=c11 -Wall -Wextra -Werror -I../.. default_module.c -o .side_effects/default
+:int return 0
+:command run
+:blob executable 21
+.side_effects/default
+:int return 0
+:blob stdout 18
+Logcie:undeclared
+
