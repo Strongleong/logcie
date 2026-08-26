@@ -265,6 +265,9 @@ LOGCIE_LOG_MOD("network", INFO, "Connection established to %s", "gnu.org");
 Modules can also be used in filters to selectively allow or block logs from specific
 parts of your application.
 
+Module names are hierarchical: "net", "net.http" and "net.http.tls" form a tree that logcie_filter_module_prefix
+matches on. Redefine this before including logcie.h if '.' clashes with your naming.
+
 ## Memory Management Notes
 
 Since logcie_add_sink() stores the pointer to your sink structure (not a copy), you must ensure:
@@ -329,6 +332,9 @@ Here is a list of built-in filters:
 
   - logcie_filter_module_eq("module")
       Allows logs only from specific module (see below for learning about modules)
+
+ - logcie_filter_module_prefix_eq("module")
+     Allows logs only from specific module root (see below for learning about modules)
 
   - logcie_filter_message_contains("text")
       Allows logs whose messages contains the given substring
