@@ -26,6 +26,7 @@
  * Configuration macros (define before including the header):
  *   LOGCIE_MODULE                  Module name for classic macros (default "Logcie")
  *   LOGCIE_MODULE_SEPARATOR        Moudle names separator for hierarchical module filtering (default '.')
+ *   LOGCIE_MAX_SINKS               Maximum capacity of logcie sinks array (default: 16)
  *   LOGCIE_DEFAULT_SINK_FORMAT     Format string for the automatic stdout sink
  *   LOGCIE_DEF                     Linkage of public functions (default extern)
  *   LOGCIE_THREAD_SAFE             Enable mutex‑based thread safety (needs pthreads)
@@ -420,6 +421,17 @@ typedef enum Logcie_LogLevel {
  */
 #ifndef LOGCIE_MODULE_SEPARATOR
 #define LOGCIE_MODULE_SEPARATOR '.'
+#endif
+
+/**
+ * @brief Maximum number of sinks that can be registered at once.
+ *
+ * Sinks live in a fixed array, so logcie never allocates. Raise this before
+ * including logcie.h if sixteen is not enough; logcie_add_sink returns 0 once
+ * the array is full.
+ */
+#ifndef LOGCIE_MAX_SINKS
+#define LOGCIE_MAX_SINKS 16
 #endif
 
 /**
@@ -927,7 +939,6 @@ LOGCIE_DEF void logcie_set_colors(const char **colors);
 #ifdef LOGCIE_IMPLEMENTATION
 
 #include <assert.h>
-#include <stdlib.h>
 
 #ifndef _LOGCIE_ASSERT
 #define _LOGCIE_ASSERT(bool, msg) assert(bool &&msg)
@@ -1060,8 +1071,6 @@ static Logcie_Sink default_stdout_sink = {
   .filter    = {NULL, NULL},
 };
 
-static Logcie_Sink *default_stdout_sink_ptr = &default_stdout_sink;
-
 #if defined(__has_attribute) && __has_attribute(constructor)
 #define __L_ATTR_CONSTRUCT
 #endif
@@ -1073,17 +1082,15 @@ __attribute__((constructor)) void init_default_stdout_sink(void) {
 #endif
 
 typedef struct Logcie_Logger {
-  Logcie_Sink **sinks;
-  size_t        sinks_len;
-  size_t        sinks_cap;
+  Logcie_Sink *sinks[LOGCIE_MAX_SINKS];
+  size_t       sinks_len;
+  uint8_t      using_default;
 } Logcie_Logger;
 
-// INFO: By default there is one default sink to allow logging right
-//       after includnig Logcie without initializing anything
 static Logcie_Logger logcie = {
-  .sinks     = &default_stdout_sink_ptr,
-  .sinks_len = 1,
-  .sinks_cap = 1,
+  .sinks         = {&default_stdout_sink},
+  .sinks_len     = 1,
+  .using_default = 1,
 };
 
 size_t logcie_get_sink_count(void) {
@@ -1119,15 +1126,14 @@ uint8_t logcie_add_sink(Logcie_Sink *sink) {
     sink->writer.data = stdout;
 #endif
 
-  if (logcie.sinks_cap == 1) {
-    logcie.sinks_cap = 8;
-    logcie.sinks_len = 0;
-    logcie.sinks     = (Logcie_Sink **)malloc(sizeof(*logcie.sinks) * logcie.sinks_cap);
+  if (logcie.using_default) {
+    logcie.sinks_len     = 0;
+    logcie.using_default = 0;
   }
 
-  if (logcie.sinks_cap == logcie.sinks_len) {
-    logcie.sinks_cap *= 2;
-    logcie.sinks = (Logcie_Sink **)realloc(logcie.sinks, sizeof(*logcie.sinks) * logcie.sinks_cap);
+  if (logcie.sinks_len >= LOGCIE_MAX_SINKS) {
+    LOGCIE_MUTEX_UNLOCK(logcie_mutex);
+    return 0;
   }
 
   logcie.sinks[logcie.sinks_len] = sink;
@@ -1142,7 +1148,7 @@ static uint8_t logcie_remove_sink_by_index_locked(size_t index) {
     return 0;
   }
 
-  if (logcie.sinks_cap == 1 && index == 0) {
+  if (logcie.using_default) {
     return 0;
   }
 
@@ -1183,12 +1189,13 @@ uint8_t logcie_remove_sink_by_index(size_t index) {
 void logcie_remove_all_sinks(void) {
   LOGCIE_MUTEX_LOCK(logcie_mutex);
 
-  if (logcie.sinks_cap > 1) {
-    free(logcie.sinks);
-    logcie.sinks_cap = 1;
-    logcie.sinks_len = 1;
-    logcie.sinks     = &default_stdout_sink_ptr;
+  if (logcie.using_default) {
+    return;
   }
+
+  logcie.sinks[0]      = &default_stdout_sink;
+  logcie.sinks_len     = 1;
+  logcie.using_default = 1;
 
   LOGCIE_MUTEX_UNLOCK(logcie_mutex);
 }
