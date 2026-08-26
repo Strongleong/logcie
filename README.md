@@ -17,6 +17,7 @@ that supports multiple output sinks, customizable formatting, and flexible filte
 
 - [Quick Start](#quick-start)
 - [Installation](#installation)
+- [Building Examples](#building-examples)
 - [Basic Usage](#basic-usage)
 - [Log Levels](#log-levels)
 - [Architecture Overview](#architecture-overview)
@@ -35,6 +36,7 @@ that supports multiple output sinks, customizable formatting, and flexible filte
 - [Filters](#filters)
   - [Custom Filter Function](#custom-filter-function)
 - [Limitations](#limitations)
+- [Testing](#testing)
 - [Usage in libraries](#usage-in-libraries)
 - [License](#license)
 
@@ -81,21 +83,28 @@ Define any of these **before** you include `logcie.h` (or before
 | `LOGCIE_PEDANTIC`                | Forces the strict C99 macro fallback (`LOGCIE_*_VA`) even on GCC/Clang.                                            | *(not defined)*          |
 | `LOGCIE_COLOR_*`                 | ANSI escape codes for each level colour. You can override them or use `logcie_set_colors()`.                       | *(see source)*           |
 
-> **Note:** The compiler‑pedantic fallback (`LOGCIE_VA_LOGS`) is automatically defined when variadic macros are not available – you don’t need to touch it.
+> **Note:** The compiler‑pedantic fallback (`LOGCIE_VA_LOGS`) is automatically defined when variadic macros are not available - you don’t need to touch it.
 
-## Building examples and tests
+## Building Examples
 
-On Linux you can compile the build system with:
-
-```sh
-cc -o build build.c
-```
-
-Then run it with:
+Logcie is header-only, so there is nothing to build to use it. The build
+system compiles the examples and runs the test suite.
 
 ```sh
+cc -o build build.c   # once
+./build               # compile everything in examples/ into ./out/
 ./build --help
 ```
+
+| Flag                   | Meaning                                                         |
+| ----                   | -------                                                         |
+| `-d`, `--debug`        | `-ggdb -fsanitize=address -Og -D_LOGCIE_DEBUG` instead of `-O3` |
+| `-p`, `--pedantic`     | add `-pedantic -DLOGCIE_PEDANTIC`                               |
+| `-s`, `--silent`       | only warnings and errors                                        |
+| `-r`, `--dry-run`      | print the commands, run nothing                                 |
+| `-o`, `--outdir`       | output directory (default `./out/`)                             |
+| `-c`, `--c-compiler`   | C compiler (default `clang`)                                    |
+| `-x`, `--cpp-compiler` | C++ compiler (default `clang++`)                                |
 
 ## Basic Usage
 
@@ -377,12 +386,44 @@ Example:
 
 ## Limitations
 
-- **Thread safety is opt‑in** – Define `LOGCIE_THREAD_SAFE` before the implementation to serialise all operations with a mutex.  Without it, concurrent calls may interleave or crash.
+- **Thread safety is opt‑in** - Define `LOGCIE_THREAD_SAFE` before the implementation to serialise all operations with a mutex.  Without it, concurrent calls may interleave or crash.
 - **Memory allocation** - The sink array uses `malloc()`/`realloc()` for dynamic growth
 - **No built-in log rotation** - File management must be handled by the application (or just use `logrotate`)
 - **Custom formatters require `va_list` handling** - Advanced usage requires understanding of variadic arguments
 
 Future versions may address these limitations based on user feedback and requirements.
+
+## Testing
+
+The suite lives in `tests/` and is written in the `.tspec` format, run by [strum](https://github.com/Strongleong/Strum).
+
+```sh
+./build tests                      # whole suite
+./build tests tests/filters        # one directory
+./build tests -t ./path/to/runner  # a different .tspec runner
+```
+
+`./build tests` looks for `strum` on `PATH` and fails with a clear message if it is not there. `--tspec-runner` overrides it - the format is not tied to any one implementation.
+
+Each directory covers one area:
+
+| Directory                    | Covers                                                                                    |
+| ---------                    | ------                                                                                    |
+| `levels`                     | every level renders its own name                                                          |
+| `format_tokens`              | `$m $L $l $M $f $x $c $r $$` and padding                                                  |
+| `filters`                    | all built-in filters and the and/or/not combinators                                       |
+| `sinks`                      | add, remove, count, and default-sink replacement                                          |
+| `modules`                    | per-file, per-call and default module names                                               |
+| `api`                        | sink lookup, colours, removal by index                                                    |
+| `printf_args`                | printf specifiers reaching the message                                                    |
+| `timestamps`                 | `$d $t $z` compared against the clock                                                     |
+| `recursion`                  | the recursion guard suppresses instead of looping                                         |
+| `cplusplus`                  | the `extern "C"` and lambda-filter paths                                                  |
+| `matrix_gcc`, `matrix_clang` | c99/c11/c17 / pedantic / thread-safe / allow-recursive, compiled **and** run              |
+| `compile_errors`             | things that must *fail*: format mismatches, missing or duplicated `LOGCIE_IMPLEMENTATION` |
+
+Tests assert exact stdout rather than checking inside the fixture, so a failure prints expected and actual bytes with escapes.
+Adding a case to an existing area is usually one `:test` block; the fixtures take their format string or filter name as `argv[1]`.
 
 ## Usage in libraries
 
