@@ -1,0 +1,25 @@
+:test the_sink_array_fills_up_and_then_refuses
+:command compile
+:blob executable 2
+cc
+:blob args 75
+-std=c11 -Wall -Wextra -Werror -I../.. capacity.c -o .side_effects/capacity
+:int return 0
+:command run
+:blob executable 22
+.side_effects/capacity
+:int return 0
+:blob stdout 111
+add0=1
+add1=1
+add2=1
+add3=0
+add4=0
+count=3
+s:once
+s:once
+s:once
+after_remove_all=1
+readd=1
+count_after_readd=1
+
