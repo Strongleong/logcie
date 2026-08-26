@@ -148,7 +148,7 @@
  *
  *    - logcie_filter_module_eq("module")
  *        Allows logs only from specific module (see below for learning about modules)
-*
+ *
  *    - logcie_filter_module_prefix_eq("module")
  *        Allows logs only from specific module root (see below for learning about modules)
  *
@@ -1241,12 +1241,29 @@ size_t logcie_printf_formatter(Logcie_Writer *writer, void *data, Logcie_Log log
   size_t output_len = 0;
   size_t last_len   = 0;
 
-  // NOTE: time functions are safe if formatter is called from logcie_log
-  struct tm local_tm = *localtime(&log.time);
-  struct tm utc_tm   = *gmtime(&log.time);
+  // NOTE: the timestamp is captured at the call site, in LOGCIE_CREATE_LOG.
+  // What happens here is only the conversion of that instant into fields, and
+  // a format with no $d, $t or $z should not pay for four calls into the time
+  // functions on every line. Which line it names is unaffected.
+  struct tm local_tm;
+  struct tm utc_tm;
 
-  int32_t local_hours = local_tm.tm_hour;
-  int32_t timediff    = (int32_t)difftime(mktime(&local_tm), mktime(&utc_tm)) / 3600;
+  uint32_t local_hours = 0;
+  uint32_t timediff    = 0;
+  uint8_t  time_ready  = 0;
+
+  // NOTE: time functions are safe here because the formatter is only called
+  // from logcie_log, which holds the lock when LOGCIE_THREAD_SAFE is on.
+#define LOGCIE_ENSURE_TIME()                                                      \
+  do {                                                                            \
+    if (!time_ready) {                                                            \
+      local_tm    = *localtime(&log.time);                                        \
+      utc_tm      = *gmtime(&log.time);                                           \
+      local_hours = local_tm.tm_hour;                                             \
+      timediff    = (int32_t)difftime(mktime(&local_tm), mktime(&utc_tm)) / 3600; \
+      time_ready  = 1;                                                            \
+    }                                                                             \
+  } while (0)
 
   while (*fmt != '\0') {
     if (*fmt != '$') {
@@ -1281,12 +1298,15 @@ size_t logcie_printf_formatter(Logcie_Writer *writer, void *data, Logcie_Log log
         last_len = writer->write(writer->data, LOGCIE_COLOR_RESET, NULL);
         break;
       case 'd':
+        LOGCIE_ENSURE_TIME();
         last_len = writer->write(writer->data, "%d-%02d-%02d", NULL, local_tm.tm_year + 1900, local_tm.tm_mon + 1, local_tm.tm_mday);
         break;
       case 't':
+        LOGCIE_ENSURE_TIME();
         last_len = writer->write(writer->data, "%02d:%02d:%02d", NULL, local_hours, local_tm.tm_min, local_tm.tm_sec);
         break;
       case 'z':
+        LOGCIE_ENSURE_TIME();
         last_len = writer->write(writer->data, "%+d", NULL, timediff);
         break;
       case 'f':
@@ -1324,6 +1344,8 @@ size_t logcie_printf_formatter(Logcie_Writer *writer, void *data, Logcie_Log log
     output_len += last_len;
     fmt++;
   }
+
+#undef LOGCIE_ENSURE_TIME
 
   output_len += writer->write(writer->data, "\n", NULL);
   return output_len;
