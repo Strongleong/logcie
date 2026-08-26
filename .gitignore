@@ -5,3 +5,4 @@ out
 app.log
 out.log
 .cache
+**/.side_effects/
