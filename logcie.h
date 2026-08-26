@@ -148,6 +148,9 @@
  *
  *    - logcie_filter_module_eq("module")
  *        Allows logs only from specific module (see below for learning about modules)
+*
+ *    - logcie_filter_module_prefix_eq("module")
+ *        Allows logs only from specific module root (see below for learning about modules)
  *
  *    - logcie_filter_message_contains("text")
  *        Allows logs whose messages contains the given substring
@@ -254,6 +257,9 @@
  *
  *   Modules can also be used in filters to selectively allow or block logs
  *   from specific parts of your application.
+ *
+ *   Module names are hierarchical: "net", "net.http" and "net.http.tls" form a tree that logcie_filter_module_prefix
+ *   matches on. Redefine this before including logcie.h if '.' clashes with your naming.
  *
  * Example:
  *   You can have sink that will format log with "[$log level$] $log message$"
@@ -396,6 +402,23 @@ typedef enum Logcie_LogLevel {
  */
 #ifndef LOGCIE_MODULE
 #define LOGCIE_MODULE "Logcie"
+#endif
+
+/**
+ * @brief Character separating the levels of a module name.
+ *
+ * Module names are hierarchical: "net", "net.http" and "net.http.tls" form a
+ * tree that logcie_filter_module_prefix matches on. Redefine this before
+ * including logcie.h if '.' clashes with your naming.
+ *
+ * Example:
+ * @code
+ * #define LOGCIE_MODULE_SEPARATOR '/'
+ * #include "logcie.h"
+ * @endcode
+ */
+#ifndef LOGCIE_MODULE_SEPARATOR
+#define LOGCIE_MODULE_SEPARATOR '.'
 #endif
 
 /**
@@ -785,6 +808,12 @@ LOGCIE_DEF uint8_t logcie_filter_level_max_fn(const void *data, Logcie_Log *log)
 LOGCIE_DEF uint8_t logcie_filter_module_eq_fn(const void *data, Logcie_Log *log);
 
 /**
+ * @brief Filters out logs if log module prefix is equal to specified string
+ * @param data cosnt char*
+ */
+LOGCIE_DEF uint8_t logcie_filter_module_prefix_eq_fn(const void *data, Logcie_Log *log);
+
+/**
  * @brief Filters out logs if log messages contains specified string
  * @param data const char*
  */
@@ -820,7 +849,7 @@ typedef uint8_t(Logcie_FilterCustomPredicateFn)(Logcie_Log *log);
     },                                                           \
     .data = NULL,                                                \
   }
-#else // __cplusplus
+#else  // __cplusplus
 #define logcie_filter_and(a, b)                         \
   ((Logcie_Filter){                                     \
     .filter = logcie_filter_and_fn,                     \
@@ -838,7 +867,7 @@ typedef uint8_t(Logcie_FilterCustomPredicateFn)(Logcie_Log *log);
     .filter = logcie_filter_not_fn, \
     .data   = &(f)                  \
   })
-#endif // __cplusplus
+#endif  // __cplusplus
 
 #define logcie_filter_level_min(level)    \
   ((Logcie_Filter){                       \
@@ -856,6 +885,12 @@ typedef uint8_t(Logcie_FilterCustomPredicateFn)(Logcie_Log *log);
   ((Logcie_Filter){                       \
     .filter = logcie_filter_module_eq_fn, \
     .data   = (module)                    \
+  })
+
+#define logcie_filter_module_prefix_eq(prefix)   \
+  ((Logcie_Filter){                              \
+    .filter = logcie_filter_module_prefix_eq_fn, \
+    .data   = (prefix)                           \
   })
 
 #define logcie_filter_message_contains(substr)   \
@@ -912,7 +947,7 @@ LOGCIE_DEF void logcie_set_colors(const char **colors);
 #endif
 
 #ifndef LOGCIE_THREAD_SAFE
-#define LOGCIE_MUTEX_DECLARE(name) struct logcie_unused_##name // NOTE: To fix dandling `;`
+#define LOGCIE_MUTEX_DECLARE(name) struct logcie_unused_##name  // NOTE: To fix dandling `;`
 #define LOGCIE_MUTEX_INIT(m)
 #define LOGCIE_MUTEX_DESTROY(m)
 #define LOGCIE_MUTEX_LOCK(m)
@@ -1353,6 +1388,35 @@ LOGCIE_DEF uint8_t logcie_filter_module_eq_fn(const void *data, Logcie_Log *log)
   _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_module_eq'");
   const char *module = (const char *)data;
   return log->module && strcmp(module, log->module) == 0;
+}
+
+LOGCIE_DEF uint8_t logcie_filter_module_prefix_eq_fn(const void *data, Logcie_Log *log) {
+  _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_module_prefix_eq'");
+  _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_module_prefix_eq'");
+
+  const char *prefix = (const char *)data;
+
+  if (!log->module) {
+    return 0;
+  }
+
+  size_t len = strlen(prefix);
+
+  // NOTE: the empty prefix is the root of the hierarchy, so it matches every
+  // module. Without this it would match nothing, since no name begins with a
+  // separator.
+  if (len == 0) {
+    return 1;
+  }
+
+  if (strncmp(log->module, prefix, len) != 0) {
+    return 0;
+  }
+
+  // NOTE: the match has to end on a separator or on the end of the name,
+  // otherwise "net" would also swallow "network". That boundary is the whole
+  // difference between a hierarchy and a substring search.
+  return log->module[len] == '\0' || log->module[len] == LOGCIE_MODULE_SEPARATOR;
 }
 
 LOGCIE_DEF uint8_t logcie_filter_message_contains_fn(const void *data, Logcie_Log *log) {
