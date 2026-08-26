@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.0
+- Introduced hierarchical modules and filterling by module prefixes
+  with `logcie_filter_module_prefix_eq`
+
 ## v1.0.1
 
 ### Fixed
