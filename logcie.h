@@ -592,6 +592,18 @@ struct Logcie_Log {
 };
 
 // Helper macro for constructing a log message
+#ifdef __cplusplus
+#define LOGCIE_INTERNAL_CREATE_LOG_MOD(mod, lvl, txt, f, l) \
+  Logcie_Log {                                              \
+    lvl,                                                    \
+      txt,                                                  \
+      time(NULL),                                           \
+      mod,                                                  \
+    {                                                       \
+      f, l,                                                 \
+    }                                                       \
+  }
+#else
 #define LOGCIE_INTERNAL_CREATE_LOG_MOD(mod, lvl, txt, f, l) \
   (Logcie_Log) {                                            \
     .level    = lvl,                                        \
@@ -603,6 +615,7 @@ struct Logcie_Log {
       .line = l,                                            \
     }                                                       \
   }
+#endif
 
 #define LOGCIE_INTERNAL_CREATE_LOG(lvl, txt, f, l) LOGCIE_INTERNAL_CREATE_LOG_MOD(LOGCIE_MODULE, lvl, txt, f, l)
 
@@ -1080,9 +1093,9 @@ static inline const char *get_logcie_level_color(Logcie_LogLevel level) {
 }
 
 static Logcie_Sink default_stdout_sink = {
-  .formatter = {logcie_printf_formatter, (void *)("$c$L$<6$r " LOGCIE_COLOR_GRAY "$f:$x$r: $m")},
-  .writer    = {logcie_printf_writer, NULL},
-  .filter    = {NULL, NULL},
+  {logcie_printf_formatter, (void *)("$c$L$<6$r " LOGCIE_COLOR_GRAY "$f:$x$r: $m")},
+  {logcie_printf_writer, NULL},
+  {NULL, NULL},
 };
 
 #if defined(__has_attribute) && __has_attribute(constructor)
@@ -1102,9 +1115,9 @@ typedef struct Logcie_Logger {
 } Logcie_Logger;
 
 static Logcie_Logger logcie = {
-  .sinks         = {&default_stdout_sink},
-  .sinks_len     = 1,
-  .using_default = 1,
+  {&default_stdout_sink},
+  1,
+  1,
 };
 
 size_t logcie_get_sink_count(void) {
