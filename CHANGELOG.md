@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.2.1
+
+### Fixed
+- Enchanged compatibility with c++ standars <20 with -pedantic flag
+
 ## v1.2.0
 
 ### Added
