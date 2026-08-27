@@ -283,7 +283,7 @@
  *     Logcie_Sink stdout_sink = {
  *       .formatter = { logcie_printf_formatter, "[$L] $m" },
  *       .writer = { logcie_printf_writer, NULL },
- *       .filter = { logcie_filter_level_min, LOGCIE_LEVEL_INFO }
+ *       .filter = { logcie_filter_level_min_fn, LOGCIE_LEVEL_INFO }
  *     };
  *
  *     Logcie_Sink file_sink = {
