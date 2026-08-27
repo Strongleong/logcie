@@ -97,15 +97,15 @@ cc -o build build.c   # once
 ./build --help
 ```
 
-| Flag                   | Meaning                                                         |
-| ----                   | -------                                                         |
-| `-d`, `--debug`        | `-ggdb -fsanitize=address -Og -D_LOGCIE_DEBUG` instead of `-O3` |
-| `-p`, `--pedantic`     | add `-pedantic -DLOGCIE_PEDANTIC`                               |
-| `-s`, `--silent`       | only warnings and errors                                        |
-| `-r`, `--dry-run`      | print the commands, run nothing                                 |
-| `-o`, `--outdir`       | output directory (default `./out/`)                             |
-| `-c`, `--c-compiler`   | C compiler (default `clang`)                                    |
-| `-x`, `--cpp-compiler` | C++ compiler (default `clang++`)                                |
+| Flag                   | Meaning                                                               |
+| ----                   | -------                                                               |
+| `-d`, `--debug`        | `-ggdb -fsanitize=address -Og -DLOGCIE_DEBUG_CHECKS` instead of `-O3` |
+| `-p`, `--pedantic`     | add `-pedantic -DLOGCIE_PEDANTIC`                                     |
+| `-s`, `--silent`       | only warnings and errors                                              |
+| `-r`, `--dry-run`      | print the commands, run nothing                                       |
+| `-o`, `--outdir`       | output directory (default `./out/`)                                   |
+| `-c`, `--c-compiler`   | C compiler (default `clang`)                                          |
+| `-x`, `--cpp-compiler` | C++ compiler (default `clang++`)                                      |
 
 ## Basic Usage
 
