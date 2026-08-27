@@ -712,7 +712,7 @@ LOGCIE_DEF Logcie_Sink *logcie_get_sink(size_t index);
  *
  * @return Const pointer to the default Logcie_Sink
  */
-LOGCIE_DEF const Logcie_Sink *logcie_get_default_sink(void);
+LOGCIE_DEF Logcie_Sink *logcie_get_default_sink(void);
 
 /**
  * @brief Adds a new sink to the logger.
@@ -1145,7 +1145,7 @@ Logcie_Sink *logcie_get_sink(size_t index) {
   return logcie.sinks[index];
 }
 
-LOGCIE_DEF const Logcie_Sink *logcie_get_default_sink(void) {
+LOGCIE_DEF Logcie_Sink *logcie_get_default_sink(void) {
   return &default_stdout_sink;
 }
 
