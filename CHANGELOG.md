@@ -1,5 +1,8 @@
 # Changelog
 
+## Upcoming
+- Writer takes (data, const char \*bytes, size_t len); the formatter renders into a fixed buffer.
+
 ## v1.3.0
 
 ### Added
