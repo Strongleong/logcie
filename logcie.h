@@ -472,7 +472,7 @@ typedef struct Logcie_Log Logcie_Log;
  * @param va         List of arguments. Can be null, and arguments can be provided as variadics
  * @return Total number of characters written to the sink by writer
  */
-typedef size_t(Logcie_WriterFn)(void *user_data, const char *fmt, va_list *va, ...);
+typedef size_t(Logcie_WriterFn)(void *user_data, const char *bytes, size_t len);
 
 /**
  * @brief Writer struct
@@ -808,7 +808,7 @@ LOGCIE_DEF size_t logcie_printf_formatter(Logcie_Writer *writer, void *user_data
  * @param va         List of arguments. Can be null, and arguments can be provided as variadics
  * @return Total number of characters written to the sink by writer
  */
-LOGCIE_DEF size_t logcie_printf_writer(void *user_data, const char *fmt, va_list *va, ...);
+LOGCIE_DEF size_t logcie_printf_writer(void *user_data, const char *bytes, size_t len);
 
 typedef struct Logcie_FilterCombinationData {
   Logcie_Filter a;
@@ -970,6 +970,7 @@ LOGCIE_DEF void logcie_set_colors(const char **colors);
 #ifdef LOGCIE_IMPLEMENTATION
 
 #include <assert.h>
+#include <stdlib.h>
 
 #ifndef LOGCIE_INTERNAL_ASSERT
 #define LOGCIE_INTERNAL_ASSERT(bool, msg) assert(bool &&msg)
@@ -1312,6 +1313,85 @@ LOGCIE_DEF Logcie_Log logcie_make_log(const char *module, Logcie_LogLevel level,
   return log;
 }
 
+static size_t logcie_log_buf_size(const char *fmt, const Logcie_Log *log, va_list *args) {
+  size_t size = 0;
+
+  while (*fmt != '\0') {
+    if (*fmt != '$') {
+      size++;
+      fmt++;
+      continue;
+    }
+
+    fmt++;
+
+    if (*fmt == '\0') {
+      break;
+    }
+
+    switch (*fmt) {
+      case '$':
+        size++;
+        break;
+      case 'm':
+        // TODO: log->msg is just format string, calculate with arguments too
+        size += vsnprintf(NULL, 0, log->msg, *args);
+        break;
+      case 'l':
+        size += strlen(get_logcie_level_label(log->level));
+        break;
+      case 'L':
+        size += strlen(get_logcie_level_label_upper(log->level));
+        break;
+      case 'c':
+        size += strlen(get_logcie_level_color(log->level));
+        break;
+      case 'r':
+        size += strlen(LOGCIE_COLOR_RESET);
+        break;
+      case 'd':
+        size += 10;  // YYYY-MM-DD
+        break;
+      case 't':
+        size += 8;  // HH:MM:SS
+        break;
+      case 'N':
+        size += 9;  // Nanos
+        break;
+      case 'z':
+        size += 3;  // +11 timezone
+        break;
+      case 'f':
+        size += strlen(log->location.file);
+        break;
+      case 'x':
+        size += snprintf(NULL, 0, "%d", log->location.line);
+        break;
+      case 'M':
+        size += strlen(log->module);
+        break;
+      case '<': {
+        fmt++;
+        uint16_t target = 0;
+
+        while (*fmt >= '0' && *fmt <= '9') {
+          target = target * 10 + (*fmt - '0');
+          fmt++;
+        }
+
+        size += target;
+        fmt--;
+        break;
+      }
+      default: break;
+    }
+
+    fmt++;
+  }
+
+  return size + 2; // \n\0
+}
+
 size_t logcie_printf_formatter(Logcie_Writer *writer, void *data, Logcie_Log log, va_list *args) {
   const char *fmt = (const char *)data;
   LOGCIE_INTERNAL_ASSERT(writer, "Sink have no writer");
@@ -1343,9 +1423,16 @@ size_t logcie_printf_formatter(Logcie_Writer *writer, void *data, Logcie_Log log
     }                                                                             \
   } while (0)
 
+
+  va_list args_copy;
+  va_copy(args_copy, *args);
+  size_t log_buf_size = logcie_log_buf_size(fmt, &log, &args_copy);
+
+  char *log_buf = (char *)malloc(log_buf_size);
+
   while (*fmt != '\0') {
     if (*fmt != '$') {
-      output_len += writer->write(writer->data, "%c", NULL, *fmt);
+      output_len += snprintf(log_buf + output_len, log_buf_size - output_len, "%c", *fmt);
       fmt++;
       continue;
     }
@@ -1358,46 +1445,46 @@ size_t logcie_printf_formatter(Logcie_Writer *writer, void *data, Logcie_Log log
 
     switch (*fmt) {
       case '$':
-        last_len = writer->write(writer->data, "$", NULL);
+        last_len = snprintf(log_buf + output_len, log_buf_size - output_len, "$");
         break;
       case 'm':
-        last_len = writer->write(writer->data, log.msg, args);
+        last_len = vsnprintf(log_buf + output_len, log_buf_size - output_len, log.msg, *args);
         break;
       case 'l':
-        last_len = writer->write(writer->data, "%s", NULL, get_logcie_level_label(log.level));
+        last_len = snprintf(log_buf + output_len, log_buf_size - output_len, "%s", get_logcie_level_label(log.level));
         break;
       case 'L':
-        last_len = writer->write(writer->data, "%s", NULL, get_logcie_level_label_upper(log.level));
+        last_len = snprintf(log_buf + output_len, log_buf_size - output_len, "%s", get_logcie_level_label_upper(log.level));
         break;
       case 'c':
-        last_len = writer->write(writer->data, "%s", NULL, get_logcie_level_color(log.level));
+        last_len = snprintf(log_buf + output_len, log_buf_size - output_len, "%s", get_logcie_level_color(log.level));
         break;
       case 'r':
-        last_len = writer->write(writer->data, LOGCIE_COLOR_RESET, NULL);
+        last_len = snprintf(log_buf + output_len, log_buf_size - output_len, "%s", LOGCIE_COLOR_RESET);
         break;
       case 'd':
         LOGCIE_ENSURE_TIME();
-        last_len = writer->write(writer->data, "%d-%02d-%02d", NULL, local_tm.tm_year + 1900, local_tm.tm_mon + 1, local_tm.tm_mday);
+        last_len = snprintf(log_buf + output_len, log_buf_size - output_len, "%d-%02d-%02d", local_tm.tm_year + 1900, local_tm.tm_mon + 1, local_tm.tm_mday);
         break;
       case 't':
         LOGCIE_ENSURE_TIME();
-        last_len = writer->write(writer->data, "%02d:%02d:%02d", NULL, local_hours, local_tm.tm_min, local_tm.tm_sec);
+        last_len = snprintf(log_buf + output_len, log_buf_size - output_len, "%02d:%02d:%02d", local_hours, local_tm.tm_min, local_tm.tm_sec);
         break;
       case 'N':
-        last_len = writer->write(writer->data, "%09u", NULL, log.nanos);
+        last_len = snprintf(log_buf + output_len, log_buf_size - output_len, "%09u", log.nanos);
         break;
       case 'z':
         LOGCIE_ENSURE_TIME();
-        last_len = writer->write(writer->data, "%+d", NULL, timediff);
+        last_len = snprintf(log_buf + output_len, log_buf_size - output_len, "%+d", timediff);
         break;
       case 'f':
-        last_len = writer->write(writer->data, "%s", NULL, log.location.file);
+        last_len = snprintf(log_buf + output_len, log_buf_size - output_len, "%s", log.location.file);
         break;
       case 'x':
-        last_len = writer->write(writer->data, "%u", NULL, log.location.line);
+        last_len = snprintf(log_buf + output_len, log_buf_size - output_len, "%u", log.location.line);
         break;
       case 'M':
-        last_len = writer->write(writer->data, "%s", NULL, log.module ? log.module : "");
+        last_len = snprintf(log_buf + output_len, log_buf_size - output_len, "%s", log.module ? log.module : "");
         break;
       case '<': {
         fmt++;
@@ -1411,7 +1498,7 @@ size_t logcie_printf_formatter(Logcie_Writer *writer, void *data, Logcie_Log log
         int16_t pad = target - last_len - 1;
 
         if (pad > 0) {
-          last_len = writer->write(writer->data, "%*s", NULL, pad, "");
+          last_len = snprintf(log_buf + output_len, log_buf_size - output_len, "%*s", pad, "");
         }
 
         fmt--;
@@ -1428,26 +1515,18 @@ size_t logcie_printf_formatter(Logcie_Writer *writer, void *data, Logcie_Log log
 
 #undef LOGCIE_ENSURE_TIME
 
-  output_len += writer->write(writer->data, "\n", NULL);
+  output_len += snprintf(log_buf + output_len, log_buf_size - output_len, "\n");
+  writer->write(writer->data, log_buf, output_len);
+  free(log_buf);
   return output_len;
 }
 
 // TODO: logcie_writer_flush()???
 
-LOGCIE_DEF size_t logcie_printf_writer(void *user_data, const char *fmt, va_list *va, ...) {
+LOGCIE_DEF size_t logcie_printf_writer(void *user_data, const char *bytes, size_t len) {
   LOGCIE_INTERNAL_ASSERT(user_data, "Printf writer have nothing to write to");
-  FILE   *file = (FILE *)user_data;
-  va_list args;
-
-  if (va != NULL) {
-    va_copy(args, *va);
-  } else {
-    va_start(args, va);
-  }
-
-  size_t written = vfprintf(file, fmt, args);
-
-  va_end(args);
+  FILE  *file    = (FILE *)user_data;
+  size_t written = fprintf(file, "%.*s", (uint32_t)len, bytes);
   return written;
 }
 
