@@ -291,6 +291,7 @@ Format strings use `$` tokens to insert log metadata. The default formatter supp
 | `$r`    | ANSI reset color code              | `\x1b[0m`                |
 | `$d`    | Date (YYYY-MM-DD)                  | "2025-12-24"             |
 | `$t`    | Time (HH:MM:SS)                    | "14:30:15"               |
+| `$N`    | Nanoseconds                        | "970431843+11"           |
 | `$z`    | Timezone offset                    | "+3"                     |
 | `$<n`   | Pads with n spaces                 | "    "                   |
 | `$$`    | Literal dollar sign                | "$"                      |
