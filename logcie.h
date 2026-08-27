@@ -25,12 +25,18 @@
  *
  * Configuration macros (define before including the header):
  *   LOGCIE_MODULE                  Module name for classic macros (default "Logcie")
+ *   LOGCIE_MODULE_SEPARATOR        Moudle names separator for hierarchical module filtering (default '.')
+ *   LOGCIE_MAX_SINKS               Maximum capacity of logcie sinks array (default: 16)
  *   LOGCIE_DEFAULT_SINK_FORMAT     Format string for the automatic stdout sink
  *   LOGCIE_DEF                     Linkage of public functions (default extern)
  *   LOGCIE_THREAD_SAFE             Enable mutex‑based thread safety (needs pthreads)
  *   LOGCIE_ALLOW_RECURSIVE_LOGGING Allow logging from inside writers/formatters
  *   LOGCIE_PEDANTIC                Force strict C99 fallback (LOGCIE_*_VA macros)
  *   LOGCIE_COLOR_*                 ANSI escape codes per level (also logcie_set_colors)
+ *   LOGCIE_DEBUG_CHECKS            Enable internal consistency assertions
+ *
+ *   Anything named LOGCIE_INTERNAL_* is an implementation detail. It is not a
+ *   configuration point and may change in any release.
  *
  *   The library automatically defines LOGCIE_VA_LOGS when variadic macros are not
  *   available – you do not need to touch it.
@@ -43,10 +49,11 @@
  *   Writer receives formatted strings from the Formatter and it responsible for writing them
  *          to the final destination. It can write logs to a FILE, send them to an HTTP API endpoint,
  *          or even render them on embeded displays while blinking LED with color of current log level.
- *   Filter filters out logs. Pretty much self-explanatory. We will ignore then for now scince they not finished yet.
+ *   Filter decides whether a log reaches the Sink at all. See the Filters section below for the built-i
+ *          ones and how to combine them.
  *
  *   A combination of Formatter, Writer and Filter is called a Sink.
- *   You can have as many sinks as you want. Logcie will send logs to every sinks available.
+ *   You can register up to LOGCIE_MAX_SINKS sinks. Logcie sends every log to every sink available.
  *
  *   Logcie itself is basically an array of Sinks and system of distributing logs to those Sinks.
  *
@@ -91,7 +98,7 @@
  *                                   `$d` - Date (YYYY-MM-DD)
  *                                   `$t` - Time (HH:MM:SS)
  *                                   `$z` - Timezone offset
- *                                   `$<n - Pads with n spaces
+ *                                   `$<n - Pads the previous token out to n-1 columns
  *                                   `$$` - Literal dollar sign
  *
  *   Also by default, Logcie already has a Sink installed with the printf writer and formatter,
@@ -148,7 +155,7 @@
  *
  *    - logcie_filter_module_eq("module")
  *        Allows logs only from specific module (see below for learning about modules)
-*
+ *
  *    - logcie_filter_module_prefix_eq("module")
  *        Allows logs only from specific module root (see below for learning about modules)
  *
@@ -270,20 +277,28 @@
  *
  *     ```c
  *     // Defining our sinks
+ *     // NOTE: stdout and fopen() are not constant expressions, so a sink
+ *     //       cannot carry them in a file-scope initializer. Declare the sink
+ *     //       there and fill the writer target in at run time.
  *     Logcie_Sink stdout_sink = {
  *       .formatter = { logcie_printf_formatter, "[$L] $m" },
- *       .writer = { logcie_printf_writer, stdout },
+ *       .writer = { logcie_printf_writer, NULL },
  *       .filter = { logcie_filter_level_min, LOGCIE_LEVEL_INFO }
  *     };
  *
  *     Logcie_Sink file_sink = {
  *       .formatter = { logcie_printf_formatter, "$L:$f:$x: $m ($t $d)" },
- *       .writer = { logcie_printf_writer, fopen("./log.txt", "w") },
+ *       .writer = { logcie_printf_writer, NULL },
  *     };
  *
- *     // New sinks must be registered with `logcie_add_sink()`
- *     logcie_add_sink(&stdout_sink);
- *     logcie_add_sink(&file_sink);
+ *     int main(void) {
+ *       stdout_sink.writer.data = stdout;
+ *       file_sink.writer.data   = fopen("./log.txt", "w");
+ *
+ *       // New sinks must be registered with `logcie_add_sink()`
+ *       logcie_add_sink(&stdout_sink);
+ *       logcie_add_sink(&file_sink);
+ *     }
  *     ```
  *
  *     Now lets say you have this logs in code:
@@ -419,6 +434,17 @@ typedef enum Logcie_LogLevel {
  */
 #ifndef LOGCIE_MODULE_SEPARATOR
 #define LOGCIE_MODULE_SEPARATOR '.'
+#endif
+
+/**
+ * @brief Maximum number of sinks that can be registered at once.
+ *
+ * Sinks live in a fixed array, so logcie never allocates. Raise this before
+ * including logcie.h if sixteen is not enough; logcie_add_sink returns 0 once
+ * the array is full.
+ */
+#ifndef LOGCIE_MAX_SINKS
+#define LOGCIE_MAX_SINKS 16
 #endif
 
 /**
@@ -566,26 +592,28 @@ struct Logcie_Log {
 };
 
 // Helper macro for constructing a log message
-#define LOGCIE_CREATE_LOG_MOD(mod, lvl, txt, f, l) \
-  (Logcie_Log) {                                   \
-    .level    = lvl,                               \
-    .msg      = txt,                               \
-    .time     = time(NULL),                        \
-    .module   = mod,                               \
-    .location = {                                  \
-      .file = f,                                   \
-      .line = l,                                   \
-    }                                              \
+#define LOGCIE_INTERNAL_CREATE_LOG_MOD(mod, lvl, txt, f, l) \
+  (Logcie_Log) {                                            \
+    .level    = lvl,                                        \
+    .msg      = txt,                                        \
+    .time     = time(NULL),                                 \
+    .module   = mod,                                        \
+    .location = {                                           \
+      .file = f,                                            \
+      .line = l,                                            \
+    }                                                       \
   }
 
-#define LOGCIE_CREATE_LOG(lvl, txt, f, l) LOGCIE_CREATE_LOG_MOD(LOGCIE_MODULE, lvl, txt, f, l)
+#define LOGCIE_INTERNAL_CREATE_LOG(lvl, txt, f, l) LOGCIE_INTERNAL_CREATE_LOG_MOD(LOGCIE_MODULE, lvl, txt, f, l)
 
-#ifndef PRINTF_TYPECHECK
-#if defined __has_attribute && __has_attribute(__format__)
-#define PRINTF_TYPECHECK(a, b) __attribute__((__format__(__printf__, a, b)))
+// WARN: DEPRECATED
+//       LOGCIE_PRINTF_TYPECHECK was overridable by user and it will be removed in v2.0.0
+#ifdef LOGCIE_PRINTF_TYPECHECK
+#define LOGCIE_INTERNAL_PRINTF_TYPE_CHECK(a, b) LOGCIE_PRINTF_TYPECHECK((a), (b))
+#elif defined __has_attribute && __has_attribute(__format__)
+#define LOGCIE_INTERNAL_PRINTF_TYPE_CHECK(a, b) __attribute__((__format__(__printf__, a, b)))
 #else
-#define PRINTF_TYPECHECK(a, b)
-#endif
+#define LOGCIE_INTERNAL_PRINTF_TYPE_CHECK(a, b)
 #endif
 
 /**
@@ -593,14 +621,14 @@ struct Logcie_Log {
  * These use __FILE__ and __LINE__ to capture call site.
  */
 #if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 202311L)
-#define LOGCIE_LOG_IMPL(level, msg, ...)        logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg __VA_OPT__(, ) __VA_ARGS__)
-#define LOGCIE_LOG_MOD(module, level, msg, ...) logcie_log(LOGCIE_CREATE_LOG_MOD(module, LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg __VA_OPT__(, ) __VA_ARGS__)
+#define LOGCIE_LOG_IMPL(level, msg, ...)        logcie_log(LOGCIE_INTERNAL_CREATE_LOG(LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg __VA_OPT__(, ) __VA_ARGS__)
+#define LOGCIE_LOG_MOD(module, level, msg, ...) logcie_log(LOGCIE_INTERNAL_CREATE_LOG_MOD(module, LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg __VA_OPT__(, ) __VA_ARGS__)
 #elif !defined(LOGCIE_PEDANTIC) && (defined(__GNUC__) || defined(__clang__))
-#define LOGCIE_LOG_IMPL(level, msg, ...)        logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
-#define LOGCIE_LOG_MOD(module, level, msg, ...) logcie_log(LOGCIE_CREATE_LOG_MOD(module, LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
+#define LOGCIE_LOG_IMPL(level, msg, ...)        logcie_log(LOGCIE_INTERNAL_CREATE_LOG(LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
+#define LOGCIE_LOG_MOD(module, level, msg, ...) logcie_log(LOGCIE_INTERNAL_CREATE_LOG_MOD(module, LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
 #else
-#define LOGCIE_LOG_IMPL(level, msg)        logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg)
-#define LOGCIE_LOG_MOD(module, level, msg) logcie_log(LOGCIE_CREATE_LOG_MOD(module, LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg)
+#define LOGCIE_LOG_IMPL(level, msg)        logcie_log(LOGCIE_INTERNAL_CREATE_LOG(LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg)
+#define LOGCIE_LOG_MOD(module, level, msg) logcie_log(LOGCIE_INTERNAL_CREATE_LOG_MOD(module, LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg)
 #define LOGCIE_VA_LOGS
 #endif
 
@@ -624,8 +652,8 @@ struct Logcie_Log {
 
 // Separate variadic logs for compilers that do not support optional variadics in macros
 #ifdef LOGCIE_VA_LOGS
-#define LOGCIE_LOG_IMPL_VA(level, msg, ...)        logcie_log(LOGCIE_CREATE_LOG(LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
-#define LOGCIE_LOG_MOD_VA(module, level, msg, ...) logcie_log(LOGCIE_CREATE_LOG_MOD(module, LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
+#define LOGCIE_LOG_IMPL_VA(level, msg, ...)        logcie_log(LOGCIE_INTERNAL_CREATE_LOG(LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
+#define LOGCIE_LOG_MOD_VA(module, level, msg, ...) logcie_log(LOGCIE_INTERNAL_CREATE_LOG_MOD(module, LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
 
 #define LOGCIE_TRACE_VA(...)      LOGCIE_LOG_IMPL_VA(TRACE, __VA_ARGS__)
 #define LOGCIE_DEBUG_VA(...)      LOGCIE_LOG_IMPL_VA(DEBUG, __VA_ARGS__)
@@ -651,7 +679,7 @@ struct Logcie_Log {
  * @return Always returns 0 (reserved for future use)
  * @note This function is invoked internally by macros like LOGCIE_INFO.
  */
-LOGCIE_DEF size_t logcie_log(Logcie_Log log, const char *fmt, ...) PRINTF_TYPECHECK(2, 3);
+LOGCIE_DEF size_t logcie_log(Logcie_Log log, const char *fmt, ...) LOGCIE_INTERNAL_PRINTF_TYPE_CHECK(2, 3);
 
 /**
  * @brief Gets the number of sinks currently registered in the logger.
@@ -677,12 +705,15 @@ LOGCIE_DEF Logcie_Sink *logcie_get_sink(size_t index);
 /**
  * @brief Adds a new sink to the logger.
  *
- * The sink will receive all log messages that pass its minimum level and
- * filter criteria. Multiple sinks can be active simultaneously with different
- * configurations.
+ * The sink will receive all log messages that pass its filter criteria.
+ * Multiple sinks can be active simultaneously with different configurations.
  *
  * @param sink Pointer to a Logcie_Sink structure to add
- * @return 1 if sink was added, 0 otherwise
+ * @return 1 if sink was added, 0 if sink is NULL or LOGCIE_MAX_SINKS sinks
+ *         are already registered
+ * @note The first call replaces the built-in stdout sink rather than joining
+ *       it. This changes in v2.0.0: sinks you add will simply be added, and
+ *       the built-in one will be removable on its own.
  */
 LOGCIE_DEF uint8_t logcie_add_sink(Logcie_Sink *sink);
 
@@ -743,7 +774,7 @@ LOGCIE_DEF void logcie_remove_all_sinks(void);
  * `$d` - Date (YYYY-MM-DD)
  * `$t` - Time (HH:MM:SS)
  * `$z` - Timezone offset
- * `$<n - Pads with n spaces
+ * `$<n - Pads the previous token out to n-1 columns
  * `$$` - Literal dollar sign
  *
  * @param writer     Pointer to writer (see Logcie_Writer)
@@ -926,7 +957,6 @@ LOGCIE_DEF void logcie_set_colors(const char **colors);
 #ifdef LOGCIE_IMPLEMENTATION
 
 #include <assert.h>
-#include <stdlib.h>
 
 #ifndef _LOGCIE_ASSERT
 #define _LOGCIE_ASSERT(bool, msg) assert(bool &&msg)
@@ -1059,8 +1089,6 @@ static Logcie_Sink default_stdout_sink = {
   .filter    = {NULL, NULL},
 };
 
-static Logcie_Sink *default_stdout_sink_ptr = &default_stdout_sink;
-
 #if defined(__has_attribute) && __has_attribute(constructor)
 #define __L_ATTR_CONSTRUCT
 #endif
@@ -1072,17 +1100,15 @@ __attribute__((constructor)) void init_default_stdout_sink(void) {
 #endif
 
 typedef struct Logcie_Logger {
-  Logcie_Sink **sinks;
-  size_t        sinks_len;
-  size_t        sinks_cap;
+  Logcie_Sink *sinks[LOGCIE_MAX_SINKS];
+  size_t       sinks_len;
+  uint8_t      using_default;
 } Logcie_Logger;
 
-// INFO: By default there is one default sink to allow logging right
-//       after includnig Logcie without initializing anything
 static Logcie_Logger logcie = {
-  .sinks     = &default_stdout_sink_ptr,
-  .sinks_len = 1,
-  .sinks_cap = 1,
+  .sinks         = {&default_stdout_sink},
+  .sinks_len     = 1,
+  .using_default = 1,
 };
 
 size_t logcie_get_sink_count(void) {
@@ -1118,15 +1144,14 @@ uint8_t logcie_add_sink(Logcie_Sink *sink) {
     sink->writer.data = stdout;
 #endif
 
-  if (logcie.sinks_cap == 1) {
-    logcie.sinks_cap = 8;
-    logcie.sinks_len = 0;
-    logcie.sinks     = (Logcie_Sink **)malloc(sizeof(*logcie.sinks) * logcie.sinks_cap);
+  if (logcie.using_default) {
+    logcie.sinks_len     = 0;
+    logcie.using_default = 0;
   }
 
-  if (logcie.sinks_cap == logcie.sinks_len) {
-    logcie.sinks_cap *= 2;
-    logcie.sinks = (Logcie_Sink **)realloc(logcie.sinks, sizeof(*logcie.sinks) * logcie.sinks_cap);
+  if (logcie.sinks_len >= LOGCIE_MAX_SINKS) {
+    LOGCIE_MUTEX_UNLOCK(logcie_mutex);
+    return 0;
   }
 
   logcie.sinks[logcie.sinks_len] = sink;
@@ -1141,7 +1166,7 @@ static uint8_t logcie_remove_sink_by_index_locked(size_t index) {
     return 0;
   }
 
-  if (logcie.sinks_cap == 1 && index == 0) {
+  if (logcie.using_default) {
     return 0;
   }
 
@@ -1182,12 +1207,13 @@ uint8_t logcie_remove_sink_by_index(size_t index) {
 void logcie_remove_all_sinks(void) {
   LOGCIE_MUTEX_LOCK(logcie_mutex);
 
-  if (logcie.sinks_cap > 1) {
-    free(logcie.sinks);
-    logcie.sinks_cap = 1;
-    logcie.sinks_len = 1;
-    logcie.sinks     = &default_stdout_sink_ptr;
+  if (logcie.using_default) {
+    return;
   }
+
+  logcie.sinks[0]      = &default_stdout_sink;
+  logcie.sinks_len     = 1;
+  logcie.using_default = 1;
 
   LOGCIE_MUTEX_UNLOCK(logcie_mutex);
 }
@@ -1241,12 +1267,29 @@ size_t logcie_printf_formatter(Logcie_Writer *writer, void *data, Logcie_Log log
   size_t output_len = 0;
   size_t last_len   = 0;
 
-  // NOTE: time functions are safe if formatter is called from logcie_log
-  struct tm local_tm = *localtime(&log.time);
-  struct tm utc_tm   = *gmtime(&log.time);
+  // NOTE: the timestamp is captured at the call site, in LOGCIE_INTERNAL_CREATE_LOG.
+  // What happens here is only the conversion of that instant into fields, and
+  // a format with no $d, $t or $z should not pay for four calls into the time
+  // functions on every line. Which line it names is unaffected.
+  struct tm local_tm;
+  struct tm utc_tm;
 
-  int32_t local_hours = local_tm.tm_hour;
-  int32_t timediff    = (int32_t)difftime(mktime(&local_tm), mktime(&utc_tm)) / 3600;
+  uint32_t local_hours = 0;
+  uint32_t timediff    = 0;
+  uint8_t  time_ready  = 0;
+
+  // NOTE: time functions are safe here because the formatter is only called
+  // from logcie_log, which holds the lock when LOGCIE_THREAD_SAFE is on.
+#define LOGCIE_ENSURE_TIME()                                                      \
+  do {                                                                            \
+    if (!time_ready) {                                                            \
+      local_tm    = *localtime(&log.time);                                        \
+      utc_tm      = *gmtime(&log.time);                                           \
+      local_hours = local_tm.tm_hour;                                             \
+      timediff    = (int32_t)difftime(mktime(&local_tm), mktime(&utc_tm)) / 3600; \
+      time_ready  = 1;                                                            \
+    }                                                                             \
+  } while (0)
 
   while (*fmt != '\0') {
     if (*fmt != '$') {
@@ -1281,12 +1324,15 @@ size_t logcie_printf_formatter(Logcie_Writer *writer, void *data, Logcie_Log log
         last_len = writer->write(writer->data, LOGCIE_COLOR_RESET, NULL);
         break;
       case 'd':
+        LOGCIE_ENSURE_TIME();
         last_len = writer->write(writer->data, "%d-%02d-%02d", NULL, local_tm.tm_year + 1900, local_tm.tm_mon + 1, local_tm.tm_mday);
         break;
       case 't':
+        LOGCIE_ENSURE_TIME();
         last_len = writer->write(writer->data, "%02d:%02d:%02d", NULL, local_hours, local_tm.tm_min, local_tm.tm_sec);
         break;
       case 'z':
+        LOGCIE_ENSURE_TIME();
         last_len = writer->write(writer->data, "%+d", NULL, timediff);
         break;
       case 'f':
@@ -1324,6 +1370,8 @@ size_t logcie_printf_formatter(Logcie_Writer *writer, void *data, Logcie_Log log
     output_len += last_len;
     fmt++;
   }
+
+#undef LOGCIE_ENSURE_TIME
 
   output_len += writer->write(writer->data, "\n", NULL);
   return output_len;
