@@ -1,5 +1,11 @@
 # Changelog
 
+## Upcoming
+
+### Added
+- `$N` token for nanoseconds
+- Introduced `logcie_get_default_sink()`
+
 ## v1.2.1
 
 ### Fixed
