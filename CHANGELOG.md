@@ -2,6 +2,7 @@
 
 ## Upcoming
 - Writer takes (data, const char \*bytes, size_t len); the formatter renders into a fixed buffer.
+- `logcie_add_sink` no longer touches the default sink; it's removable and gettable instead.
 
 ## v1.3.0
 
