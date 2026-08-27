@@ -97,6 +97,7 @@
  *                                   `$r` - ANSI reset color code
  *                                   `$d` - Date (YYYY-MM-DD)
  *                                   `$t` - Time (HH:MM:SS)
+ *                                   `$N` - Nanoseconds
  *                                   `$z` - Timezone offset
  *                                   `$<n - Pads the previous token out to n-1 columns
  *                                   `$$` - Literal dollar sign
@@ -784,6 +785,7 @@ LOGCIE_DEF void logcie_remove_all_sinks(void);
  * `$r` - ANSI reset color code
  * `$d` - Date (YYYY-MM-DD)
  * `$t` - Time (HH:MM:SS)
+ * `$N` - Nanoseconds
  * `$z` - Timezone offset
  * `$<n - Pads the previous token out to n-1 columns
  * `$$` - Literal dollar sign
@@ -1379,6 +1381,9 @@ size_t logcie_printf_formatter(Logcie_Writer *writer, void *data, Logcie_Log log
         LOGCIE_ENSURE_TIME();
         last_len = writer->write(writer->data, "%02d:%02d:%02d", NULL, local_hours, local_tm.tm_min, local_tm.tm_sec);
         break;
+      case 'N':
+        LOGCIE_ENSURE_TIME();
+        last_len += writer->write(writer->data, "%09u", NULL, log.nanos);
       case 'z':
         LOGCIE_ENSURE_TIME();
         last_len = writer->write(writer->data, "%+d", NULL, timediff);
