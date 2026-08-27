@@ -719,6 +719,15 @@ LOGCIE_DEF size_t logcie_get_sink_count(void);
 LOGCIE_DEF Logcie_Sink *logcie_get_sink(size_t index);
 
 /**
+* @brief Returns pointer to default stdout sink
+*
+* Allows you to custompize default sink rather than added brand new one.
+*
+* @return Const pointer to the default Logcie_Sink
+*/
+LOGCIE_DEF const Logcie_Sink *logcie_get_default_sink(void);
+
+/**
  * @brief Adds a new sink to the logger.
  *
  * The sink will receive all log messages that pass its filter criteria.
@@ -1147,6 +1156,10 @@ Logcie_Sink *logcie_get_sink(size_t index) {
 
   LOGCIE_MUTEX_UNLOCK(logcie_mutex);
   return logcie.sinks[index];
+}
+
+LOGCIE_DEF const Logcie_Sink *logcie_get_default_sink(void) {
+  return &default_stdout_sink;
 }
 
 uint8_t logcie_add_sink(Logcie_Sink *sink) {
