@@ -471,7 +471,7 @@ bool visit_file(const WalkEntry *entry, void *user) {
     cmd[i++] = "-fsanitize=address";
 #endif
     cmd[i++] = "-fno-omit-frame-pointer";
-    cmd[i++] = "-D_LOGCIE_DEBUG";
+    cmd[i++] = "-DLOGCIE_DEBUG_CHECKS";
     cmd[i++] = "-Og";
   } else {
     cmd[i++] = "-O3";
