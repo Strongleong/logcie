@@ -26,10 +26,10 @@ static void *worker(void *arg) {
   return NULL;
 }
 
-static size_t null_writer(void *user_data, const char *fmt, va_list *va, ...) {
+static size_t null_writer(void *user_data, const char *bytes, size_t length) {
   (void)user_data;
-  (void)fmt;
-  (void)va;
+  (void)bytes;
+  (void)length;
   return 0;
 }
 

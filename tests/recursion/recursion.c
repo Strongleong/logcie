@@ -1,21 +1,12 @@
 #define LOGCIE_IMPLEMENTATION
 #include "logcie.h"
 
-static size_t reentrant_writer(void *user_data, const char *fmt, va_list *va, ...) {
+static size_t reentrant_writer(void *user_data, const char *bytes, size_t len) {
   /* NOTE: logging from inside a writer. The guard must suppress it rather
    * than recurse forever. */
   LOGCIE_INFO("from inside the writer");
 
-  va_list args;
-
-  if (va != NULL) {
-    va_copy(args, *va);
-  } else {
-    va_start(args, va);
-  }
-
-  size_t written = vfprintf((FILE *)user_data, fmt, args);
-  va_end(args);
+  size_t written = fprintf((FILE *)user_data, "%.*s", (int)len, bytes);
   return written;
 }
 
