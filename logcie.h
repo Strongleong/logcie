@@ -1280,7 +1280,7 @@ size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
 }
 
 LOGCIE_DEF Logcie_Log logcie_make_log(const char *module, Logcie_LogLevel level, const char *msg, const char *file, uint32_t line) {
-  Logcie_Log log;
+  Logcie_Log log = {0};
 
   log.module        = module;
   log.level         = level;
@@ -1382,8 +1382,8 @@ size_t logcie_printf_formatter(Logcie_Writer *writer, void *data, Logcie_Log log
         last_len = writer->write(writer->data, "%02d:%02d:%02d", NULL, local_hours, local_tm.tm_min, local_tm.tm_sec);
         break;
       case 'N':
-        LOGCIE_ENSURE_TIME();
-        last_len += writer->write(writer->data, "%09u", NULL, log.nanos);
+        last_len = writer->write(writer->data, "%09u", NULL, log.nanos);
+        break;
       case 'z':
         LOGCIE_ENSURE_TIME();
         last_len = writer->write(writer->data, "%+d", NULL, timediff);
