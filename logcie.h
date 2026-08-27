@@ -1280,13 +1280,15 @@ size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
 }
 
 LOGCIE_DEF Logcie_Log logcie_make_log(const char *module, Logcie_LogLevel level, const char *msg, const char *file, uint32_t line) {
-  Logcie_Log log = {0};
+  Logcie_Log log;
 
   log.module        = module;
   log.level         = level;
   log.msg           = msg;
   log.location.file = file;
   log.location.line = line;
+  log.time          = 0;
+  log.nanos         = 0;
 
 #if defined(TIME_UTC)
   struct timespec ts;
