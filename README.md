@@ -33,6 +33,7 @@ that supports multiple output sinks, customizable formatting, and flexible filte
 - [Memory Management Notes](#memory-management-notes)
 - [Format Tokens](#format-tokens)
   - [Format Examples](#format-examples)
+  - [Sub-second Timestamps](#sub-second-timestamps)
 - [Filters](#filters)
   - [Custom Filter Function](#custom-filter-function)
 - [Limitations](#limitations)
@@ -291,7 +292,7 @@ Format strings use `$` tokens to insert log metadata. The default formatter supp
 | `$r`    | ANSI reset color code              | `\x1b[0m`                |
 | `$d`    | Date (YYYY-MM-DD)                  | "2025-12-24"             |
 | `$t`    | Time (HH:MM:SS)                    | "14:30:15"               |
-| `$N`    | Nanoseconds                        | "970431843+11"           |
+| `$N`    | Nanoseconds                        | "970431843"              |
 | `$z`    | Timezone offset                    | "+3"                     |
 | `$<n`   | Pads with n spaces                 | "    "                   |
 | `$$`    | Literal dollar sign                | "$"                      |
@@ -308,6 +309,24 @@ Format strings use `$` tokens to insert log metadata. The default formatter supp
 // Module-based format
 "[$M] $c$L$r $t - $m"
 ```
+
+### Sub-second Timestamps
+
+`Logcie_Log` carries `nanos` alongside `time`. Which clock is used depends on
+what `<time.h>` already exposes, checked at compile time:
+
+| Build                                    | Clock           | `nanos`  |
+| -----                                    | -----           | ------   |
+| C11 or later                             | `timespec_get`  | real     |
+| `_POSIX_C_SOURCE >= 199309L`             | `clock_gettime` | real     |
+| anything else, e.g. `-std=c99 -pedantic` | `time()`        | always 0 |
+
+Logcie never defines a feature-test macro itself — those only take effect
+before the first libc header, and a single-header library cannot know what you
+included above it. To get sub-second time on C99, define `_POSIX_C_SOURCE`
+yourself before any include.
+
+The timestamp is captured at the call site, not when the log is rendered.
 
 ## Filters
 
