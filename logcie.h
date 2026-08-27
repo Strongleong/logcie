@@ -1188,10 +1188,6 @@ static uint8_t logcie_remove_sink_by_index_locked(size_t index) {
 }
 
 uint8_t logcie_remove_sink(Logcie_Sink *sink) {
-  if (sink == &default_stdout_sink) {
-    return 0;  // unreachable
-  }
-
   LOGCIE_MUTEX_LOCK(logcie_mutex);
 
   for (size_t i = 0; i < logcie.sinks_len; i++) {
