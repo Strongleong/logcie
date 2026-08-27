@@ -19,6 +19,8 @@ int main(void) {
 
   printf("initial=%zu\n", logcie_get_sink_count());
 
+  logcie_remove_all_sinks();
+
   logcie_add_sink(&a);
   printf("after_first_add=%zu\n", logcie_get_sink_count());
   LOGCIE_INFO("one");

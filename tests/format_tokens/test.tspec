@@ -93,7 +93,7 @@ tokens.c
 "$x"
 :int return 0
 :blob stdout 3
-21
+23
 
 :test an_unknown_token_warns_and_is_skipped
 :command run

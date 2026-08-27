@@ -18,6 +18,7 @@ int main(void) {
   printf("default_sink_exists=%d\n", logcie_get_sink(0) != NULL);
   printf("out_of_range_is_null=%d\n", logcie_get_sink(99) == NULL);
 
+  logcie_remove_all_sinks();
   logcie_add_sink(&sink);
   printf("get_sink_returns_ours=%d\n", logcie_get_sink(0) == &sink);
 

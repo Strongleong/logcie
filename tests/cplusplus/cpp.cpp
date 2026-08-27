@@ -15,6 +15,7 @@ static Logcie_Sink sink = {
 
 int main() {
   sink.writer.data = stdout;
+  logcie_remove_sink_by_index(0);
   logcie_add_sink(&sink);
 
   LOGCIE_LOG_MOD("core",  DEBUG, "dropped by level");

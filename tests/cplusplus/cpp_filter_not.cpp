@@ -12,6 +12,7 @@ static Logcie_Sink sink = {
 
 int main() {
   sink.writer.data = stdout;
+  logcie_remove_all_sinks();
   logcie_add_sink(&sink);
 
   LOGCIE_LOG_MOD("quiet", INFO, "dropped");

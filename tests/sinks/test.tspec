@@ -18,5 +18,5 @@ a:two
 b:two
 after_remove=1
 b:three
-after_remove_all=1
+after_remove_all=0
 

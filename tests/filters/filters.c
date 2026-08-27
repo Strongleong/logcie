@@ -33,6 +33,7 @@ int main(int argc, char **argv) {
   else return 2;
 
   sink.writer.data = stdout;
+  logcie_remove_all_sinks();
   logcie_add_sink(&sink);
 
   LOGCIE_LOG_MOD("core", INFO,  "plain");

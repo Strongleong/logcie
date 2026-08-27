@@ -21,6 +21,7 @@ static Logcie_Sink sink = {
 
 int main(void) {
   sink.writer.data = stdout;
+  logcie_remove_all_sinks();
   logcie_add_sink(&sink);
 
   LOG_INFO("n=%d", 1);

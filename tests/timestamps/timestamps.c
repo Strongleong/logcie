@@ -44,6 +44,7 @@ static const char *emit(const char *format) {
 }
 
 int main(void) {
+  logcie_remove_all_sinks();
   logcie_add_sink(&sink);
 
   time_t    now   = time(NULL);

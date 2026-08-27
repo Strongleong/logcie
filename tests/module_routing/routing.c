@@ -42,6 +42,7 @@ int main(int argc, char **argv) {
   }
 
   sink.writer.data = stdout;
+  logcie_remove_all_sinks();
   logcie_add_sink(&sink);
 
   emit_everything();
