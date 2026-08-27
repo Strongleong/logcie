@@ -592,6 +592,9 @@ struct Logcie_Log {
 };
 
 // Helper macro for constructing a log message
+// NOTE: positional, not designated. C++ has no designated initializers before
+// C++20, so a designated one here makes the header unusable as C++ under
+// -pedantic on every earlier standard.
 #ifdef __cplusplus
 #define LOGCIE_INTERNAL_CREATE_LOG_MOD(mod, lvl, txt, f, l) \
   Logcie_Log {                                              \
@@ -1092,6 +1095,9 @@ static inline const char *get_logcie_level_color(Logcie_LogLevel level) {
   return logcie_level_color[level];
 }
 
+// NOTE: positional, not designated. C++ has no designated initializers before
+// C++20, so a designated one here makes the header unusable as C++ under
+// -pedantic on every earlier standard.
 static Logcie_Sink default_stdout_sink = {
   {logcie_printf_formatter, (void *)("$c$L$<6$r " LOGCIE_COLOR_GRAY "$f:$x$r: $m")},
   {logcie_printf_writer, NULL},
@@ -1114,6 +1120,9 @@ typedef struct Logcie_Logger {
   uint8_t      using_default;
 } Logcie_Logger;
 
+// NOTE: positional, not designated. C++ has no designated initializers before
+// C++20, so a designated one here makes the header unusable as C++ under
+// -pedantic on every earlier standard.
 static Logcie_Logger logcie = {
   {&default_stdout_sink},
   1,
