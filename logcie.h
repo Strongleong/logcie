@@ -1115,7 +1115,6 @@ __attribute__((constructor)) void init_default_stdout_sink(void) {
 typedef struct Logcie_Logger {
   Logcie_Sink *sinks[LOGCIE_MAX_SINKS];
   size_t       sinks_len;
-  uint8_t      using_default;
 } Logcie_Logger;
 
 // NOTE: positional, not designated. C++ has no designated initializers before
@@ -1123,7 +1122,6 @@ typedef struct Logcie_Logger {
 // -pedantic on every earlier standard.
 static Logcie_Logger logcie = {
   {&default_stdout_sink},
-  1,
   1,
 };
 
@@ -1164,11 +1162,6 @@ uint8_t logcie_add_sink(Logcie_Sink *sink) {
     sink->writer.data = stdout;
 #endif
 
-  if (logcie.using_default) {
-    logcie.sinks_len     = 0;
-    logcie.using_default = 0;
-  }
-
   if (logcie.sinks_len >= LOGCIE_MAX_SINKS) {
     LOGCIE_MUTEX_UNLOCK(logcie_mutex);
     return 0;
@@ -1183,10 +1176,6 @@ uint8_t logcie_add_sink(Logcie_Sink *sink) {
 
 static uint8_t logcie_remove_sink_by_index_locked(size_t index) {
   if (index >= logcie.sinks_len) {
-    return 0;
-  }
-
-  if (logcie.using_default) {
     return 0;
   }
 
@@ -1226,15 +1215,7 @@ uint8_t logcie_remove_sink_by_index(size_t index) {
 
 void logcie_remove_all_sinks(void) {
   LOGCIE_MUTEX_LOCK(logcie_mutex);
-
-  if (logcie.using_default) {
-    return;
-  }
-
-  logcie.sinks[0]      = &default_stdout_sink;
-  logcie.sinks_len     = 1;
-  logcie.using_default = 1;
-
+  logcie.sinks_len = 0;
   LOGCIE_MUTEX_UNLOCK(logcie_mutex);
 }
 
@@ -1389,7 +1370,7 @@ static size_t logcie_log_buf_size(const char *fmt, const Logcie_Log *log, va_lis
     fmt++;
   }
 
-  return size + 2; // \n\0
+  return size + 2;  // \n\0
 }
 
 size_t logcie_printf_formatter(Logcie_Writer *writer, void *data, Logcie_Log log, va_list *args) {
@@ -1422,7 +1403,6 @@ size_t logcie_printf_formatter(Logcie_Writer *writer, void *data, Logcie_Log log
       time_ready  = 1;                                                            \
     }                                                                             \
   } while (0)
-
 
   va_list args_copy;
   va_copy(args_copy, *args);
