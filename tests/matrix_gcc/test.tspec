@@ -133,3 +133,10 @@ gcc
 INFO n=1
 WARN s=x
 
+:test gcc_cpp11_pedantic
+:command compile
+:blob executable 3
+g++
+:blob args 78
+-std=c++11 -pedantic -Wall -Wextra -Werror -DLOGCIE_PEDANTIC -I../.. matrix.cpp -o .side_effects/cpp11
+:int return 0
