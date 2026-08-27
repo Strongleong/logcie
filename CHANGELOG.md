@@ -1,6 +1,6 @@
 # Changelog
 
-## Upcoming
+## v1.3.0
 
 ### Added
 - `$N` token for nanoseconds
