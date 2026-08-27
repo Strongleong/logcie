@@ -958,22 +958,18 @@ LOGCIE_DEF void logcie_set_colors(const char **colors);
 
 #include <assert.h>
 
-#ifndef _LOGCIE_ASSERT
-#define _LOGCIE_ASSERT(bool, msg) assert(bool &&msg)
+#ifndef LOGCIE_INTERNAL_ASSERT
+#define LOGCIE_INTERNAL_ASSERT(bool, msg) assert(bool &&msg)
 #endif
 
-#ifdef _LOGCIE_DEBUG
+#ifdef LOGCIE_DEBUG_CHECKS
 #if __STDC_VERSION__ >= 201112L  // Check for C11 support
-#define _LOGCIE_DEBUG_ASSERT(bool, msg) static_assert(bool, msg)
+#define LOGCIE_INTERNAL_DEBUG_ASSERT(bool, msg) static_assert(bool, msg)
 #else
-#define _LOGCIE_DEBUG_ASSERT(bool, msg) _LOGCIE_ASSERT(bool, msg)
+#define LOGCIE_INTERNAL_DEBUG_ASSERT(bool, msg) LOGCIE_INTERNAL_ASSERT(bool, msg)
 #endif
 #else
-#define _LOGCIE_DEBUG_ASSERT(bool, msg)
-#endif
-
-#ifndef _LOGCIE_ARR_LEN
-#define _LOGCIE_ARR_LEN(array) ((int)sizeof(array) / (int)sizeof((array)[0]))
+#define LOGCIE_INTERNAL_DEBUG_ASSERT(bool, msg)
 #endif
 
 #ifndef LOGCIE_THREAD_SAFE
@@ -1028,8 +1024,8 @@ static const char *logcie_level_label[] = {
 };
 
 static inline const char *get_logcie_level_label(Logcie_LogLevel level) {
-  _LOGCIE_DEBUG_ASSERT(Count_LOGCIE_LEVEL == 7, "Forgot to update get_logcie_level_label, you dummy dumb fuck");
-  _LOGCIE_ASSERT(level < Count_LOGCIE_LEVEL, "Unexpected log level");
+  LOGCIE_INTERNAL_DEBUG_ASSERT(Count_LOGCIE_LEVEL == 7, "Forgot to update get_logcie_level_label, you dummy dumb fuck");
+  LOGCIE_INTERNAL_ASSERT(level < Count_LOGCIE_LEVEL, "Unexpected log level");
   return logcie_level_label[level];
 }
 
@@ -1044,8 +1040,8 @@ static const char *logcie_level_label_upper[] = {
 };
 
 static inline const char *get_logcie_level_label_upper(Logcie_LogLevel level) {
-  _LOGCIE_DEBUG_ASSERT(Count_LOGCIE_LEVEL == 7, "Forgot to update get_logcie_level_label, you dummy dumb fuck");
-  _LOGCIE_ASSERT(level < Count_LOGCIE_LEVEL, "Unexpected log level");
+  LOGCIE_INTERNAL_DEBUG_ASSERT(Count_LOGCIE_LEVEL == 7, "Forgot to update get_logcie_level_label, you dummy dumb fuck");
+  LOGCIE_INTERNAL_ASSERT(level < Count_LOGCIE_LEVEL, "Unexpected log level");
   return logcie_level_label_upper[level];
 }
 
@@ -1068,7 +1064,7 @@ void logcie_set_colors(const char **colors) {
     // If compiled with -fsanitize=address and colors array is wrong it will crash
     // If it is compiled without -fsanitize=address then color would be NULL (I hope)
     const char *color = colors[Count_LOGCIE_LEVEL - 1];
-    _LOGCIE_ASSERT(color != NULL, "Size of array of colors in logcie_set_colors is not equal to Count_LOGCIE_LEVEL");
+    LOGCIE_INTERNAL_ASSERT(color != NULL, "Size of array of colors in logcie_set_colors is not equal to Count_LOGCIE_LEVEL");
     logcie_level_color = colors;
   } else {
     logcie_level_color = logcie_default_level_color;
@@ -1078,8 +1074,8 @@ void logcie_set_colors(const char **colors) {
 }
 
 static inline const char *get_logcie_level_color(Logcie_LogLevel level) {
-  _LOGCIE_DEBUG_ASSERT(Count_LOGCIE_LEVEL == 7, "Forgot to update get_logcie_level_label, you dummy dumb fuck");
-  _LOGCIE_ASSERT(level < Count_LOGCIE_LEVEL, "Unexpected log level");
+  LOGCIE_INTERNAL_DEBUG_ASSERT(Count_LOGCIE_LEVEL == 7, "Forgot to update get_logcie_level_label, you dummy dumb fuck");
+  LOGCIE_INTERNAL_ASSERT(level < Count_LOGCIE_LEVEL, "Unexpected log level");
   return logcie_level_color[level];
 }
 
@@ -1090,10 +1086,10 @@ static Logcie_Sink default_stdout_sink = {
 };
 
 #if defined(__has_attribute) && __has_attribute(constructor)
-#define __L_ATTR_CONSTRUCT
+#define LOGCIE_INTERNAL_HAS_CONSTRUCTOR
 #endif
 
-#ifdef __L_ATTR_CONSTRUCT
+#ifdef LOGCIE_INTERNAL_HAS_CONSTRUCTOR
 __attribute__((constructor)) void init_default_stdout_sink(void) {
   default_stdout_sink.writer.data = stdout;
 }
@@ -1139,7 +1135,7 @@ uint8_t logcie_add_sink(Logcie_Sink *sink) {
     return 0;
   }
 
-#ifndef __L_ATTR_CONSTRUCT
+#ifndef LOGCIE_INTERNAL_HAS_CONSTRUCTOR
   if (sink->writer.data == NULL)
     sink->writer.data = stdout;
 #endif
@@ -1236,7 +1232,7 @@ size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
 
   for (size_t i = 0; i < logcie.sinks_len; i++) {
     Logcie_Sink *sink = logcie.sinks[i];
-    _LOGCIE_ASSERT(sink && sink->formatter.format, "Sink have no formatter");
+    LOGCIE_INTERNAL_ASSERT(sink && sink->formatter.format, "Sink have no formatter");
 
     if (sink->filter.filter && !sink->filter.filter(sink->filter.data, &log)) {
       continue;
@@ -1262,7 +1258,7 @@ size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
 
 size_t logcie_printf_formatter(Logcie_Writer *writer, void *data, Logcie_Log log, va_list *args) {
   const char *fmt = (const char *)data;
-  _LOGCIE_ASSERT(writer, "Sink have no writer");
+  LOGCIE_INTERNAL_ASSERT(writer, "Sink have no writer");
 
   size_t output_len = 0;
   size_t last_len   = 0;
@@ -1380,7 +1376,7 @@ size_t logcie_printf_formatter(Logcie_Writer *writer, void *data, Logcie_Log log
 // TODO: logcie_writer_flush()???
 
 LOGCIE_DEF size_t logcie_printf_writer(void *user_data, const char *fmt, va_list *va, ...) {
-  _LOGCIE_ASSERT(user_data, "Printf writer have nothing to write to");
+  LOGCIE_INTERNAL_ASSERT(user_data, "Printf writer have nothing to write to");
   FILE   *file = (FILE *)user_data;
   va_list args;
 
@@ -1397,50 +1393,50 @@ LOGCIE_DEF size_t logcie_printf_writer(void *user_data, const char *fmt, va_list
 }
 
 LOGCIE_DEF uint8_t logcie_filter_not_fn(const void *data, Logcie_Log *log) {
-  _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_not'");
-  _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_not'");
+  LOGCIE_INTERNAL_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_not'");
+  LOGCIE_INTERNAL_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_not'");
   Logcie_Filter *filter = (Logcie_Filter *)data;
   return !filter->filter(filter->data, log);
 }
 
 LOGCIE_DEF uint8_t logcie_filter_and_fn(const void *data, Logcie_Log *log) {
-  _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_and'");
-  _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_and'");
+  LOGCIE_INTERNAL_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_and'");
+  LOGCIE_INTERNAL_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_and'");
   Logcie_FilterCombinationData *d = (Logcie_FilterCombinationData *)data;
   return d->a.filter(d->a.data, log) && d->b.filter(d->b.data, log);
 }
 
 LOGCIE_DEF uint8_t logcie_filter_or_fn(const void *data, Logcie_Log *log) {
-  _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_or'");
-  _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_or'");
+  LOGCIE_INTERNAL_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_or'");
+  LOGCIE_INTERNAL_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_or'");
   Logcie_FilterCombinationData *d = (Logcie_FilterCombinationData *)data;
   return d->a.filter(d->a.data, log) || d->b.filter(d->b.data, log);
 }
 
 LOGCIE_DEF uint8_t logcie_filter_level_min_fn(const void *data, Logcie_Log *log) {
-  _LOGCIE_ASSERT((uintptr_t)data < Count_LOGCIE_LEVEL, "Param 'data' is not correct for filter 'logcie_filter_level_min'");
-  _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_level_min'");
+  LOGCIE_INTERNAL_ASSERT((uintptr_t)data < Count_LOGCIE_LEVEL, "Param 'data' is not correct for filter 'logcie_filter_level_min'");
+  LOGCIE_INTERNAL_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_level_min'");
   Logcie_LogLevel level = (Logcie_LogLevel)(uintptr_t)data;
   return log->level >= level;
 }
 
 LOGCIE_DEF uint8_t logcie_filter_level_max_fn(const void *data, Logcie_Log *log) {
-  _LOGCIE_ASSERT((uintptr_t)data < Count_LOGCIE_LEVEL, "Param 'data' is not correct for filter 'logcie_filter_level_max'");
-  _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_level_max'");
+  LOGCIE_INTERNAL_ASSERT((uintptr_t)data < Count_LOGCIE_LEVEL, "Param 'data' is not correct for filter 'logcie_filter_level_max'");
+  LOGCIE_INTERNAL_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_level_max'");
   Logcie_LogLevel level = (Logcie_LogLevel)(uintptr_t)data;
   return log->level <= level;
 }
 
 LOGCIE_DEF uint8_t logcie_filter_module_eq_fn(const void *data, Logcie_Log *log) {
-  _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_module_eq'");
-  _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_module_eq'");
+  LOGCIE_INTERNAL_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_module_eq'");
+  LOGCIE_INTERNAL_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_module_eq'");
   const char *module = (const char *)data;
   return log->module && strcmp(module, log->module) == 0;
 }
 
 LOGCIE_DEF uint8_t logcie_filter_module_prefix_eq_fn(const void *data, Logcie_Log *log) {
-  _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_module_prefix_eq'");
-  _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_module_prefix_eq'");
+  LOGCIE_INTERNAL_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_module_prefix_eq'");
+  LOGCIE_INTERNAL_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_module_prefix_eq'");
 
   const char *prefix = (const char *)data;
 
@@ -1468,8 +1464,8 @@ LOGCIE_DEF uint8_t logcie_filter_module_prefix_eq_fn(const void *data, Logcie_Lo
 }
 
 LOGCIE_DEF uint8_t logcie_filter_message_contains_fn(const void *data, Logcie_Log *log) {
-  _LOGCIE_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_message_contains'");
-  _LOGCIE_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_message_contains'");
+  LOGCIE_INTERNAL_ASSERT(data, "Param 'data' is not present for filter 'logcie_filter_message_contains'");
+  LOGCIE_INTERNAL_ASSERT(log, "Param 'log' is not present for filter 'logcie_filter_message_contains'");
   const char *str = (const char *)data;
   return log->msg && strstr(log->msg, str);
 }
