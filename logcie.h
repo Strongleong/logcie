@@ -580,6 +580,7 @@ typedef struct Logcie_LogLocation {
  * @field level     Severity level of the log message
  * @field msg       Format string for the log message
  * @field time      Timestamp when the log was created
+ * @field nanos     Nanoseconds. 0 when not supported
  * @field module    Optional module name for categorizing logs
  * @field location  Source file and line number where log was called
  */
@@ -587,40 +588,13 @@ struct Logcie_Log {
   Logcie_LogLevel    level;
   const char        *msg;
   time_t             time;
+  uint32_t           nanos;
   const char        *module;
   Logcie_LogLocation location;
 };
 
-// Helper macro for constructing a log message
-// NOTE: positional, not designated. C++ has no designated initializers before
-// C++20, so a designated one here makes the header unusable as C++ under
-// -pedantic on every earlier standard.
-#ifdef __cplusplus
-#define LOGCIE_INTERNAL_CREATE_LOG_MOD(mod, lvl, txt, f, l) \
-  Logcie_Log {                                              \
-    lvl,                                                    \
-      txt,                                                  \
-      time(NULL),                                           \
-      mod,                                                  \
-    {                                                       \
-      f, l,                                                 \
-    }                                                       \
-  }
-#else
-#define LOGCIE_INTERNAL_CREATE_LOG_MOD(mod, lvl, txt, f, l) \
-  (Logcie_Log) {                                            \
-    .level    = lvl,                                        \
-    .msg      = txt,                                        \
-    .time     = time(NULL),                                 \
-    .module   = mod,                                        \
-    .location = {                                           \
-      .file = f,                                            \
-      .line = l,                                            \
-    }                                                       \
-  }
-#endif
-
-#define LOGCIE_INTERNAL_CREATE_LOG(lvl, txt, f, l) LOGCIE_INTERNAL_CREATE_LOG_MOD(LOGCIE_MODULE, lvl, txt, f, l)
+#define LOGCIE_INTERNAL_CREATE_LOG(lvl, txt, f, l)          logcie_make_log(LOGCIE_MODULE, lvl, txt, f, l)
+#define LOGCIE_INTERNAL_CREATE_LOG_MOD(mod, lvl, txt, f, l) logcie_make_log(mod, lvl, txt, f, l)
 
 // WARN: DEPRECATED
 //       LOGCIE_PRINTF_TYPECHECK was overridable by user and it will be removed in v2.0.0
@@ -698,6 +672,18 @@ struct Logcie_Log {
 LOGCIE_DEF size_t logcie_log(Logcie_Log log, const char *fmt, ...) LOGCIE_INTERNAL_PRINTF_TYPE_CHECK(2, 3);
 
 /**
+ * @brief Constructor for Logcie_Log strcture
+ *
+ * @param module    Optional module name for categorizing logs
+ * @param level     Severity level of the log message
+ * @param msg       Format string for the log message
+ * @param file      Source file name where log was called
+ * @param line      Line number in source file where log was called
+ * @note this function is invoked internally by macro chain statring from macros like LOGCIE_INFO
+ */
+LOGCIE_DEF Logcie_Log logcie_make_log(const char *module, Logcie_LogLevel level, const char *msg, const char *file, uint32_t line);
+
+/**
  * @brief Gets the number of sinks currently registered in the logger.
  *
  * This includes both user-added sinks and the default stdout sink.
@@ -719,12 +705,12 @@ LOGCIE_DEF size_t logcie_get_sink_count(void);
 LOGCIE_DEF Logcie_Sink *logcie_get_sink(size_t index);
 
 /**
-* @brief Returns pointer to default stdout sink
-*
-* Allows you to custompize default sink rather than added brand new one.
-*
-* @return Const pointer to the default Logcie_Sink
-*/
+ * @brief Returns pointer to default stdout sink
+ *
+ * Allows you to custompize default sink rather than added brand new one.
+ *
+ * @return Const pointer to the default Logcie_Sink
+ */
 LOGCIE_DEF const Logcie_Sink *logcie_get_default_sink(void);
 
 /**
@@ -1289,6 +1275,37 @@ size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
 
   va_end(args);
   return 0;
+}
+
+LOGCIE_DEF Logcie_Log logcie_make_log(const char *module, Logcie_LogLevel level, const char *msg, const char *file, uint32_t line) {
+  Logcie_Log log;
+
+  log.module        = module;
+  log.level         = level;
+  log.msg           = msg;
+  log.location.file = file;
+  log.location.line = line;
+
+#if defined(TIME_UTC)
+  struct timespec ts;
+
+  if (timespec_get(&ts, TIME_UTC) == TIME_UTC) {
+    log.time  = ts.tv_sec;
+    log.nanos = (uint32_t)ts.tv_nsec;
+  }
+#elif defined(CLOCK_REALTIME)
+  struct timespec ts;
+
+  if (clock_gettime(CLOCK_REALTIME, &ts) == 0) {
+    log.time  = ts.tv_sec;
+    log.nanos = (uint32_t)ts.tv_nsec;
+  }
+#else
+  log.time  = time(NULL);
+  log.nanos = 0;
+#endif
+
+  return log;
 }
 
 size_t logcie_printf_formatter(Logcie_Writer *writer, void *data, Logcie_Log log, va_list *args) {
