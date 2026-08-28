@@ -47,7 +47,7 @@ static void *destroyer(void *arg) {
     }
 
     *sink = (Logcie_Sink){
-      .formatter = {logcie_printf_formatter, "[$L] $M: $m"},
+      .formatter = {logcie_token_formatter, "[$L] $M: $m"},
       .writer    = {null_writer, (void *)1},
       .filter    = logcie_filter_level_min(LOGCIE_LEVEL_INFO)
     };
@@ -67,8 +67,8 @@ static void *destroyer(void *arg) {
 
 int main(void) {
   Logcie_Sink stdout_sink = {
-    .formatter = {logcie_printf_formatter, "[$c$L$r] $M: $m"},
-    .writer    = {logcie_printf_writer, stdout},
+    .formatter = {logcie_token_formatter, "[$c$L$r] $M: $m"},
+    .writer    = {logcie_file_writer, stdout},
     .filter    = logcie_filter_level_min(LOGCIE_LEVEL_INFO)
   };
 

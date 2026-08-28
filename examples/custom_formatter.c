@@ -37,7 +37,7 @@ size_t my_simple_formatter(Logcie_Writer *writer, void *user_data, Logcie_Log lo
 int main(void) {
   Logcie_Sink my_sink = {
     .formatter = {my_simple_formatter, NULL},
-    .writer    = {logcie_printf_writer, stdout},
+    .writer    = {logcie_file_writer, stdout},
     .filter    = logcie_filter_level_min(LOGCIE_LEVEL_TRACE)
   };
 

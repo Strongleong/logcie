@@ -9,8 +9,8 @@ class TimeoutData {
 
 int main() {
   Logcie_Sink sink = {
-    .formatter = {logcie_printf_formatter, (void *)("[$M::$c$L$r] $m")},
-    .writer    = {logcie_printf_writer, stdout},
+    .formatter = {logcie_token_formatter, (void *)("[$M::$c$L$r] $m")},
+    .writer    = {logcie_file_writer, stdout},
     .filter    = logcie_filter_and(
       (Logcie_Filter{
         .filter = [](const void *data, Logcie_Log *log) -> uint8_t {

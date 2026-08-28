@@ -50,8 +50,8 @@ uint8_t filter_timout(const void *data, Logcie_Log *log) {
 
 int main(void) {
   Logcie_Sink prod_console = {
-    .formatter = {logcie_printf_formatter, "$c$L$r $m"},
-    .writer    = {logcie_printf_writer, stdout},
+    .formatter = {logcie_token_formatter, "$c$L$r $m"},
+    .writer    = {logcie_file_writer, stdout},
     .filter    = logcie_filter_or(
       logcie_filter_level_min(LOGCIE_LEVEL_WARN),
       logcie_filter_message_contains("CRITICAL")
@@ -59,8 +59,8 @@ int main(void) {
   };
 
   Logcie_Sink faulty_module_supressor = {
-    .formatter = {logcie_printf_formatter, "$L [$M] $m"},
-    .writer    = {logcie_printf_writer, stdout},
+    .formatter = {logcie_token_formatter, "$L [$M] $m"},
+    .writer    = {logcie_file_writer, stdout},
     .filter    = logcie_filter_or(
       logcie_filter_not(logcie_filter_module_eq("network")),
       logcie_filter_level_min(LOGCIE_LEVEL_ERROR)
@@ -68,8 +68,8 @@ int main(void) {
   };
 
   Logcie_Sink debug_specific_module = {
-    .formatter = {logcie_printf_formatter, LOGCIE_COLOR_GRAY "$f:$x$r [$M:$c$L$r]  $m"},
-    .writer    = {logcie_printf_writer, stdout},
+    .formatter = {logcie_token_formatter, LOGCIE_COLOR_GRAY "$f:$x$r [$M:$c$L$r]  $m"},
+    .writer    = {logcie_file_writer, stdout},
     .filter    = logcie_filter_or(
       logcie_filter_and(
         logcie_filter_module_eq("auth"),
@@ -80,8 +80,8 @@ int main(void) {
   };
 
   Logcie_Sink max_one_log_per_second = {
-    .formatter = {logcie_printf_formatter, LOGCIE_COLOR_GRAY "(throttled) $f:$x$r [$M:$c$L$r]  $m"},
-    .writer    = {logcie_printf_writer, stdout},
+    .formatter = {logcie_token_formatter, LOGCIE_COLOR_GRAY "(throttled) $f:$x$r [$M:$c$L$r]  $m"},
+    .writer    = {logcie_file_writer, stdout},
     .filter    = {filter_timout, &(TimeoutFilterData){.last_time = 0, .timeout_ms = 1000}}
   };
 

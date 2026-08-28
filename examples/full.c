@@ -46,8 +46,8 @@ int main() {
   FILE *logfile = fopen("app.log", "w");
 
   Logcie_Sink file_sink = (Logcie_Sink){
-    .formatter = {logcie_printf_formatter, "$d $t $f:$x [$M::$L] $m"},
-    .writer    = {logcie_printf_writer, logfile},
+    .formatter = {logcie_token_formatter, "$d $t $f:$x [$M::$L] $m"},
+    .writer    = {logcie_file_writer, logfile},
     // Filter our logs with level less that verbose
     // OR
     // every "importand" log, except from that one file
@@ -67,8 +67,8 @@ int main() {
 
   // Create and add a filtered console sink (stack allocated)
   Logcie_Sink console_sink = {
-    .formatter = {logcie_printf_formatter, "$c[$L]$r $t - $m"},
-    .writer    = {logcie_printf_writer, stdout},
+    .formatter = {logcie_token_formatter, "$c[$L]$r $t - $m"},
+    .writer    = {logcie_file_writer, stdout},
     .filter    = logcie_filter_and(
       logcie_filter_level_min(LOGCIE_LEVEL_INFO),
       ((Logcie_Filter){console_filter, current_user})
