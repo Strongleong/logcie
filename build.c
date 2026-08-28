@@ -88,14 +88,14 @@ uint8_t stdout_sink_filter(const void *data, Logcie_Log *log) {
 }
 
 static Logcie_Sink stdout_sink = {
-  .formatter = {logcie_printf_formatter, LOGCIE_COLOR_GRAY "[$M]$r $c$L$r:$<6$m"},
-  .writer    = {logcie_printf_writer, NULL},
+  .formatter = {logcie_token_formatter, LOGCIE_COLOR_GRAY "[$M]$r $c$L$r:$<6$m"},
+  .writer    = {logcie_file_writer, NULL},
   .filter    = {stdout_sink_filter, NULL}
 };
 
 static Logcie_Sink optly_sink = {
-  .formatter = {logcie_printf_formatter, LOGCIE_COLOR_GRAY "[$M]$r $c$L$r:$<6$m"},
-  .writer    = {logcie_printf_writer, NULL},
+  .formatter = {logcie_token_formatter, LOGCIE_COLOR_GRAY "[$M]$r $c$L$r:$<6$m"},
+  .writer    = {logcie_file_writer, NULL},
   .filter    = logcie_filter_and(
     logcie_filter_module_eq("optly"),
     logcie_filter_level_min(LOGCIE_LEVEL_INFO)
