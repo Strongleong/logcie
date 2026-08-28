@@ -83,6 +83,12 @@ Define any of these **before** you include `logcie.h` (or before
 | `LOGCIE_DEF`                     | Linkage qualifier for public functions (e.g. `static`).                                                            | `extern`                 |
 | `LOGCIE_PEDANTIC`                | Forces the strict C99 macro fallback (`LOGCIE_*_VA`) even on GCC/Clang.                                            | *(not defined)*          |
 | `LOGCIE_COLOR_*`                 | ANSI escape codes for each level colour. You can override them or use `logcie_set_colors()`.                       | *(see source)*           |
+| `LOGCIE_MODULE_SEPARATOR`        | Character separating levels of a module name. (see [Module-Based Logging](#module-based-logging))                  | `'.'`                    |
+| `LOGCIE_MAX_SINKS`               | How many sinks can be registered at once. `logcie_add_sink` returns 0 once full.                                   | `16`                     |
+| `LOGCIE_MAX_LINE`                | Stack buffer a line is formatted into. Lines that fit cost no allocation.                                          | `1024`                   |
+| `LOGCIE_MALLOC` / `LOGCIE_FREE`  | Allocator used *only* for lines longer than `LOGCIE_MAX_LINE`. Define both or neither.                             | `malloc` / `free`        |
+| `LOGCIE_NO_MALLOC`               | Never allocate. Lines longer than `LOGCIE_MAX_LINE` are truncated instead.                                         | *(not defined)*          |
+| `LOGCIE_DEBUG_CHECKS`            | Enable internal consistency assertions.                                                                            | *(not defined)*          |
 
 > **Note:** The compiler‑pedantic fallback (`LOGCIE_VA_LOGS`) is automatically defined when variadic macros are not available - you don’t need to touch it.
 
@@ -144,11 +150,53 @@ Logcie is built around three core components:
 
 ### Formatter
 
-Transforms a log structure into formatted output and passes it to [Writer](#writer)
+Turns a log into bytes and hands them to the [Writer](#writer). It owns the
+serialization, so `logcie_token_formatter` is one choice, not the only possible
+one — a JSON or binary formatter would be the same interface with different
+output. Its `user_data` is whatever that formatter needs: for the built-in one
+that is a [format token](#format-tokens) string.
+
+```c
+size_t my_formatter(Logcie_Writer *writer, void *user_data, Logcie_Log log, va_list *args);
+```
+
+Use `logcie_render_message(buf, cap, &log, args)` to render `log.msg` and its
+arguments — every formatter needs it, and it handles the `va_list` copying.
 
 ### Writer
 
-Handles where formatted output goes (FILE*, network, etc.).
+Puts one finished line somewhere: a `FILE *`, a socket, a ring buffer, a UART.
+
+```c
+size_t my_writer(void *user_data, const Logcie_Log *log, const char *bytes, size_t len);
+```
+
+Three things worth knowing:
+
+- **One call is one complete line**, terminating newline included. A writer is
+  never handed a fragment, so a sink that treats each call as one record —
+  syslog, a network endpoint — is safe.
+- **The log comes along** so a transport can use metadata as a value instead of
+  parsing it back out of the text. `syslog(3)` wants a priority, Android wants a
+  priority and a tag, a network sink may want the module as a routing key.
+- **`log->msg` is the format string from the call site, not the text.** The
+  rendered line is `bytes`. Use `bytes`; use `log` for metadata.
+
+`bytes` is not NUL terminated, so always use `len`.
+
+```c
+// route by severity without needing two sinks
+size_t console_writer(void *user_data, const Logcie_Log *log, const char *bytes, size_t len) {
+    (void)user_data;
+    FILE *out = log->level >= LOGCIE_LEVEL_WARN ? stderr : stdout;
+    return fwrite(bytes, 1, len, out);
+}
+```
+
+A writer with `NULL` user data discards everything. `logcie_file_writer` does
+exactly that, which is the cheapest way to mute a sink without removing it —
+and the first thing to check when a sink is unexpectedly silent, since Logcie
+does not substitute `stdout` for you.
 
 ### Filter
 
@@ -220,24 +268,31 @@ logcie_remove_all_sinks();
 ### Creating a Custom Sink
 
 ```c
-// Create a file sink for error logs
-Logcie_Sink error_sink = {
+// Create a file sink for error logs.
+// NOTE: fopen() is not a constant expression, so the writer target is filled
+//       in at run time rather than in the initializer.
+static Logcie_Sink error_sink = {
     // nice format: date, time, level, module, message
-    .formatter = {logcie_token_formatter,  "$d $t [$L] $f:$x - $m"},
-    .writer    = {logcie_file_writer, fopen("errors.log", "a")},
-    .filter    = {logcie_filter_level_min_fn, LOGCIE_LEVEL_ERROR}
+    .formatter = {logcie_token_formatter, "$d $t [$L] $f:$x - $m"},
+    .writer    = {logcie_file_writer, NULL},
+    .filter    = logcie_filter_level_min(LOGCIE_LEVEL_ERROR)
 };
 
-// Add it to the logger
-logcie_add_sink(&error_sink);
+int main(void) {
+    error_sink.writer.data = fopen("errors.log", "a");
+    logcie_add_sink(&error_sink);
+}
 ```
 
-If you want to keep default sink you can do it like this:
+The filter field takes a `Logcie_Filter`, which the `logcie_filter_*` macros
+build for you. Writing `{logcie_filter_level_min_fn, LOGCIE_LEVEL_ERROR}` by
+hand puts an `int` where a `const void *` belongs.
+
+The default sink stays registered when you add your own, so there is nothing to
+restore. To drop it, remove it like any other sink:
 
 ```c
-Logcie_Sink *default_sink = logcie_get_sink(0);
-logcie_add_sink(&file_sink);
-logcie_add_sink(&default_sink);
+logcie_remove_sink(logcie_get_default_sink());
 ```
 
 ## Module-Based Logging

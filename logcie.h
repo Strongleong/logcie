@@ -542,15 +542,23 @@ typedef struct Logcie_Writer {
 /**
  * @brief Formatter function type signature.
  *
- * A formatter function is responsible for converting a Logcie_Log structure
- * into formatted output that would be written to a sink. It should call writer->write
- * with formatted chunks of log to write them to a sink.
+ * A formatter turns a Logcie_Log into bytes and hands them to the writer. It
+ * owns the serialization: logcie_token_formatter renders $ tokens into
+ * readable text, but a JSON or a binary formatter is the same interface with
+ * different output.
  *
- * @param writer     Pointer to writer (see Logcie_Writer)
- * @param user_data  Data for formatting logs (Format string, options flags, current phase of the moon, etc)
+ * @param writer     Writer to hand the finished line to
+ * @param user_data  Whatever this formatter needs. logcie_token_formatter
+ *                   reads it as a token string; another formatter may want a
+ *                   field mask, or nothing at all
  * @param log        Log to format
- * @param va         Variadic arguments that was passed to logging function (LOGCIE_INFO("message %s", "this would be in va")
- * @return Number of characters written to the sink
+ * @param args       Arguments passed to the logging macro, for log->msg.
+ *                   Use logcie_render_message() rather than handling them by hand
+ * @return Number of bytes handed to the writer
+ *
+ * @note Call writer->write once, with the whole line. A writer is allowed to
+ *       treat one call as one record, so splitting a line across calls would
+ *       break syslog and network sinks.
  */
 typedef size_t(Logcie_FormatterFn)(Logcie_Writer *writer, void *user_data, Logcie_Log log, va_list *args);
 
@@ -850,14 +858,19 @@ LOGCIE_DEF void logcie_remove_all_sinks(void);
 LOGCIE_DEF size_t logcie_token_formatter(Logcie_Writer *writer, void *user_data, Logcie_Log log, va_list *args);
 
 /**
- * @brief Default printf writer
+ * @brief Built-in writer that appends a line to a FILE *
  *
- * This is the built-in writer that writes logs using fprintf
+ * @param user_data  FILE * to write to, or NULL to discard
+ * @param log        Metadata of the line. Unused here, but part of the contract
+ * @param bytes      Formatted line, including its terminating newline.
+ *                   Not NUL terminated -- use len
+ * @param len        Number of bytes
+ * @return Number of bytes written, or 0 when user_data is NULL
  *
- * @param user_data  Pointer to FILE where logs would be written
- * @param bytes      Array of bytes to output
- * @param len        Size of array of bytes
- * @return Total number of characters written to the sink by writer
+ * @note A NULL user_data discards the line. That is the cheapest way to mute a
+ *       sink without removing it, and /dev/null without opening it. It is also
+ *       the first thing to check when a sink is unexpectedly silent: logcie
+ *       does not substitute stdout for you.
  */
 LOGCIE_DEF size_t logcie_file_writer(void *user_data, const Logcie_Log *log, const char *bytes, size_t len);
 
