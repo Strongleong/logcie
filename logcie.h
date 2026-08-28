@@ -1501,8 +1501,12 @@ size_t logcie_printf_formatter(Logcie_Writer *writer, void *data, Logcie_Log log
 // TODO: logcie_writer_flush()???
 
 LOGCIE_DEF size_t logcie_printf_writer(void *user_data, const char *bytes, size_t len) {
-  LOGCIE_INTERNAL_ASSERT(user_data, "Printf writer have nothing to write to");
   FILE  *file    = (FILE *)user_data;
+
+  if (file == NULL) {
+    return 0;
+  }
+
   size_t written = fprintf(file, "%.*s", (uint32_t)len, bytes);
   return written;
 }
