@@ -70,7 +70,7 @@ $
 :blob executable 20
 .side_effects/tokens
 :blob args 9
-"[$L$<6]"
+"[$L$<5]"
 :int return 0
 :blob stdout 8
 [INFO ]
