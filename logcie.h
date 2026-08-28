@@ -99,7 +99,7 @@
  *                                   `$t` - Time (HH:MM:SS)
  *                                   `$N` - Nanoseconds
  *                                   `$z` - Timezone offset
- *                                   `$<n - Pads the previous token out to n-1 columns
+ *                                   `$<n - Pads the previous token out to n columns
  *                                   `$$` - Literal dollar sign
  *
  *   Also by default, Logcie already has a Sink installed with the printf writer and formatter,
@@ -787,7 +787,7 @@ LOGCIE_DEF void logcie_remove_all_sinks(void);
  * `$t` - Time (HH:MM:SS)
  * `$N` - Nanoseconds
  * `$z` - Timezone offset
- * `$<n - Pads the previous token out to n-1 columns
+ * `$<n - Pads the previous token out to n columns
  * `$$` - Literal dollar sign
  *
  * @param writer     Pointer to writer (see Logcie_Writer)
@@ -1472,7 +1472,7 @@ size_t logcie_printf_formatter(Logcie_Writer *writer, void *data, Logcie_Log log
           fmt++;
         }
 
-        int16_t pad = target - last_len - 1;
+        int16_t pad = target - last_len;
 
         if (pad > 0) {
           last_len = snprintf(log_buf + output_len, log_buf_size - output_len, "%*s", pad, "");
