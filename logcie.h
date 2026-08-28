@@ -1158,8 +1158,9 @@ uint8_t logcie_add_sink(Logcie_Sink *sink) {
   }
 
 #ifndef LOGCIE_INTERNAL_HAS_CONSTRUCTOR
-  if (sink->writer.data == NULL)
+  if (sink == default_stdout_sink && sink->writer.data == NULL) {
     sink->writer.data = stdout;
+  }
 #endif
 
   if (logcie.sinks_len >= LOGCIE_MAX_SINKS) {
