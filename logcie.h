@@ -85,7 +85,7 @@
  *   It would not be that great if Logcie was just empty framework and you need to set it up by yourself,
  *   so Logcie comes with a couple of pre-defined functions:
  *
- *      - logcie_printf_writer    - built-in writer. Outputs logs in FILE* via vfprintf
+ *      - logcie_printf_writer    - built-in writer. Outputs logs in FILE* via fprintf
  *      - logcie_printf_formatter - built-in formatter that provides rich formatting using $ tokens. Here is the list:
  *                                   `$m` - Log message with printf formatting
  *                                   `$f` - Source file name
@@ -104,9 +104,8 @@
  *
  *   Also by default, Logcie already has a Sink installed with the printf writer and formatter,
  *   so you can start using it immediately after including the library.
- *
- *   Note: When you add your first Sink using `logcie_add_sink()`, the default printf Sink is removed.
- *   You can restore it and remove your own sinks by calling `logcie_remove_all_sinks()`.
+ *   You can configure it to your liking wiht `logcie_get_default_sink()`, or remove it
+ *   with `logcie_remove_all_sinks()`, `logcie_remove_sink_by_index(0)` or `logcie_remove_sink(logcie_get_default_sink())`
  *
  * Colors:
  *   As you can see, `logcie_printf_formatter()` has support for ANSI colored output. It have
@@ -467,9 +466,9 @@ typedef struct Logcie_Log Logcie_Log;
  * to a sink. Sink could be anything, from FILE* to a HTTP API endpoint,
  * so this is why it is a customizable function.
  *
- * @param user_data  Data for writing logs (FILE *, API endpoint, etc.)
- * @param fmt        String to output (can be printf format string)
- * @param va         List of arguments. Can be null, and arguments can be provided as variadics
+ * @param user_data  Pointer to FILE where logs would be written
+ * @param bytes      Array of bytes to output
+ * @param len        Size of array of bytes
  * @return Total number of characters written to the sink by writer
  */
 typedef size_t(Logcie_WriterFn)(void *user_data, const char *bytes, size_t len);
@@ -751,12 +750,11 @@ LOGCIE_DEF uint8_t logcie_remove_sink(Logcie_Sink *sink);
  * @param index Zero-based index of the sink to remove
  * @return 1 if sink was found and removed, 0 otherwise
  * @note The sink memory is not freed by this function. Caller is responsible.
- * @note Index 0 is the default stdout sink and cannot be removed
  */
 LOGCIE_DEF uint8_t logcie_remove_sink_by_index(size_t index);
 
 /**
- * @brief Removes all sinks except the default stdout sink.
+ * @brief Removes all sinks.
  *
  * Resets the logger to its initial state with only the default stdout sink.
  * Useful for cleanup or reconfiguration scenarios.
@@ -801,11 +799,11 @@ LOGCIE_DEF size_t logcie_printf_formatter(Logcie_Writer *writer, void *user_data
 /**
  * @brief Default printf writer
  *
- * This is the built-in writer that writes logs using vfprintf
+ * This is the built-in writer that writes logs using fprintf
  *
  * @param user_data  Pointer to FILE where logs would be written
- * @param fmt        String to output (can be printf format string)
- * @param va         List of arguments. Can be null, and arguments can be provided as variadics
+ * @param bytes      Array of bytes to output
+ * @param len        Size of array of bytes
  * @return Total number of characters written to the sink by writer
  */
 LOGCIE_DEF size_t logcie_printf_writer(void *user_data, const char *bytes, size_t len);
