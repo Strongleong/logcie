@@ -188,8 +188,8 @@ This is how default sinks looks like:
 
 ```c
 static Logcie_Sink default_stdout_sink = {
-    .formatter = {logcie_printf_formatter, "$c$L$r " LOGCIE_COLOR_GRAY "$f:$x$r: $m"},
-    .writer    = {logcie_printf_writer, stdout},
+    .formatter = {logcie_token_formatter, "$c$L$r " LOGCIE_COLOR_GRAY "$f:$x$r: $m"},
+    .writer    = {logcie_file_writer, stdout},
     .filter    = {NULL, NULL},
 };
 ```
@@ -223,8 +223,8 @@ logcie_remove_all_sinks();
 // Create a file sink for error logs
 Logcie_Sink error_sink = {
     // nice format: date, time, level, module, message
-    .formatter = {logcie_printf_formatter,  "$d $t [$L] $f:$x - $m"},
-    .writer    = {logcie_printf_writer, fopen("errors.log", "a")},
+    .formatter = {logcie_token_formatter,  "$d $t [$L] $f:$x - $m"},
+    .writer    = {logcie_file_writer, fopen("errors.log", "a")},
     .filter    = {logcie_filter_level_min_fn, LOGCIE_LEVEL_ERROR}
 };
 
