@@ -194,15 +194,28 @@ static Logcie_Sink default_stdout_sink = {
 };
 ```
 
-However, when you add your first Sink using `logcie_add_sink()`, the default printf Sink is removed.
-This design choice ensures you have full control over sink configuration once you start customizing.
+ You can configure it to your liking with:
 
-Important behaviors to understand:
- - Initial state: By default, one stdout sink exists at index 0
- - First sink addition: When you add your first custom sink, the default sink is removed
- - Restoring defaults: Use logcie_remove_all_sinks() to return to the initial default configuration
+```c
+Logcie_Sink *default_sink = logcie_get_default_sink();
 
-If you want to keep both the default stdout sink and add additional sinks, you must re-add it explicitly.
+// For example: add filter
+default_sink->filter = logcie_filter_level_min(LOGCIE_LEVEL_ERROR);
+```
+
+Or you can remove defualt sink all together with:
+
+```c
+// Remove default sink by pointer
+logcie_remove_sink(logcie_get_default_sink());
+
+// Or remove by its index. Scinse default sink is there from start
+// it will have index 0
+logcie_remove_sink_by_index(0);
+
+// Or just empty whole thing
+logcie_remove_all_sinks();
+```
 
 ### Creating a Custom Sink
 
@@ -280,22 +293,22 @@ Since logcie_add_sink() stores the pointer to your sink structure (not a copy), 
 
 Format strings use `$` tokens to insert log metadata. The default formatter supports the following tokens:
 
-| Token   | Description                        | Example Output           |
-| ------- | -------------                      | ----------------         |
-| `$m`    | Log message with printf formatting | "Connection established" |
-| `$f`    | Source file name                   | "main.c"                 |
-| `$x`    | Line number                        | "42"                     |
-| `$M`    | Module name                        | "network"                |
-| `$l`    | Log level (lowercase)              | "info"                   |
-| `$L`    | Log level (uppercase)              | "INFO"                   |
-| `$c`    | ANSI color code for log level      | `\x1b[36;20m`            |
-| `$r`    | ANSI reset color code              | `\x1b[0m`                |
-| `$d`    | Date (YYYY-MM-DD)                  | "2025-12-24"             |
-| `$t`    | Time (HH:MM:SS)                    | "14:30:15"               |
-| `$N`    | Nanoseconds                        | "970431843"              |
-| `$z`    | Timezone offset                    | "+3"                     |
-| `$<n`   | Pads with n spaces                 | "    "                   |
-| `$$`    | Literal dollar sign                | "$"                      |
+| Token   | Description                                            | Example Output           |
+| ------- | -------------                                          | ----------------         |
+| `$m`    | Log message with printf formatting                     | "Connection established" |
+| `$f`    | Source file name                                       | "main.c"                 |
+| `$x`    | Line number                                            | "42"                     |
+| `$M`    | Module name                                            | "network"                |
+| `$l`    | Log level (lowercase)                                  | "info"                   |
+| `$L`    | Log level (uppercase)                                  | "INFO"                   |
+| `$c`    | ANSI color code for log level                          | `\x1b[36;20m`            |
+| `$r`    | ANSI reset color code                                  | `\x1b[0m`                |
+| `$d`    | Date (YYYY-MM-DD)                                      | "2025-12-24"             |
+| `$t`    | Time (HH:MM:SS)                                        | "14:30:15"               |
+| `$N`    | Nanoseconds                                            | "970431843"              |
+| `$z`    | Timezone offset                                        | "+3"                     |
+| `$<n`   | Pads prevous token out to `n` columns (example: `$<5`) | "     "                  |
+| `$$`    | Literal dollar sign                                    | "$"                      |
 
 ### Format Examples
 
@@ -413,7 +426,6 @@ Example:
 ## Limitations
 
 - **Thread safety is opt‑in** - Define `LOGCIE_THREAD_SAFE` before the implementation to serialise all operations with a mutex.  Without it, concurrent calls may interleave or crash.
-- **Memory allocation** - The sink array uses `malloc()`/`realloc()` for dynamic growth
 - **No built-in log rotation** - File management must be handled by the application (or just use `logrotate`)
 - **Custom formatters require `va_list` handling** - Advanced usage requires understanding of variadic arguments
 
