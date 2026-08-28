@@ -14,8 +14,8 @@
 #endif
 
 static Logcie_Sink sink = {
-  {logcie_printf_formatter, (void *)"$L $m"},
-  {logcie_printf_writer, NULL},
+  {logcie_token_formatter, (void *)"$L $m"},
+  {logcie_file_writer, NULL},
   {NULL, NULL},
 };
 

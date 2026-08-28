@@ -2,14 +2,14 @@
 #include "logcie.h"
 
 static Logcie_Sink a = {
-  .formatter = {logcie_printf_formatter, (void *)"a:$m"},
-  .writer    = {logcie_printf_writer, NULL},
+  .formatter = {logcie_token_formatter, (void *)"a:$m"},
+  .writer    = {logcie_file_writer, NULL},
   .filter    = {NULL, NULL},
 };
 
 static Logcie_Sink b = {
-  .formatter = {logcie_printf_formatter, (void *)"b:$m"},
-  .writer    = {logcie_printf_writer, NULL},
+  .formatter = {logcie_token_formatter, (void *)"b:$m"},
+  .writer    = {logcie_file_writer, NULL},
   .filter    = {NULL, NULL},
 };
 

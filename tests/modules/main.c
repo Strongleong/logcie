@@ -5,8 +5,8 @@
 void other(void);
 
 static Logcie_Sink sink = {
-  .formatter = {logcie_printf_formatter, (void *)"$M:$m"},
-  .writer    = {logcie_printf_writer, NULL},
+  .formatter = {logcie_token_formatter, (void *)"$M:$m"},
+  .writer    = {logcie_file_writer, NULL},
   .filter    = {NULL, NULL},
 };
 

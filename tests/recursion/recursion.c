@@ -1,7 +1,9 @@
 #define LOGCIE_IMPLEMENTATION
 #include "logcie.h"
 
-static size_t reentrant_writer(void *user_data, const char *bytes, size_t len) {
+static size_t reentrant_writer(void *user_data, const Logcie_Log *log, const char *bytes, size_t len) {
+  (void)log;
+
   /* NOTE: logging from inside a writer. The guard must suppress it rather
    * than recurse forever. */
   LOGCIE_INFO("from inside the writer");
@@ -11,7 +13,7 @@ static size_t reentrant_writer(void *user_data, const char *bytes, size_t len) {
 }
 
 static Logcie_Sink sink = {
-  .formatter = {logcie_printf_formatter, (void *)"$m"},
+  .formatter = {logcie_token_formatter, (void *)"$m"},
   .writer    = {reentrant_writer, NULL},
   .filter    = {NULL, NULL},
 };

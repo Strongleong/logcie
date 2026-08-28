@@ -10,19 +10,21 @@
 
 static char captured[256];
 
-/* NOTE: logcie_printf_formatter asserts writer->data is non-NULL even though
+/* NOTE: logcie_token_formatter asserts writer->data is non-NULL even though
  * a custom writer need not use it, so the buffer is passed through it. */
-static size_t capture_writer(void *user_data, const char *bytes, size_t len) {
-  char *out = (char *)user_data;
+static size_t capture_writer(void *user_data, const Logcie_Log *log, const char *bytes, size_t len) {
+  (void)log;
 
-  len = strlen(out);
+  char  *out = (char *)user_data;
+  size_t at  = strlen(out);
 
-  int written = snprintf(out + len, sizeof(captured) - len, "%s", bytes);
+  /* NOTE: bytes is not NUL terminated, so the length has to come from len. */
+  int written = snprintf(out + at, sizeof(captured) - at, "%.*s", (int)len, bytes);
   return written > 0 ? (size_t)written : 0;
 }
 
 static Logcie_Sink sink = {
-  .formatter = {logcie_printf_formatter, NULL},
+  .formatter = {logcie_token_formatter, NULL},
   .writer    = {capture_writer, captured},
   .filter    = {NULL, NULL},
 };
