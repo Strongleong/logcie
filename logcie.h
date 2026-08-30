@@ -657,11 +657,7 @@ struct Logcie_Log {
 #define LOGCIE_INTERNAL_CREATE_LOG(lvl, txt, f, l)          logcie_make_log(LOGCIE_MODULE, lvl, txt, f, l)
 #define LOGCIE_INTERNAL_CREATE_LOG_MOD(mod, lvl, txt, f, l) logcie_make_log(mod, lvl, txt, f, l)
 
-// WARN: DEPRECATED
-//       LOGCIE_PRINTF_TYPECHECK was overridable by user and it will be removed in v2.0.0
-#ifdef LOGCIE_PRINTF_TYPECHECK
-#define LOGCIE_INTERNAL_PRINTF_TYPE_CHECK(a, b) LOGCIE_PRINTF_TYPECHECK((a), (b))
-#elif defined __has_attribute && __has_attribute(__format__)
+#if defined __has_attribute && __has_attribute(__format__)
 #define LOGCIE_INTERNAL_PRINTF_TYPE_CHECK(a, b) __attribute__((__format__(__printf__, a, b)))
 #else
 #define LOGCIE_INTERNAL_PRINTF_TYPE_CHECK(a, b)
