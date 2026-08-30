@@ -779,9 +779,6 @@ LOGCIE_DEF Logcie_Sink *logcie_get_default_sink(void);
  * @param sink Pointer to a Logcie_Sink structure to add
  * @return 1 if sink was added, 0 if sink is NULL or LOGCIE_MAX_SINKS sinks
  *         are already registered
- * @note The first call replaces the built-in stdout sink rather than joining
- *       it. This changes in v2.0.0: sinks you add will simply be added, and
- *       the built-in one will be removable on its own.
  */
 LOGCIE_DEF uint8_t logcie_add_sink(Logcie_Sink *sink);
 
