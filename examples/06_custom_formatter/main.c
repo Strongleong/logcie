@@ -9,6 +9,7 @@
 //
 // The one rule: call writer->write once, with the whole line.
 #include <stdio.h>
+#include <stdlib.h>
 
 #define LOGCIE_MODULE "app"
 #define LOGCIE_IMPLEMENTATION
@@ -19,9 +20,24 @@ static size_t json_formatter(Logcie_Writer *writer, void *user_data, Logcie_Log 
 
   // Rendering log.msg means running it through vsnprintf with the arguments
   // that reached the macro. logcie_render_message does that, and copies the
-  // va_list so the caller can render again if it needs a bigger buffer
-  char msg[256];
-  logcie_render_message(msg, sizeof(msg), &log, args);
+  // va_list so it can be called again on a bigger buffer.
+  //
+  // Like snprintf it returns the length it wanted, so render into a buffer you
+  // already have and only look further if it did not fit. Sizing first with
+  // (NULL, 0) also works but always costs two passes.
+  char   stack_msg[128];
+  char  *msg    = stack_msg;
+  char  *heap   = NULL;
+  size_t needed = logcie_render_message(stack_msg, sizeof(stack_msg), &log, args);
+
+  if (needed >= sizeof(stack_msg)) {
+    heap = (char *)malloc(needed + 1);
+
+    if (heap) {
+      logcie_render_message(heap, needed + 1, &log, args);
+      msg = heap;
+    }
+  }
 
   char line[512];
   int  n = snprintf(line, sizeof(line),
@@ -40,6 +56,8 @@ static size_t json_formatter(Logcie_Writer *writer, void *user_data, Logcie_Log 
 
   // One call, one line. A writer may treat a call as one record.
   writer->write(writer->data, &log, line, len);
+
+  free(heap);
   return len;
 }
 
