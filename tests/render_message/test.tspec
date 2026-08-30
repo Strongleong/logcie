@@ -1,0 +1,19 @@
+:test render_message_behaves_like_snprintf
+:command compile
+:blob executable 2
+cc
+:blob args 71
+-std=c11 -Wall -Wextra -Werror -I../.. render.c -o .side_effects/render
+:int return 0
+:command run
+:blob executable 20
+.side_effects/render
+:int return 0
+:blob stdout 109
+sizing=19
+truncated_wants=19
+truncated_text=value=4
+full_wants=19
+full_text=value=42 text=hello
+repeatable=1
+
