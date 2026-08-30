@@ -369,7 +369,7 @@
 #define LOGCIE_COLOR_RESET      "\x1b[0m"
 
 #ifndef LOGCIE_DEFAULT_SINK_FORMAT
-#define LOGCIE_DEFAULT_SINK_FORMAT "$c$L$r " LOGCIE_COLOR_GRAY "$f:$x$r: $m"
+#define LOGCIE_DEFAULT_SINK_FORMAT "$c$L$<6$r " LOGCIE_COLOR_GRAY "$f:$x$r: $m"
 #endif
 
 #ifdef __cplusplus
@@ -1179,7 +1179,7 @@ static inline const char *get_logcie_level_color(Logcie_LogLevel level) {
 // C++20, so a designated one here makes the header unusable as C++ under
 // -pedantic on every earlier standard.
 static Logcie_Sink default_stdout_sink = {
-  {logcie_token_formatter, (void *)("$c$L$<6$r " LOGCIE_COLOR_GRAY "$f:$x$r: $m")},
+  {logcie_token_formatter, (void *)(LOGCIE_DEFAULT_SINK_FORMAT)},
   {logcie_file_writer, NULL},
   {NULL, NULL},
 };
