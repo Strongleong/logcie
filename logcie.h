@@ -874,11 +874,18 @@ LOGCIE_DEF size_t logcie_file_writer(void *user_data, const Logcie_Log *log, con
  * its arguments into text, and this handles the va_list copying that a second
  * render pass requires.
  *
- * @param buf   Destination buffer
+ * @param buf   Destination buffer, or NULL when cap is 0
  * @param cap   Capacity of buf
  * @param log   Log whose msg is rendered
  * @param args  Arguments passed to the logging macro
- * @return Length the message would have, which may exceed cap
+ * @return Length the message would have, not counting the terminator, which
+ *         may exceed cap
+ *
+ * @note Like snprintf, this reports the length it wanted even when it
+ *       truncates, and (NULL, 0) sizes without writing. Prefer rendering into
+ *       a buffer you already have and retrying only if the return value did
+ *       not fit -- that costs one pass for the common line, where sizing first
+ *       always costs two.
  */
 LOGCIE_DEF size_t logcie_render_message(char *buf, size_t cap, const Logcie_Log *log, va_list *args);
 
@@ -1392,7 +1399,10 @@ LOGCIE_DEF Logcie_Log logcie_make_log(const char *module, Logcie_LogLevel level,
  * @return Length the message would have, which may exceed cap
  */
 LOGCIE_DEF size_t logcie_render_message(char *buf, size_t cap, const Logcie_Log *log, va_list *args) {
-  LOGCIE_INTERNAL_ASSERT(buf, "Render buffer is missing");
+  // NOTE: (NULL, 0) is a legal sizing call, exactly as it is for snprintf, so
+  // buf is deliberately not checked. It is how a formatter asks how much room
+  // the message needs without rendering it anywhere.
+  LOGCIE_INTERNAL_ASSERT((cap == 0 || buf), "Render buffer is missing");
   LOGCIE_INTERNAL_ASSERT(log, "Log is missing");
 
   va_list copy;
