@@ -99,7 +99,7 @@ system compiles the examples and runs the test suite.
 
 ```sh
 cc -o build build.c   # once
-./build               # compile everything in examples/ into ./out/
+./build               # compile every example into ./out/
 ./build --help
 ```
 
@@ -112,6 +112,25 @@ cc -o build build.c   # once
 | `-o`, `--outdir`       | output directory (default `./out/`)                                   |
 | `-c`, `--c-compiler`   | C compiler (default `clang`)                                          |
 | `-x`, `--cpp-compiler` | C++ compiler (default `clang++`)                                      |
+
+Each directory under `examples/` is one program, and they are meant to be read
+in order. Each adds one thing to the one before it.
+
+| Example | Adds |
+| ------- | ---- |
+| `01_simple` | including the header and logging, with no setup |
+| `02_modules` | tagging logs with the subsystem they came from |
+| `03_sinks` | sending logs somewhere else, and to more than one place |
+| `04_filters` | deciding which logs reach which sink |
+| `05_custom_writer` | writing lines yourself, and routing on log metadata |
+| `06_custom_formatter` | replacing the output format entirely, here with JSON |
+| `07_configuration` | the macros that change what you see |
+| `08_allocation` | the buffer a line is built in, and where a long one comes from |
+| `09_threads` | logging from several threads at once |
+| `10_app` | all of it, as a small multi-file program |
+
+An example needing extra compiler flags puts them in a `build.flags` file next
+to its sources; `09_threads` uses that for `-lpthread`.
 
 ## Basic Usage
 
@@ -507,7 +526,7 @@ Each directory covers one area:
 | `filters`                    | all built-in filters and the and/or/not combinators                                       |
 | `sinks`                      | add, remove, count, and default-sink replacement                                          |
 | `modules`                    | per-file, per-call and default module names                                               |
-| `api`                        | sink lookup, colours, removal by index                                                    |
+| `api`                        | sink lookup, colors, removal by index                                                     |
 | `printf_args`                | printf specifiers reaching the message                                                    |
 | `timestamps`                 | `$d $t $z` compared against the clock                                                     |
 | `recursion`                  | the recursion guard suppresses instead of looping                                         |
