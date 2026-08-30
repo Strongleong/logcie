@@ -55,7 +55,7 @@ net
 :blob stdout 2
 $
 
-:test colour_tokens
+:test color_tokens
 :command run
 :blob executable 20
 .side_effects/tokens

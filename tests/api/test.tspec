@@ -1,4 +1,4 @@
-:test sink_lookup_colours_and_removal_by_index
+:test sink_lookup_colors_and_removal_by_index
 :command compile
 :blob executable 2
 cc
