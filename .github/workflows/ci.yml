@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+jobs:
+  # The .tspec suite is the real check. strum is POSIX-only, so this is
+  # everywhere it can run.
+  tests:
+    name: tests (${{ matrix.os }}, ${{ matrix.cc }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        cc: [gcc, clang]
+        include:
+          - cc: gcc
+            cxx: g++
+          - cc: clang
+            cxx: clang++
+    steps:
+      - uses: actions/checkout@v4
+
+      # Built from source rather than pulled from a release, so this does not
+      # depend on an asset existing for the runner's platform.
+      - name: Build strum
+        run: |
+          git clone --depth 1 https://github.com/Strongleong/Strum strum
+          cd strum
+          cc build.c -o build
+          ./build -c ${{ matrix.cc }}
+          echo "$PWD/out" >> "$GITHUB_PATH"
+
+      - name: Build examples
+        run: |
+          cc build.c -o build
+          ./build -c ${{ matrix.cc }} -x ${{ matrix.cxx }}
+
+      - name: Run tests
+        run: ./build tests
+
+  # The examples double as a compile check for every configuration macro, so
+  # -p is worth a job of its own: it is the combination the README promises and
+  # the one nothing else exercises.
+  pedantic:
+    name: pedantic c99
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build examples with -pedantic
+        run: |
+          cc build.c -o build
+          ./build -p -c gcc -x g++
+
+  # strum cannot run here, so this only answers "does the header compile and do
+  # the examples work". That is still the question Windows most often fails.
+  windows:
+    name: windows (${{ matrix.toolchain }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [mingw, msvc]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: matrix.toolchain == 'msvc'
+
+      - name: Compile the header on its own
+        shell: bash
+        run: |
+          if [ "${{ matrix.toolchain }}" = "msvc" ]; then
+            cl //nologo //W4 //WX //DLOGCIE_IMPLEMENTATION //TC //I. //c logcie.h //Fo:nul
+          else
+            gcc -std=c99 -Wall -Wextra -Werror -DLOGCIE_IMPLEMENTATION -I. -c -x c logcie.h -o nul
+          fi
+
+      - name: Build and run an example
+        shell: bash
+        run: |
+          if [ "${{ matrix.toolchain }}" = "msvc" ]; then
+            cl //nologo //W4 //I. examples/01_simple/main.c //Fe:simple.exe
+          else
+            gcc -std=c99 -Wall -Wextra -I. examples/01_simple/main.c -o simple.exe
+          fi
+          ./simple.exe
+
+  sanitizers:
+    name: sanitizers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build strum
+        run: |
+          git clone --depth 1 https://github.com/Strongleong/Strum strum
+          cd strum
+          cc build.c -o build
+          ./build -c gcc
+          echo "$PWD/out" >> "$GITHUB_PATH"
+
+      # -d turns on ASan for the examples; the suite has its own TSan case
+      - name: Examples under AddressSanitizer
+        run: |
+          cc build.c -o build
+          ./build -d -c gcc -x g++
+          for exe in out/*; do [ -x "$exe" ] && [ -f "$exe" ] && "$exe" >/dev/null; done
+
+      - name: Tests
+        run: ./build tests
