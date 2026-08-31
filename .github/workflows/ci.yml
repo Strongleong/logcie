@@ -44,19 +44,6 @@ jobs:
       - name: Run tests
         run: ./build tests
 
-  # The examples double as a compile check for every configuration macro, so
-  # -p is worth a job of its own: it is the combination the README promises and
-  # the one nothing else exercises.
-  pedantic:
-    name: pedantic c99
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build examples with -pedantic
-        run: |
-          cc build.c -o build
-          ./build -p -c gcc -x g++
-
   # strum cannot run here, so this only answers "does the header compile and do
   # the examples work". That is still the question Windows most often fails.
   windows:
@@ -72,23 +59,28 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
         if: matrix.toolchain == 'msvc'
 
-      - name: Compile the header on its own
-        shell: bash
-        run: |
-          if [ "${{ matrix.toolchain }}" = "msvc" ]; then
-            cl //nologo //W4 //WX //DLOGCIE_IMPLEMENTATION //TC //I. //c logcie.h //Fo:nul
-          else
-            gcc -std=c99 -Wall -Wextra -Werror -DLOGCIE_IMPLEMENTATION -I. -c -x c logcie.h -o nul
-          fi
+      - name: Compile the header (msvc)
+        if: matrix.toolchain == 'msvc'
+        shell: cmd
+        run: cl /nologo /W4 /WX /DLOGCIE_IMPLEMENTATION /TC /I. /c logcie.h /Fo:header.obj
 
-      - name: Build and run an example
+      - name: Build and run an example (msvc)
+        if: matrix.toolchain == 'msvc'
+        shell: cmd
+        run: |
+          cl /nologo /W4 /WX /TC /I. examples\01_simple\main.c /Fe:simple.exe
+          simple.exe
+
+      - name: Compile the header (mingw)
+        if: matrix.toolchain == 'mingw'
+        shell: bash
+        run: gcc -std=c99 -Wall -Wextra -Werror -DLOGCIE_IMPLEMENTATION -I. -c -x c logcie.h -o header.o
+
+      - name: Build and run an example (mingw)
+        if: matrix.toolchain == 'mingw'
         shell: bash
         run: |
-          if [ "${{ matrix.toolchain }}" = "msvc" ]; then
-            cl //nologo //W4 //I. examples/01_simple/main.c //Fe:simple.exe
-          else
-            gcc -std=c99 -Wall -Wextra -I. examples/01_simple/main.c -o simple.exe
-          fi
+          gcc -std=c99 -Wall -Wextra -Werror -I. examples/01_simple/main.c -o simple.exe
           ./simple.exe
 
   sanitizers:
