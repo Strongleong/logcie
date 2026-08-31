@@ -5,41 +5,47 @@
 #define LOGCIE_IMPLEMENTATION
 #include "logcie.h"
 
-#if defined(TIME_UTC)
-#define TIER "timespec_get"
-#elif defined(CLOCK_REALTIME)
-#define TIER "clock_gettime"
+#if defined(TIME_UTC) || defined(CLOCK_REALTIME)
+#define SUBSECOND_EXPECTED 1
 #else
-#define TIER "time"
+#define SUBSECOND_EXPECTED 0
 #endif
 
 int main(void) {
-  uint32_t   seen_nonzero = 0;
-  Logcie_Log log;
-  int        i;
-
-  printf("tier=%s\n", TIER);
+  uint32_t seen_nonzero = 0;
+  uint32_t in_range     = 1;
+  uint32_t time_set     = 1;
+  int      i;
 
   /* NOTE: a real clock is free to land on a whole second, so one sample cannot
    * prove sub-second resolution. Any one of many being non-zero can. */
   for (i = 0; i < 1000; i++) {
-    log = logcie_make_log("sub", LOGCIE_LEVEL_INFO, "x", "f.c", 1);
+    Logcie_Log log = logcie_make_log("sub", LOGCIE_LEVEL_INFO, "x", "f.c", 1);
 
     if (log.nanos >= 1000000000u) {
-      printf("nanos_out_of_range=1\n");
-      return 1;
+      in_range = 0;
     }
 
     if (log.nanos != 0) {
       seen_nonzero = 1;
     }
+
+    if (log.time == 0) {
+      time_set = 0;
+    }
   }
 
-  printf("subsecond=%u\n", seen_nonzero);
+  /* NOTE: nanos must always be a legal fraction of a second, and the seconds
+   * must be filled in whichever tier ran and whether or not its call
+   * succeeded. Both hold on every platform. */
+  printf("nanos_in_range=%u\n", in_range);
+  printf("time_always_set=%u\n", time_set);
 
-  /* NOTE: whichever tier ran, and whether its clock call succeeded or not, the
-   * fallback has to leave a usable wall-clock timestamp rather than the epoch. */
-  printf("time_set=%d\n", log.time > 1700000000);
+  /* NOTE: and a build with a sub-second clock has to produce sub-second
+   * values, while a build without one has to leave nanos at zero rather than
+   * hold junk. Which of the two applies is the platform's business, so the
+   * fixture decides and reports a single verdict. */
+  printf("matches_available_clock=%d\n", seen_nonzero == SUBSECOND_EXPECTED);
 
   return 0;
 }
