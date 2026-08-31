@@ -679,6 +679,9 @@ struct Logcie_Log {
 #elif !defined(LOGCIE_PEDANTIC) && (defined(__GNUC__) || defined(__clang__))
 #define LOGCIE_LOG_IMPL(level, msg, ...)        logcie_log(LOGCIE_INTERNAL_CREATE_LOG(LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
 #define LOGCIE_LOG_MOD(module, level, msg, ...) logcie_log(LOGCIE_INTERNAL_CREATE_LOG_MOD(module, LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
+#elif !defined(LOGCIE_PEDANTIC) && defined(_MSC_VER) && (!defined(_MSVC_TRADITIONAL) || _MSVC_TRADITIONAL)
+#define LOGCIE_LOG_IMPL(level, msg, ...)        logcie_log(LOGCIE_INTERNAL_CREATE_LOG(LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
+#define LOGCIE_LOG_MOD(module, level, msg, ...) logcie_log(LOGCIE_INTERNAL_CREATE_LOG_MOD(module, LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
 #else
 #define LOGCIE_LOG_IMPL(level, msg)        logcie_log(LOGCIE_INTERNAL_CREATE_LOG(LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg)
 #define LOGCIE_LOG_MOD(module, level, msg) logcie_log(LOGCIE_INTERNAL_CREATE_LOG_MOD(module, LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg)
@@ -1478,10 +1481,10 @@ static size_t logcie_render_tokens(char *buf, size_t cap, const char *fmt, const
 
 #ifdef __cplusplus
   struct tm local_tm = {};
-  struct tm utc_tm = {};
+  struct tm utc_tm   = {};
 #else
   struct tm local_tm = {0};
-  struct tm utc_tm = {0};
+  struct tm utc_tm   = {0};
 #endif
 
   int32_t local_hours = 0;
