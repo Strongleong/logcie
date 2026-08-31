@@ -1,0 +1,17 @@
+:test the_writer_can_route_on_log_metadata
+:command compile
+:blob executable 2
+cc
+:blob args 75
+-std=c11 -Wall -Wextra -Werror -I../.. metadata.c -o .side_effects/metadata
+:int return 0
+:command run
+:blob executable 22
+.side_effects/metadata
+:int return 0
+:blob stdout 79
+stdout_bound=2
+stderr_bound=2
+last_module=core
+last_msg_is_the_format_string=1
+

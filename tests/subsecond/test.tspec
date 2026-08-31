@@ -1,4 +1,4 @@
-:test clock_tier_c99
+:test strict_c99_reports_whatever_clock_it_has
 :command compile
 :blob executable 2
 cc
@@ -9,28 +9,12 @@ cc
 :blob executable 17
 .side_effects/c99
 :int return 0
-:blob stdout 33
-tier=time
-subsecond=0
-time_set=1
+:blob stdout 61
+nanos_in_range=1
+time_always_set=1
+matches_available_clock=1
 
-:test clock_tier_posix
-:command compile
-:blob executable 2
-cc
-:blob args 109
--std=c99 -pedantic -D_POSIX_C_SOURCE=199309L -Wall -Wextra -Werror -I../.. subsecond.c -o .side_effects/posix
-:int return 0
-:command run
-:blob executable 19
-.side_effects/posix
-:int return 0
-:blob stdout 42
-tier=clock_gettime
-subsecond=1
-time_set=1
-
-:test clock_tier_c11
+:test c11_reports_whatever_clock_it_has
 :command compile
 :blob executable 2
 cc
@@ -41,25 +25,24 @@ cc
 :blob executable 17
 .side_effects/c11
 :int return 0
-:blob stdout 41
-tier=timespec_get
-subsecond=1
-time_set=1
+:blob stdout 61
+nanos_in_range=1
+time_always_set=1
+matches_available_clock=1
 
-:test nanos_token
+:test posix_opt_in_reports_whatever_clock_it_has
 :command compile
 :blob executable 2
 cc
-:blob args 81
--std=c11 -Wall -Wextra -Werror -I../.. nanos_token.c -o .side_effects/nanos_token
+:blob args 99
+-std=c99 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror -I../.. subsecond.c -o .side_effects/posix
 :int return 0
 :command run
-:blob executable 25
-.side_effects/nanos_token
+:blob executable 19
+.side_effects/posix
 :int return 0
-:blob stdout 57
-[000000042]
-[987654321]
-[987654321  |]
-[INFO |987654321]
+:blob stdout 61
+nanos_in_range=1
+time_always_set=1
+matches_available_clock=1
 

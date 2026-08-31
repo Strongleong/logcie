@@ -1,0 +1,14 @@
+:test the_default_sink_format_macro_is_used
+:command compile
+:blob executable 2
+cc
+:blob args 75
+-std=c11 -Wall -Wextra -Werror -I../.. default_format.c -o .side_effects/df
+:int return 0
+:command run
+:blob executable 16
+.side_effects/df
+:int return 0
+:blob stdout 18
+custom:INFO:hello
+

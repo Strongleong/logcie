@@ -14,13 +14,14 @@
 #endif
 
 static Logcie_Sink sink = {
-  .formatter = {logcie_printf_formatter, (void *)"$L $m"},
-  .writer    = {logcie_printf_writer, NULL},
+  .formatter = {logcie_token_formatter, (void *)"$L $m"},
+  .writer    = {logcie_file_writer, NULL},
   .filter    = {NULL, NULL},
 };
 
 int main(void) {
   sink.writer.data = stdout;
+  logcie_remove_all_sinks();
   logcie_add_sink(&sink);
 
   LOG_INFO("n=%d", 1);

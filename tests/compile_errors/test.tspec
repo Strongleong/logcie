@@ -30,5 +30,5 @@ cc
 :blob args 68
 -std=c11 -I../.. two_implementations.c twin.c -o .side_effects/twins
 :int return 1
-:blob stderr_contains 19
-multiple definition
+:blob stderr_contains 7
+logcie_

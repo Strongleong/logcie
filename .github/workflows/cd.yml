@@ -1,0 +1,68 @@
+name: CD
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # A tag that fails its own tests should not become a release.
+      - name: Build strum
+        run: |
+          git clone --depth 1 https://github.com/Strongleong/Strum strum
+          cd strum
+          cc build.c -o build
+          ./build -c gcc
+          echo "$PWD/out" >> "$GITHUB_PATH"
+
+      - name: Build and test
+        run: |
+          cc build.c -o build
+          ./build -c gcc -x g++
+          ./build tests
+
+      # The tag and the version macros have to agree, or people who check
+      # LOGCIE_VERSION_NUMBER at compile time get a different answer from
+      # people who read the release page.
+      - name: Check the version matches the tag
+        run: |
+          major=$(sed -n 's/^#define LOGCIE_VERSION_MAJOR  *//p' logcie.h | tr -d ' ')
+          minor=$(sed -n 's/^#define LOGCIE_VERSION_MINOR  *//p' logcie.h | tr -d ' ')
+          patch=$(sed -n 's/^#define LOGCIE_VERSION_RELEASE  *//p' logcie.h | tr -d ' ')
+          header="v${major}.${minor}.${patch}"
+          tag="${GITHUB_REF_NAME}"
+
+          echo "header says $header, tag says $tag"
+
+          if [ "$header" != "$tag" ]; then
+            echo "::error::logcie.h is $header but the tag is $tag"
+            exit 1
+          fi
+
+      # logcie.h is the artifact. Shipping it as a release asset means a user
+      # can pin a version without cloning or trusting a moving branch.
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp logcie.h LICENSE README.md CHANGELOG.md dist/
+          tar -czf "logcie-${GITHUB_REF_NAME}.tar.gz" -C dist .
+          sha256sum logcie.h "logcie-${GITHUB_REF_NAME}.tar.gz" > checksums.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            logcie.h
+            logcie-${{ github.ref_name }}.tar.gz
+            checksums.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

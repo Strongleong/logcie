@@ -8,10 +8,12 @@
 static Logcie_Sink sinks[5];
 
 int main(void) {
+  logcie_remove_all_sinks();
+
   for (size_t i = 0; i < 5; i++) {
-    sinks[i].formatter.format = logcie_printf_formatter;
+    sinks[i].formatter.format = logcie_token_formatter;
     sinks[i].formatter.data   = (void *)"s:$m";
-    sinks[i].writer.write     = logcie_printf_writer;
+    sinks[i].writer.write     = logcie_file_writer;
     sinks[i].writer.data      = stdout;
     sinks[i].filter.filter    = NULL;
     sinks[i].filter.data      = NULL;

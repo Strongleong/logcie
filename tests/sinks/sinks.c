@@ -2,14 +2,14 @@
 #include "logcie.h"
 
 static Logcie_Sink a = {
-  .formatter = {logcie_printf_formatter, (void *)"a:$m"},
-  .writer    = {logcie_printf_writer, NULL},
+  .formatter = {logcie_token_formatter, (void *)"a:$m"},
+  .writer    = {logcie_file_writer, NULL},
   .filter    = {NULL, NULL},
 };
 
 static Logcie_Sink b = {
-  .formatter = {logcie_printf_formatter, (void *)"b:$m"},
-  .writer    = {logcie_printf_writer, NULL},
+  .formatter = {logcie_token_formatter, (void *)"b:$m"},
+  .writer    = {logcie_file_writer, NULL},
   .filter    = {NULL, NULL},
 };
 
@@ -18,6 +18,8 @@ int main(void) {
   b.writer.data = stdout;
 
   printf("initial=%zu\n", logcie_get_sink_count());
+
+  logcie_remove_all_sinks();
 
   logcie_add_sink(&a);
   printf("after_first_add=%zu\n", logcie_get_sink_count());

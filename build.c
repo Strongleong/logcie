@@ -54,7 +54,6 @@ static OptlyCommand command = {
   NULL,
   .flags = optly_flags(
     optly_flag_bool("debug", 'd', "Compile with debug flags"),
-    optly_flag_bool("pedantic", 'p', "Enable pedantic compilation flags"),
     optly_flag_bool("silent", 's', "Compile without unnececary output"),
     optly_flag_string("outdir", 'o', "Set output dir", .value.as_string = "." PATH_SEP "out" PATH_SEP),
     optly_flag_string("c-compiler", 'c', "Set which C compier to use", .value.as_string = "clang"),
@@ -88,14 +87,14 @@ uint8_t stdout_sink_filter(const void *data, Logcie_Log *log) {
 }
 
 static Logcie_Sink stdout_sink = {
-  .formatter = {logcie_printf_formatter, LOGCIE_COLOR_GRAY "[$M]$r $c$L$r:$<6$m"},
-  .writer    = {logcie_printf_writer, NULL},
+  .formatter = {logcie_token_formatter, LOGCIE_COLOR_GRAY "[$M]$r $c$L$r:$m"},
+  .writer    = {logcie_file_writer, NULL},
   .filter    = {stdout_sink_filter, NULL}
 };
 
 static Logcie_Sink optly_sink = {
-  .formatter = {logcie_printf_formatter, LOGCIE_COLOR_GRAY "[$M]$r $c$L$r:$<6$m"},
-  .writer    = {logcie_printf_writer, NULL},
+  .formatter = {logcie_token_formatter, LOGCIE_COLOR_GRAY "[$M]$r $c$L$r:$m"},
+  .writer    = {logcie_file_writer, NULL},
   .filter    = logcie_filter_and(
     logcie_filter_module_eq("optly"),
     logcie_filter_level_min(LOGCIE_LEVEL_INFO)
@@ -105,6 +104,11 @@ static Logcie_Sink optly_sink = {
 void setup_logcie(void) {
   stdout_sink.writer.data = stdout;
   optly_sink.writer.data  = stdout;
+
+  // NOTE: the built-in sink is an ordinary sink and stays registered unless it
+  // is removed. Leaving it in would print every line twice, once in its own
+  // format and once in ours.
+  logcie_remove_sink(logcie_get_default_sink());
 
   logcie_add_sink(&stdout_sink);
   logcie_add_sink(&optly_sink);
@@ -429,19 +433,22 @@ static bool run_tests(OptlyCommand *tests) {
 
 static char outdir[PATH_MAX_LEN] = {0};
 
-bool visit_file(const WalkEntry *entry, void *user) {
-  UNUSED(user);
+// NOTE: one example directory is one program. 07_app is several .c files that
+// must be compiled together, and naming the binary after the directory keeps
+// ./out flat.
+typedef struct {
+  char *sources[CMD_MAX_ARGV];
+  int   count;
+  bool  cpp;
+} ExampleSources;
 
-  char *ext = strrchr(entry->name, '.');
+static bool collect_source(const WalkEntry *entry, void *user) {
+  ExampleSources *out = (ExampleSources *)user;
+  char           *ext = strrchr(entry->name, '.');
 
   if (!ext) {
     return true;
   }
-
-  size_t out_len = strlen(entry->name) + strlen(outdir) - strlen(ext) + 1;
-  char   out[out_len];
-  size_t in_len = strlen(entry->path) + 1;
-  char   in[in_len];
 
   bool cpp = strcmp(ext, ".cpp") == 0;
 
@@ -449,21 +456,83 @@ bool visit_file(const WalkEntry *entry, void *user) {
     return true;
   }
 
-  LOGCIE_VERBOSE("Compiling file %s", entry->name);
+  if (out->count >= CMD_MAX_ARGV - 16) {
+    LOGCIE_ERROR("Too many source files in one example");
+    return false;
+  }
+
+  out->cpp = out->cpp || cpp;
+
+  size_t len  = strlen(entry->path) + 1;
+  char  *copy = (char *)malloc(len);
+
+  if (!copy) {
+    LOGCIE_FATAL("Out of memory");
+    return false;
+  }
+
+  snprintf(copy, len, "%s", entry->path);
+  out->sources[out->count++] = copy;
+  return true;
+}
+
+// NOTE: an example that needs extra compiler or linker flags puts them in a
+// build.flags file next to its sources, one per line or space separated. Only
+// 09_threads needs this today, for -lpthread, and linking pthreads into every
+// example to serve one of them would be a lie about what the rest require.
+static int read_build_flags(const char *dir, char *storage, size_t cap, char **out, int max) {
+  char path[PATH_MAX_LEN];
+  snprintf(path, sizeof(path), "%s" PATH_SEP "build.flags", dir);
+
+  FILE *f = fopen(path, "r");
+
+  if (!f) {
+    return 0;
+  }
+
+  size_t len = fread(storage, 1, cap - 1, f);
+  fclose(f);
+
+  storage[len] = '\0';
+
+  int   count = 0;
+  char *token = strtok(storage, " \t\r\n");
+
+  while (token && count < max) {
+    out[count++] = token;
+    token        = strtok(NULL, " \t\r\n");
+  }
+
+  return count;
+}
+
+static bool build_example(const char *dir, const char *name) {
+  ExampleSources found;
+  found.count = 0;
+  found.cpp   = false;
+
+  if (!walk_dir(dir, collect_source, &found)) {
+    return false;
+  }
+
+  if (found.count == 0) {
+    LOGCIE_VERBOSE("No sources in %s, skipping", dir);
+    return true;
+  }
+
+  LOGCIE_VERBOSE("Building example %s", name);
+
+  char out[PATH_MAX_LEN];
+  snprintf(out, sizeof(out), "%s%s", outdir, name);
 
   char *cmd[CMD_MAX_ARGV] = {0};
   int   i                 = 0;
 
-  cmd[i++] = cpp ? optly_flag_value_string(&command, "cpp-compiler")
-                 : optly_flag_value_string(&command, "c-compiler");
+  cmd[i++] = found.cpp ? optly_flag_value_string(&command, "cpp-compiler")
+                       : optly_flag_value_string(&command, "c-compiler");
   cmd[i++] = "-Wall";
   cmd[i++] = "-Wextra";
-  cmd[i++] = cpp ? "-std=c++11" : "-std=c99";
-
-  if (optly_flag_value_bool(&command, "pedantic")) {
-    cmd[i++] = "-pedantic";
-    cmd[i++] = "-DLOGCIE_PEDANTIC";
-  }
+  cmd[i++] = found.cpp ? "-std=c++11" : "-std=c99";
 
   if (optly_flag_value_bool(&command, "debug")) {
     cmd[i++] = "-ggdb";
@@ -478,23 +547,125 @@ bool visit_file(const WalkEntry *entry, void *user) {
   }
 
   cmd[i++] = "-I.";
-  cmd[i++] = in;
+
+  for (int f = 0; f < found.count; f++) {
+    cmd[i++] = found.sources[f];
+  }
+
   cmd[i++] = "-o";
   cmd[i++] = out;
-  cmd[i++] = NULL;
 
-  snprintf(out, out_len, "%s%.*s", outdir, (int)(ext - entry->name), entry->name);
-  snprintf(in, in_len, "%s", entry->path);
+  char  flag_storage[PATH_MAX_LEN];
+  char *flags[16];
+  int   flag_count = read_build_flags(dir, flag_storage, sizeof(flag_storage), flags, 16);
+
+  for (int f = 0; f < flag_count && i < CMD_MAX_ARGV - 1; f++) {
+    cmd[i++] = flags[f];
+  }
+
+  cmd[i++] = NULL;
 
   char line[CMD_MAX_LINE] = {0};
   cmd_to_string(cmd, line, sizeof(line));
   LOGCIE_INFO("%s", line);
 
-  if (optly_flag_value_bool(&command, "dry-run")) {
-    return true;
+  bool ok = optly_flag_value_bool(&command, "dry-run") || run_cmd(cmd);
+
+  for (int f = 0; f < found.count; f++) {
+    free(found.sources[f]);
   }
 
-  return run_cmd(cmd);
+  return ok;
+}
+
+// NOTE: the directories are numbered to be read in order, so the build log
+// should follow that order rather than whatever the filesystem hands back.
+static int compare_names(const void *a, const void *b) {
+  return strcmp(*(const char *const *)a, *(const char *const *)b);
+}
+
+#define MAX_EXAMPLES 64
+
+static bool build_examples(void) {
+  const char *root = "." PATH_SEP "examples";
+  bool        all  = true;
+
+  char  names[MAX_EXAMPLES][PATH_MAX_LEN];
+  char *order[MAX_EXAMPLES];
+  int   count = 0;
+
+#ifdef _WIN32
+  WIN32_FIND_DATA fd;
+  char            search[PATH_MAX_LEN];
+  snprintf(search, sizeof(search), "%s\\*", root);
+
+  HANDLE hFind = FindFirstFile(search, &fd);
+
+  if (hFind == INVALID_HANDLE_VALUE) {
+    LOGCIE_ERROR("Could not open %s", root);
+    return false;
+  }
+
+  do {
+    if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+      continue;
+    }
+
+    if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0) {
+      continue;
+    }
+
+    if (count < MAX_EXAMPLES) {
+      snprintf(names[count], PATH_MAX_LEN, "%s", fd.cFileName);
+      order[count] = names[count];
+      count++;
+    }
+  } while (FindNextFile(hFind, &fd));
+
+  FindClose(hFind);
+#else
+  DIR *d = opendir(root);
+
+  if (!d) {
+    LOGCIE_ERROR("Could not open %s: %s", root, strerror(errno));
+    return false;
+  }
+
+  struct dirent *e;
+
+  while ((e = readdir(d)) != NULL) {
+    if (e->d_name[0] == '.') {
+      continue;
+    }
+
+    char dir[PATH_MAX_LEN];
+    snprintf(dir, sizeof(dir), "%s/%s", root, e->d_name);
+
+    struct stat st;
+
+    if (stat(dir, &st) == -1 || !S_ISDIR(st.st_mode)) {
+      continue;
+    }
+
+    if (count < MAX_EXAMPLES) {
+      snprintf(names[count], PATH_MAX_LEN, "%s", e->d_name);
+      order[count] = names[count];
+      count++;
+    }
+  }
+
+  closedir(d);
+#endif
+
+  qsort(order, (size_t)count, sizeof(*order), compare_names);
+
+  for (int i = 0; i < count; i++) {
+    char dir[PATH_MAX_LEN];
+    snprintf(dir, sizeof(dir), "%s" PATH_SEP "%s", root, order[i]);
+    all = build_example(dir, order[i]) && all;
+  }
+
+  return all;
 }
 
 int main(int argc, char *argv[]) {
@@ -526,5 +697,5 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  return walk_dir("." PATH_SEP "examples", visit_file, NULL) ? 0 : 1;
+  return build_examples() ? 0 : 1;
 }

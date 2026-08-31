@@ -5,8 +5,8 @@
 #include "logcie.h"
 
 static Logcie_Sink sink = {
-  {logcie_printf_formatter, (void *)"$L/$M/$m"},
-  {logcie_printf_writer, NULL},
+  {logcie_token_formatter, (void *)"$L/$M/$m"},
+  {logcie_file_writer, NULL},
   logcie_filter_and(
     logcie_filter_level_min(LOGCIE_LEVEL_INFO),
     logcie_filter_module_eq("core")
@@ -15,6 +15,7 @@ static Logcie_Sink sink = {
 
 int main() {
   sink.writer.data = stdout;
+  logcie_remove_sink_by_index(0);
   logcie_add_sink(&sink);
 
   LOGCIE_LOG_MOD("core",  DEBUG, "dropped by level");

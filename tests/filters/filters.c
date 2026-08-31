@@ -3,8 +3,8 @@
 #include <string.h>
 
 static Logcie_Sink sink = {
-  .formatter = {logcie_printf_formatter, (void *)"$L/$M/$m"},
-  .writer    = {logcie_printf_writer, NULL},
+  .formatter = {logcie_token_formatter, (void *)"$L/$M/$m"},
+  .writer    = {logcie_file_writer, NULL},
   .filter    = {NULL, NULL},
 };
 
@@ -33,6 +33,7 @@ int main(int argc, char **argv) {
   else return 2;
 
   sink.writer.data = stdout;
+  logcie_remove_all_sinks();
   logcie_add_sink(&sink);
 
   LOGCIE_LOG_MOD("core", INFO,  "plain");

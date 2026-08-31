@@ -4,8 +4,8 @@
 #include "logcie.h"
 
 static Logcie_Sink sink = {
-  .formatter = {logcie_printf_formatter, NULL},
-  .writer    = {logcie_printf_writer, NULL},
+  .formatter = {logcie_token_formatter, NULL},
+  .writer    = {logcie_file_writer, NULL},
   .filter    = {NULL, NULL},
 };
 
@@ -16,8 +16,10 @@ int main(int argc, char **argv) {
 
   sink.formatter.data = argv[1];
   sink.writer.data    = stdout;
+
+  logcie_remove_all_sinks();
   logcie_add_sink(&sink);
 
-  LOGCIE_LOG_MOD("net", INFO, "msg=%d", 7); /* LINE 21 - DO NOT MOVE */
+  LOGCIE_LOG_MOD("net", INFO, "msg=%d", 7); /* LINE 23 - DO NOT MOVE */
   return 0;
 }

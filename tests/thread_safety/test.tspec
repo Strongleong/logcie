@@ -1,0 +1,36 @@
+:test lines_from_many_threads_are_never_interleaved
+:command compile
+:blob executable 2
+cc
+:blob args 83
+-std=c11 -Wall -Wextra -Werror -I../.. threads.c -o .side_effects/threads -lpthread
+:int return 0
+:command run
+:blob executable 21
+.side_effects/threads
+:int timeout_ms 30000
+:int return 0
+:blob stdout 61
+writer_calls=1000
+lines=1000
+intact=1000
+all_accounted_for=1
+
+:test the_same_holds_under_thread_sanitizer
+:command compile
+:blob executable 2
+cc
+:blob args 76
+-std=c11 -fsanitize=thread -I../.. threads.c -o .side_effects/tsan -lpthread
+:int return 0
+:command run
+:blob executable 18
+.side_effects/tsan
+:int timeout_ms 60000
+:int return 0
+:blob stdout 61
+writer_calls=1000
+lines=1000
+intact=1000
+all_accounted_for=1
+

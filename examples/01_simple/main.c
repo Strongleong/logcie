@@ -1,8 +1,12 @@
+// Include it and log. There is nothing to set up: Logcie starts with one sink
+// already installed, printing to stdout.
+//
+// LOGCIE_IMPLEMENTATION pulls in the function bodies. Define it in exactly one
+// translation unit; every other file just includes the header.
 #define LOGCIE_IMPLEMENTATION
 #include <logcie.h>
 
 int main(void) {
-  // Simple logs
   LOGCIE_TRACE("This is a trace log");
   LOGCIE_DEBUG("Debugging value: %d", 42);
   LOGCIE_VERBOSE("Some verbose log");

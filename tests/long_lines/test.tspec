@@ -1,0 +1,40 @@
+:test a_line_that_fits_costs_no_allocation
+:command compile
+:blob executable 2
+cc
+:blob args 74
+-std=c11 -Wall -Wextra -Werror -I../.. long_lines.c -o .side_effects/alloc
+:int return 0
+:command run
+:blob executable 19
+.side_effects/alloc
+:int return 0
+:blob stdout 73
+short_calls=1 short_len=6
+long_calls=1 long_len=400 wanted=400 tail=xxx
+
+
+:test without_an_allocator_a_long_line_is_truncated_not_dropped
+:command compile
+:blob executable 2
+cc
+:blob args 95
+-std=c11 -Wall -Wextra -Werror -DLOGCIE_NO_MALLOC -I../.. long_lines.c -o .side_effects/noalloc
+:int return 0
+:command run
+:blob executable 21
+.side_effects/noalloc
+:int return 0
+:blob stdout 73
+short_calls=1 short_len=6
+long_calls=1 long_len=127 wanted=400 tail=xxxx
+
+:test mismatched_allocator_macros_are_rejected
+:command compile
+:blob executable 2
+cc
+:blob args 73
+-std=c11 -DLOGCIE_MALLOC=malloc -I../.. long_lines.c -o .side_effects/bad
+:int return 1
+:blob stderr_contains 41
+Define both LOGCIE_MALLOC and LOGCIE_FREE

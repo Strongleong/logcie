@@ -19,7 +19,7 @@ count=3
 s:once
 s:once
 s:once
-after_remove_all=1
+after_remove_all=0
 readd=1
 count_after_readd=1
 

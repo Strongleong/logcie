@@ -82,7 +82,13 @@ Define any of these **before** you include `logcie.h` (or before
 | `LOGCIE_ALLOW_RECURSIVE_LOGGING` | Allows logging calls inside formatters/writers/filters (dangerous!). (see [Recursive Logging](#recursive-logging)) | *(not defined)*          |
 | `LOGCIE_DEF`                     | Linkage qualifier for public functions (e.g. `static`).                                                            | `extern`                 |
 | `LOGCIE_PEDANTIC`                | Forces the strict C99 macro fallback (`LOGCIE_*_VA`) even on GCC/Clang.                                            | *(not defined)*          |
-| `LOGCIE_COLOR_*`                 | ANSI escape codes for each level colour. You can override them or use `logcie_set_colors()`.                       | *(see source)*           |
+| `LOGCIE_COLOR_*`                 | ANSI escape codes for each level color. You can override them or use `logcie_set_colors()`.                        | *(see source)*           |
+| `LOGCIE_MODULE_SEPARATOR`        | Character separating levels of a module name. (see [Module-Based Logging](#module-based-logging))                  | `'.'`                    |
+| `LOGCIE_MAX_SINKS`               | How many sinks can be registered at once. `logcie_add_sink` returns 0 once full.                                   | `16`                     |
+| `LOGCIE_MAX_LINE`                | Stack buffer a line is formatted into. Lines that fit cost no allocation.                                          | `1024`                   |
+| `LOGCIE_MALLOC` / `LOGCIE_FREE`  | Allocator used *only* for lines longer than `LOGCIE_MAX_LINE`. Define both or neither.                             | `malloc` / `free`        |
+| `LOGCIE_NO_MALLOC`               | Never allocate. Lines longer than `LOGCIE_MAX_LINE` are truncated instead.                                         | *(not defined)*          |
+| `LOGCIE_DEBUG_CHECKS`            | Enable internal consistency assertions.                                                                            | *(not defined)*          |
 
 > **Note:** The compiler‑pedantic fallback (`LOGCIE_VA_LOGS`) is automatically defined when variadic macros are not available - you don’t need to touch it.
 
@@ -93,19 +99,24 @@ system compiles the examples and runs the test suite.
 
 ```sh
 cc -o build build.c   # once
-./build               # compile everything in examples/ into ./out/
+./build               # compile every example into ./out/
 ./build --help
 ```
 
 | Flag                   | Meaning                                                               |
 | ----                   | -------                                                               |
 | `-d`, `--debug`        | `-ggdb -fsanitize=address -Og -DLOGCIE_DEBUG_CHECKS` instead of `-O3` |
-| `-p`, `--pedantic`     | add `-pedantic -DLOGCIE_PEDANTIC`                                     |
 | `-s`, `--silent`       | only warnings and errors                                              |
 | `-r`, `--dry-run`      | print the commands, run nothing                                       |
 | `-o`, `--outdir`       | output directory (default `./out/`)                                   |
 | `-c`, `--c-compiler`   | C compiler (default `clang`)                                          |
 | `-x`, `--cpp-compiler` | C++ compiler (default `clang++`)                                      |
+
+Each directory under `examples/` is one program, and they are meant to be read
+in order. Each adds one thing to the one before it.
+
+An example needing extra compiler flags puts them in a `build.flags` file next
+to its sources; `09_threads` uses that for `-lpthread`.
 
 ## Basic Usage
 
@@ -144,11 +155,53 @@ Logcie is built around three core components:
 
 ### Formatter
 
-Transforms a log structure into formatted output and passes it to [Writer](#writer)
+Turns a log into bytes and hands them to the [Writer](#writer). It owns the
+serialization, so `logcie_token_formatter` is one choice, not the only possible
+one — a JSON or binary formatter would be the same interface with different
+output. Its `user_data` is whatever that formatter needs: for the built-in one
+that is a [format token](#format-tokens) string.
+
+```c
+size_t my_formatter(Logcie_Writer *writer, void *user_data, Logcie_Log log, va_list *args);
+```
+
+Use `logcie_render_message(buf, cap, &log, args)` to render `log.msg` and its
+arguments — every formatter needs it, and it handles the `va_list` copying.
 
 ### Writer
 
-Handles where formatted output goes (FILE*, network, etc.).
+Puts one finished line somewhere: a `FILE *`, a socket, a ring buffer, a UART.
+
+```c
+size_t my_writer(void *user_data, const Logcie_Log *log, const char *bytes, size_t len);
+```
+
+Three things worth knowing:
+
+- **One call is one complete line**, terminating newline included. A writer is
+  never handed a fragment, so a sink that treats each call as one record —
+  syslog, a network endpoint — is safe.
+- **The log comes along** so a transport can use metadata as a value instead of
+  parsing it back out of the text. `syslog(3)` wants a priority, Android wants a
+  priority and a tag, a network sink may want the module as a routing key.
+- **`log->msg` is the format string from the call site, not the text.** The
+  rendered line is `bytes`. Use `bytes`; use `log` for metadata.
+
+`bytes` is not NUL terminated, so always use `len`.
+
+```c
+// route by severity without needing two sinks
+size_t console_writer(void *user_data, const Logcie_Log *log, const char *bytes, size_t len) {
+    (void)user_data;
+    FILE *out = log->level >= LOGCIE_LEVEL_WARN ? stderr : stdout;
+    return fwrite(bytes, 1, len, out);
+}
+```
+
+A writer with `NULL` user data discards everything. `logcie_file_writer` does
+exactly that, which is the cheapest way to mute a sink without removing it —
+and the first thing to check when a sink is unexpectedly silent, since Logcie
+does not substitute `stdout` for you.
 
 ### Filter
 
@@ -188,43 +241,63 @@ This is how default sinks looks like:
 
 ```c
 static Logcie_Sink default_stdout_sink = {
-    .formatter = {logcie_printf_formatter, "$c$L$r " LOGCIE_COLOR_GRAY "$f:$x$r: $m"},
-    .writer    = {logcie_printf_writer, stdout},
+    .formatter = {logcie_token_formatter, "$c$L$r " LOGCIE_COLOR_GRAY "$f:$x$r: $m"},
+    .writer    = {logcie_file_writer, stdout},
     .filter    = {NULL, NULL},
 };
 ```
 
-However, when you add your first Sink using `logcie_add_sink()`, the default printf Sink is removed.
-This design choice ensures you have full control over sink configuration once you start customizing.
+ You can configure it to your liking with:
 
-Important behaviors to understand:
- - Initial state: By default, one stdout sink exists at index 0
- - First sink addition: When you add your first custom sink, the default sink is removed
- - Restoring defaults: Use logcie_remove_all_sinks() to return to the initial default configuration
+```c
+Logcie_Sink *default_sink = logcie_get_default_sink();
 
-If you want to keep both the default stdout sink and add additional sinks, you must re-add it explicitly.
+// For example: add filter
+default_sink->filter = logcie_filter_level_min(LOGCIE_LEVEL_ERROR);
+```
+
+Or you can remove defualt sink all together with:
+
+```c
+// Remove default sink by pointer
+logcie_remove_sink(logcie_get_default_sink());
+
+// Or remove by its index. Scinse default sink is there from start
+// it will have index 0
+logcie_remove_sink_by_index(0);
+
+// Or just empty whole thing
+logcie_remove_all_sinks();
+```
 
 ### Creating a Custom Sink
 
 ```c
-// Create a file sink for error logs
-Logcie_Sink error_sink = {
+// Create a file sink for error logs.
+// NOTE: fopen() is not a constant expression, so the writer target is filled
+//       in at run time rather than in the initializer.
+static Logcie_Sink error_sink = {
     // nice format: date, time, level, module, message
-    .formatter = {logcie_printf_formatter,  "$d $t [$L] $f:$x - $m"},
-    .writer    = {logcie_printf_writer, fopen("errors.log", "a")},
-    .filter    = {logcie_filter_level_min_fn, LOGCIE_LEVEL_ERROR}
+    .formatter = {logcie_token_formatter, "$d $t [$L] $f:$x - $m"},
+    .writer    = {logcie_file_writer, NULL},
+    .filter    = logcie_filter_level_min(LOGCIE_LEVEL_ERROR)
 };
 
-// Add it to the logger
-logcie_add_sink(&error_sink);
+int main(void) {
+    error_sink.writer.data = fopen("errors.log", "a");
+    logcie_add_sink(&error_sink);
+}
 ```
 
-If you want to keep default sink you can do it like this:
+The filter field takes a `Logcie_Filter`, which the `logcie_filter_*` macros
+build for you. Writing `{logcie_filter_level_min_fn, LOGCIE_LEVEL_ERROR}` by
+hand puts an `int` where a `const void *` belongs.
+
+The default sink stays registered when you add your own, so there is nothing to
+restore. To drop it, remove it like any other sink:
 
 ```c
-Logcie_Sink *default_sink = logcie_get_sink(0);
-logcie_add_sink(&file_sink);
-logcie_add_sink(&default_sink);
+logcie_remove_sink(logcie_get_default_sink());
 ```
 
 ## Module-Based Logging
@@ -280,22 +353,22 @@ Since logcie_add_sink() stores the pointer to your sink structure (not a copy), 
 
 Format strings use `$` tokens to insert log metadata. The default formatter supports the following tokens:
 
-| Token   | Description                        | Example Output           |
-| ------- | -------------                      | ----------------         |
-| `$m`    | Log message with printf formatting | "Connection established" |
-| `$f`    | Source file name                   | "main.c"                 |
-| `$x`    | Line number                        | "42"                     |
-| `$M`    | Module name                        | "network"                |
-| `$l`    | Log level (lowercase)              | "info"                   |
-| `$L`    | Log level (uppercase)              | "INFO"                   |
-| `$c`    | ANSI color code for log level      | `\x1b[36;20m`            |
-| `$r`    | ANSI reset color code              | `\x1b[0m`                |
-| `$d`    | Date (YYYY-MM-DD)                  | "2025-12-24"             |
-| `$t`    | Time (HH:MM:SS)                    | "14:30:15"               |
-| `$N`    | Nanoseconds                        | "970431843"              |
-| `$z`    | Timezone offset                    | "+3"                     |
-| `$<n`   | Pads with n spaces                 | "    "                   |
-| `$$`    | Literal dollar sign                | "$"                      |
+| Token   | Description                                            | Example Output           |
+| ------- | -------------                                          | ----------------         |
+| `$m`    | Log message with printf formatting                     | "Connection established" |
+| `$f`    | Source file name                                       | "main.c"                 |
+| `$x`    | Line number                                            | "42"                     |
+| `$M`    | Module name                                            | "network"                |
+| `$l`    | Log level (lowercase)                                  | "info"                   |
+| `$L`    | Log level (uppercase)                                  | "INFO"                   |
+| `$c`    | ANSI color code for log level                          | `\x1b[36;20m`            |
+| `$r`    | ANSI reset color code                                  | `\x1b[0m`                |
+| `$d`    | Date (YYYY-MM-DD)                                      | "2025-12-24"             |
+| `$t`    | Time (HH:MM:SS)                                        | "14:30:15"               |
+| `$N`    | Nanoseconds                                            | "970431843"              |
+| `$z`    | Timezone offset                                        | "+3"                     |
+| `$<n`   | Pads prevous token out to `n` columns (example: `$<5`) | "     "                  |
+| `$$`    | Literal dollar sign                                    | "$"                      |
 
 ### Format Examples
 
@@ -413,7 +486,6 @@ Example:
 ## Limitations
 
 - **Thread safety is opt‑in** - Define `LOGCIE_THREAD_SAFE` before the implementation to serialise all operations with a mutex.  Without it, concurrent calls may interleave or crash.
-- **Memory allocation** - The sink array uses `malloc()`/`realloc()` for dynamic growth
 - **No built-in log rotation** - File management must be handled by the application (or just use `logrotate`)
 - **Custom formatters require `va_list` handling** - Advanced usage requires understanding of variadic arguments
 
@@ -440,7 +512,7 @@ Each directory covers one area:
 | `filters`                    | all built-in filters and the and/or/not combinators                                       |
 | `sinks`                      | add, remove, count, and default-sink replacement                                          |
 | `modules`                    | per-file, per-call and default module names                                               |
-| `api`                        | sink lookup, colours, removal by index                                                    |
+| `api`                        | sink lookup, colors, removal by index                                                     |
 | `printf_args`                | printf specifiers reaching the message                                                    |
 | `timestamps`                 | `$d $t $z` compared against the clock                                                     |
 | `recursion`                  | the recursion guard suppresses instead of looping                                         |
