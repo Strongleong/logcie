@@ -115,19 +115,6 @@ cc -o build build.c   # once
 Each directory under `examples/` is one program, and they are meant to be read
 in order. Each adds one thing to the one before it.
 
-| Example | Adds |
-| ------- | ---- |
-| `01_simple` | including the header and logging, with no setup |
-| `02_modules` | tagging logs with the subsystem they came from |
-| `03_sinks` | sending logs somewhere else, and to more than one place |
-| `04_filters` | deciding which logs reach which sink |
-| `05_custom_writer` | writing lines yourself, and routing on log metadata |
-| `06_custom_formatter` | replacing the output format entirely, here with JSON |
-| `07_configuration` | the macros that change what you see |
-| `08_allocation` | the buffer a line is built in, and where a long one comes from |
-| `09_threads` | logging from several threads at once |
-| `10_app` | all of it, as a small multi-file program |
-
 An example needing extra compiler flags puts them in a `build.flags` file next
 to its sources; `09_threads` uses that for `-lpthread`.
 
