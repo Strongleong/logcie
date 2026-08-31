@@ -82,7 +82,7 @@ Define any of these **before** you include `logcie.h` (or before
 | `LOGCIE_ALLOW_RECURSIVE_LOGGING` | Allows logging calls inside formatters/writers/filters (dangerous!). (see [Recursive Logging](#recursive-logging)) | *(not defined)*          |
 | `LOGCIE_DEF`                     | Linkage qualifier for public functions (e.g. `static`).                                                            | `extern`                 |
 | `LOGCIE_PEDANTIC`                | Forces the strict C99 macro fallback (`LOGCIE_*_VA`) even on GCC/Clang.                                            | *(not defined)*          |
-| `LOGCIE_COLOR_*`                 | ANSI escape codes for each level colour. You can override them or use `logcie_set_colors()`.                       | *(see source)*           |
+| `LOGCIE_COLOR_*`                 | ANSI escape codes for each level color. You can override them or use `logcie_set_colors()`.                        | *(see source)*           |
 | `LOGCIE_MODULE_SEPARATOR`        | Character separating levels of a module name. (see [Module-Based Logging](#module-based-logging))                  | `'.'`                    |
 | `LOGCIE_MAX_SINKS`               | How many sinks can be registered at once. `logcie_add_sink` returns 0 once full.                                   | `16`                     |
 | `LOGCIE_MAX_LINE`                | Stack buffer a line is formatted into. Lines that fit cost no allocation.                                          | `1024`                   |
