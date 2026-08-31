@@ -17,6 +17,7 @@ that supports multiple output sinks, customizable formatting, and flexible filte
 
 - [Quick Start](#quick-start)
 - [Installation](#installation)
+- [Migrating From v1](#migrating-from-v1)
 - [Building Examples](#building-examples)
 - [Basic Usage](#basic-usage)
 - [Log Levels](#log-levels)
@@ -68,6 +69,27 @@ int main() {
 // In any other file where you want to use logcie
 #include "logcie.h"
 ```
+
+## Migrating From v1
+
+Writers gain a parameter and lose the varargs:
+
+```c
+/* v1 */ size_t w(void *data, const char *fmt, va_list *va, ...);
+/* v2 */ size_t w(void *data, const Logcie_Log *log, const char *bytes, size_t len);
+```
+
+Write `bytes` directly; there is no format string to interpret. `log->msg` is
+the format string from the call site, *not* the rendered text.
+
+Rename `logcie_printf_formatter` to `logcie_token_formatter` and
+`logcie_printf_writer` to `logcie_file_writer`.
+
+If you relied on the first `logcie_add_sink` removing the built-in sink, call
+`logcie_remove_sink(logcie_get_default_sink())` explicitly.
+
+`$<n` pads to `n` columns rather than `n-1`, so a format tuned against the old
+behaviour gains one space.
 
 ## Configuration Macros
 
