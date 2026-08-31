@@ -657,10 +657,16 @@ struct Logcie_Log {
 #define LOGCIE_INTERNAL_CREATE_LOG(lvl, txt, f, l)          logcie_make_log(LOGCIE_MODULE, lvl, txt, f, l)
 #define LOGCIE_INTERNAL_CREATE_LOG_MOD(mod, lvl, txt, f, l) logcie_make_log(mod, lvl, txt, f, l)
 
-#if defined __has_attribute && __has_attribute(__format__)
+// NOTE: the __has_attribute test has to be nested. The preprocessor does not
+// short-circuit the way C does, so a compiler without __has_attribute -- MSVC
+// -- still has to make sense of the tokens on the right of the &&, and warns
+// about them.
+#ifdef __has_attribute
+#if __has_attribute(__format__)
 #define LOGCIE_INTERNAL_PRINTF_TYPE_CHECK(a, b) __attribute__((__format__(__printf__, a, b)))
 #else
 #define LOGCIE_INTERNAL_PRINTF_TYPE_CHECK(a, b)
+#endif
 #endif
 
 /**
@@ -1184,8 +1190,10 @@ static Logcie_Sink default_stdout_sink = {
   {NULL, NULL},
 };
 
-#if defined(__has_attribute) && __has_attribute(constructor)
+#ifdef __has_attribute
+#if __has_attribute(constructor)
 #define LOGCIE_INTERNAL_HAS_CONSTRUCTOR
+#endif
 #endif
 
 #ifdef LOGCIE_INTERNAL_HAS_CONSTRUCTOR
