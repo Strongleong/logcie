@@ -1115,6 +1115,46 @@ LOGCIE_MUTEX_DECLARE(logcie_mutex);
 static LOGCIE_THREAD_LOCAL int logcie_log_depth = 0;
 #endif
 
+// NOTE: localtime and gmtime hand back a pointer into storage shared across the
+// process, so two threads formatting at once can read a struct the other is
+// rewriting. That buffer lives in libc, so no lock held here can protect it --
+// the reentrant form is the only fix. Use it wherever one is exposed, and copy
+// out of the shared buffer only where strict ISO C leaves nothing else.
+//
+// NOTE: these zero the result first, so a failing conversion yields a
+// deterministic wrong date rather than whatever was on the stack.
+static void logcie_localtime(const time_t *t, struct tm *out) {
+  memset(out, 0, sizeof(*out));
+
+#if defined(_MSC_VER)
+  localtime_s(out, t);
+#elif defined(_POSIX_C_SOURCE) || defined(_DEFAULT_SOURCE) || defined(_GNU_SOURCE) || defined(_BSD_SOURCE)
+  localtime_r(t, out);
+#else
+  struct tm *shared = localtime(t);
+
+  if (shared != NULL) {
+    *out = *shared;
+  }
+#endif
+}
+
+static void logcie_gmtime(const time_t *t, struct tm *out) {
+  memset(out, 0, sizeof(*out));
+
+#if defined(_MSC_VER)
+  gmtime_s(out, t);
+#elif defined(_POSIX_C_SOURCE) || defined(_DEFAULT_SOURCE) || defined(_GNU_SOURCE) || defined(_BSD_SOURCE)
+  gmtime_r(t, out);
+#else
+  struct tm *shared = gmtime(t);
+
+  if (shared != NULL) {
+    *out = *shared;
+  }
+#endif
+}
+
 static const char *logcie_level_label[] = {
   "trace",
   "debug",
@@ -1395,7 +1435,7 @@ LOGCIE_DEF Logcie_Log logcie_make_log(const char *module, Logcie_LogLevel level,
     size_t  off_ = needed < cap ? needed : cap;                   \
     int32_t n_   = snprintf(buf + off_, cap - off_, __VA_ARGS__); \
     last_len     = n_ > 0 ? (size_t)n_ : 0;                       \
-    needed      += last_len;                                      \
+    needed += last_len;                                           \
   } while (0)
 
 /**
@@ -1447,8 +1487,8 @@ static size_t logcie_render_tokens(char *buf, size_t cap, const char *fmt, const
 #define LOGCIE_INTERNAL_ENSURE_TIME()                                             \
   do {                                                                            \
     if (!time_ready) {                                                            \
-      local_tm    = *localtime(&log->time);                                       \
-      utc_tm      = *gmtime(&log->time);                                          \
+      logcie_localtime(&log->time, &local_tm);                                    \
+      logcie_gmtime(&log->time, &utc_tm);                                         \
       local_hours = local_tm.tm_hour;                                             \
       timediff    = (int32_t)difftime(mktime(&local_tm), mktime(&utc_tm)) / 3600; \
       time_ready  = 1;                                                            \
@@ -1482,8 +1522,8 @@ static size_t logcie_render_tokens(char *buf, size_t cap, const char *fmt, const
       case 'm': {
         size_t off = needed < cap ? needed : cap;
 
-        last_len  = logcie_render_message(buf + off, cap - off, log, args);
-        needed   += last_len;
+        last_len = logcie_render_message(buf + off, cap - off, log, args);
+        needed += last_len;
         break;
       }
 
