@@ -2,6 +2,8 @@
 
 ## Upcoming
 
+## v2.0.0
+
 ### Added
 - `LOGCIE_MAX_LINE` (default 1024) -- stack buffer a line is formatted into
 - `LOGCIE_MALLOC` / `LOGCIE_FREE` -- allocator used only for lines longer than
