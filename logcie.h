@@ -679,7 +679,16 @@ struct Logcie_Log {
 #elif !defined(LOGCIE_PEDANTIC) && (defined(__GNUC__) || defined(__clang__))
 #define LOGCIE_LOG_IMPL(level, msg, ...)        logcie_log(LOGCIE_INTERNAL_CREATE_LOG(LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
 #define LOGCIE_LOG_MOD(module, level, msg, ...) logcie_log(LOGCIE_INTERNAL_CREATE_LOG_MOD(module, LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg, ##__VA_ARGS__)
-#elif !defined(LOGCIE_PEDANTIC) && defined(_MSC_VER) && (!defined(_MSVC_TRADITIONAL) || _MSVC_TRADITIONAL)
+#elif !defined(LOGCIE_PEDANTIC) && defined(_MSC_VER) && defined(_MSVC_TRADITIONAL) && !_MSVC_TRADITIONAL
+// Conforming MSVC preprocessor (/Zc:preprocessor). __VA_OPT__ is available
+// there regardless of the language standard in effect.
+#define LOGCIE_LOG_IMPL(level, msg, ...)        logcie_log(LOGCIE_INTERNAL_CREATE_LOG(LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg __VA_OPT__(, ) __VA_ARGS__)
+#define LOGCIE_LOG_MOD(module, level, msg, ...) logcie_log(LOGCIE_INTERNAL_CREATE_LOG_MOD(module, LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg __VA_OPT__(, ) __VA_ARGS__)
+#elif !defined(LOGCIE_PEDANTIC) && defined(_MSC_VER)
+// Traditional MSVC preprocessor: it drops the comma before an empty
+// __VA_ARGS__, but it also hands __VA_ARGS__ to a nested macro as one glued
+// argument. LOGCIE_INTERNAL_EXPAND below forces the extra rescan that splits
+// it back apart.
 #define LOGCIE_LOG_IMPL(level, msg, ...)        logcie_log(LOGCIE_INTERNAL_CREATE_LOG(LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
 #define LOGCIE_LOG_MOD(module, level, msg, ...) logcie_log(LOGCIE_INTERNAL_CREATE_LOG_MOD(module, LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
 #else
@@ -688,37 +697,42 @@ struct Logcie_Log {
 #define LOGCIE_VA_LOGS
 #endif
 
-#define LOGCIE_TRACE(...)   LOGCIE_LOG_IMPL(TRACE, __VA_ARGS__)
-#define LOGCIE_DEBUG(...)   LOGCIE_LOG_IMPL(DEBUG, __VA_ARGS__)
-#define LOGCIE_VERBOSE(...) LOGCIE_LOG_IMPL(VERBOSE, __VA_ARGS__)
-#define LOGCIE_INFO(...)    LOGCIE_LOG_IMPL(INFO, __VA_ARGS__)
-#define LOGCIE_WARN(...)    LOGCIE_LOG_IMPL(WARN, __VA_ARGS__)
-#define LOGCIE_ERROR(...)   LOGCIE_LOG_IMPL(ERROR, __VA_ARGS__)
-#define LOGCIE_FATAL(...)   LOGCIE_LOG_IMPL(FATAL, __VA_ARGS__)
+// Identity macro. On every conforming preprocessor this is a no-op; on the
+// traditional MSVC preprocessor the extra rescan is what re-splits __VA_ARGS__
+// into separate macro arguments.
+#define LOGCIE_INTERNAL_EXPAND(x) x
 
-#define LOGCIE_TRACE_MOD(mod, ...)   LOGCIE_LOG_MOD(mod, TRACE, __VA_ARGS__)
-#define LOGCIE_DEBUG_MOD(mod, ...)   LOGCIE_LOG_MOD(mod, DEBUG, __VA_ARGS__)
-#define LOGCIE_VERBOSE_MOD(mod, ...) LOGCIE_LOG_MOD(mod, VERBOSE, __VA_ARGS__)
-#define LOGCIE_INFO_MOD(mod, ...)    LOGCIE_LOG_MOD(mod, INFO, __VA_ARGS__)
-#define LOGCIE_WARN_MOD(mod, ...)    LOGCIE_LOG_MOD(mod, WARN, __VA_ARGS__)
-#define LOGCIE_ERROR_MOD(mod, ...)   LOGCIE_LOG_MOD(mod, ERROR, __VA_ARGS__)
-#define LOGCIE_FATAL_MOD(mod, ...)   LOGCIE_LOG_MOD(mod, FATAL, __VA_ARGS__)
+#define LOGCIE_TRACE(...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL(TRACE, __VA_ARGS__))
+#define LOGCIE_DEBUG(...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL(DEBUG, __VA_ARGS__))
+#define LOGCIE_VERBOSE(...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL(VERBOSE, __VA_ARGS__))
+#define LOGCIE_INFO(...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL(INFO, __VA_ARGS__))
+#define LOGCIE_WARN(...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL(WARN, __VA_ARGS__))
+#define LOGCIE_ERROR(...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL(ERROR, __VA_ARGS__))
+#define LOGCIE_FATAL(...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL(FATAL, __VA_ARGS__))
 
-#define LOGCIE_LOG(level, ...) LOGCIE_LOG_IMPL(level, __VA_ARGS__)
+#define LOGCIE_TRACE_MOD(mod, ...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_MOD(mod, TRACE, __VA_ARGS__))
+#define LOGCIE_DEBUG_MOD(mod, ...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_MOD(mod, DEBUG, __VA_ARGS__))
+#define LOGCIE_VERBOSE_MOD(mod, ...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_MOD(mod, VERBOSE, __VA_ARGS__))
+#define LOGCIE_INFO_MOD(mod, ...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_MOD(mod, INFO, __VA_ARGS__))
+#define LOGCIE_WARN_MOD(mod, ...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_MOD(mod, WARN, __VA_ARGS__))
+#define LOGCIE_ERROR_MOD(mod, ...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_MOD(mod, ERROR, __VA_ARGS__))
+#define LOGCIE_FATAL_MOD(mod, ...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_MOD(mod, FATAL, __VA_ARGS__))
+
+#define LOGCIE_LOG(level, ...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL(level, __VA_ARGS__))
 
 // Separate variadic logs for compilers that do not support optional variadics in macros
 #ifdef LOGCIE_VA_LOGS
 #define LOGCIE_LOG_IMPL_VA(level, msg, ...)        logcie_log(LOGCIE_INTERNAL_CREATE_LOG(LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
 #define LOGCIE_LOG_MOD_VA(module, level, msg, ...) logcie_log(LOGCIE_INTERNAL_CREATE_LOG_MOD(module, LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
 
-#define LOGCIE_TRACE_VA(...)      LOGCIE_LOG_IMPL_VA(TRACE, __VA_ARGS__)
-#define LOGCIE_DEBUG_VA(...)      LOGCIE_LOG_IMPL_VA(DEBUG, __VA_ARGS__)
-#define LOGCIE_VERBOSE_VA(...)    LOGCIE_LOG_IMPL_VA(VERBOSE, __VA_ARGS__)
-#define LOGCIE_INFO_VA(...)       LOGCIE_LOG_IMPL_VA(INFO, __VA_ARGS__)
-#define LOGCIE_WARN_VA(...)       LOGCIE_LOG_IMPL_VA(WARN, __VA_ARGS__)
-#define LOGCIE_ERROR_VA(...)      LOGCIE_LOG_IMPL_VA(ERROR, __VA_ARGS__)
-#define LOGCIE_FATAL_VA(...)      LOGCIE_LOG_IMPL_VA(FATAL, __VA_ARGS__)
-#define LOGCIE_LOG_VA(level, ...) LOGCIE_LOG_IMPL_VA(level, __VA_ARGS__)
+#define LOGCIE_TRACE_VA(...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL_VA(TRACE, __VA_ARGS__))
+#define LOGCIE_DEBUG_VA(...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL_VA(DEBUG, __VA_ARGS__))
+#define LOGCIE_VERBOSE_VA(...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL_VA(VERBOSE, __VA_ARGS__))
+#define LOGCIE_INFO_VA(...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL_VA(INFO, __VA_ARGS__))
+#define LOGCIE_WARN_VA(...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL_VA(WARN, __VA_ARGS__))
+#define LOGCIE_ERROR_VA(...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL_VA(ERROR, __VA_ARGS__))
+#define LOGCIE_FATAL_VA(...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL_VA(FATAL, __VA_ARGS__))
+#define LOGCIE_LOG_VA(level, ...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL_VA(level, __VA_ARGS__))
 #endif
 
 /**
