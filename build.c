@@ -54,7 +54,6 @@ static OptlyCommand command = {
   NULL,
   .flags = optly_flags(
     optly_flag_bool("debug", 'd', "Compile with debug flags"),
-    optly_flag_bool("pedantic", 'p', "Enable pedantic compilation flags"),
     optly_flag_bool("silent", 's', "Compile without unnececary output"),
     optly_flag_string("outdir", 'o', "Set output dir", .value.as_string = "." PATH_SEP "out" PATH_SEP),
     optly_flag_string("c-compiler", 'c', "Set which C compier to use", .value.as_string = "clang"),
@@ -534,11 +533,6 @@ static bool build_example(const char *dir, const char *name) {
   cmd[i++] = "-Wall";
   cmd[i++] = "-Wextra";
   cmd[i++] = found.cpp ? "-std=c++11" : "-std=c99";
-
-  if (optly_flag_value_bool(&command, "pedantic")) {
-    cmd[i++] = "-pedantic";
-    cmd[i++] = "-DLOGCIE_PEDANTIC";
-  }
 
   if (optly_flag_value_bool(&command, "debug")) {
     cmd[i++] = "-ggdb";

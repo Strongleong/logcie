@@ -106,7 +106,6 @@ cc -o build build.c   # once
 | Flag                   | Meaning                                                               |
 | ----                   | -------                                                               |
 | `-d`, `--debug`        | `-ggdb -fsanitize=address -Og -DLOGCIE_DEBUG_CHECKS` instead of `-O3` |
-| `-p`, `--pedantic`     | add `-pedantic -DLOGCIE_PEDANTIC`                                     |
 | `-s`, `--silent`       | only warnings and errors                                              |
 | `-r`, `--dry-run`      | print the commands, run nothing                                       |
 | `-o`, `--outdir`       | output directory (default `./out/`)                                   |
