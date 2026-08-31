@@ -664,9 +664,9 @@ struct Logcie_Log {
 #ifdef __has_attribute
 #if __has_attribute(__format__)
 #define LOGCIE_INTERNAL_PRINTF_TYPE_CHECK(a, b) __attribute__((__format__(__printf__, a, b)))
+#endif
 #else
 #define LOGCIE_INTERNAL_PRINTF_TYPE_CHECK(a, b)
-#endif
 #endif
 
 /**
