@@ -8,7 +8,7 @@
 
 // $N needs a sub-second clock. C11 has one; on C99 you opt into the POSIX one
 // before any header, which is why this comes first.
-#define _POSIX_C_SOURCE 199309L
+#define _POSIX_C_SOURCE 200809L
 
 #include <stdio.h>
 
