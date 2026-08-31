@@ -1475,8 +1475,14 @@ static size_t logcie_render_tokens(char *buf, size_t cap, const char *fmt, const
   // NOTE: the timestamp is captured at the call site, in
   // LOGCIE_INTERNAL_CREATE_LOG. This is only the conversion of that instant
   // into fields, and a format with no $d, $t or $z should not pay for it.
-  struct tm local_tm;
-  struct tm utc_tm;
+
+#ifdef __cplusplus
+  struct tm local_tm = {};
+  struct tm utc_tm = {};
+#else
+  struct tm local_tm = {0};
+  struct tm utc_tm = {0};
+#endif
 
   int32_t local_hours = 0;
   int32_t timediff    = 0;
