@@ -1,0 +1,19 @@
+:test writer_flush_actually_flushes
+:command compile
+:blob executable 2
+cc
+:blob args 69
+-std=c11 -Wall -Wextra -Werror -I../.. flush.c -o .side_effects/flush
+:int return 0
+:command run
+:blob executable 19
+.side_effects/flush
+:int return 0
+:blob stdout 105
+before: flushes: 1
+before: writes: 3
+more: flushes: 1
+more: writes: 4
+after: flushes: 2
+after: writes: 4
+
