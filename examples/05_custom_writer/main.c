@@ -26,7 +26,7 @@ static size_t console_writer(void *user_data, const Logcie_Log *log, const char 
 
 static Logcie_Sink console = {
   .formatter = {logcie_token_formatter, "[$L] $m"},
-  .writer    = {console_writer, NULL},
+  .writer    = {console_writer, logcie_file_flush, NULL},
   .filter    = {NULL, NULL}
 };
 

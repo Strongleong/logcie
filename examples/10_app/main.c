@@ -30,7 +30,7 @@ static size_t console_writer(void *user_data, const Logcie_Log *log, const char 
 // api.c is aware of this.
 static Logcie_Sink console = {
   .formatter = {logcie_token_formatter, "$c$L$<6$r ($M) $m"},
-  .writer    = {console_writer, NULL},
+  .writer    = {console_writer, logcie_file_flush, NULL},
   .filter    = logcie_filter_and(
     logcie_filter_level_min(LOGCIE_LEVEL_INFO),
     logcie_filter_not(logcie_filter_module_prefix_eq("app.storage"))
@@ -40,7 +40,7 @@ static Logcie_Sink console = {
 // File: everything, with enough detail to debug from afterwards.
 static Logcie_Sink logfile = {
   .formatter = {logcie_token_formatter, "$d $t.$N [$l] $M $f:$x $m"},
-  .writer    = {logcie_file_writer, NULL},
+  .writer    = {logcie_file_writer, logcie_file_flush, NULL},
   .filter    = {NULL, NULL}
 };
 

@@ -63,7 +63,7 @@ static size_t json_formatter(Logcie_Writer *writer, void *user_data, Logcie_Log 
 
 static Logcie_Sink json_sink = {
   .formatter = {json_formatter, NULL},
-  .writer    = {logcie_file_writer, NULL},
+  .writer    = {logcie_file_writer, logcie_file_flush, NULL},
   .filter    = {NULL, NULL}
 };
 

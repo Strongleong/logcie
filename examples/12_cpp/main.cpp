@@ -25,7 +25,7 @@ int main() {
   // built as C++11
   Logcie_Sink console = {
     {logcie_token_formatter, (void *)"[$L] ($M) $m"},
-    {console_writer, NULL},
+    {console_writer, logcie_file_flush, NULL},
     logcie_filter_and(
       logcie_filter_level_min(LOGCIE_LEVEL_INFO),
       logcie_filter_not(logcie_filter_module_eq("noisy"))
