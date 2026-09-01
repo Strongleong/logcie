@@ -1182,9 +1182,7 @@ LOGCIE_MUTEX_DECLARE(logcie_mutex);
 #warning "No thread local storage support"
 #endif
 
-#ifndef LOGCIE_ALLOW_RECURSIVE_LOGGING
 static LOGCIE_THREAD_LOCAL int logcie_log_depth = 0;
-#endif
 
 // NOTE: localtime and gmtime hand back a pointer into storage shared across the
 // process, so two threads formatting at once can read a struct the other is
@@ -1418,9 +1416,7 @@ void logcie_remove_all_sinks(void) {
   LOGCIE_MUTEX_UNLOCK(logcie_mutex);
 }
 
-LOGCIE_DEF void logcie_flush(void) {
-  LOGCIE_MUTEX_LOCK(logcie_mutex);
-
+static void logcie_flush_locked(void) {
   for (size_t i = 0; i < logcie.sinks_len; i++) {
     Logcie_WriterFlushFn *flusher = logcie.sinks[i]->writer.flush;
 
@@ -1428,7 +1424,17 @@ LOGCIE_DEF void logcie_flush(void) {
       flusher(logcie.sinks[i]->writer.data);
     }
   }
+}
 
+LOGCIE_DEF void logcie_flush(void) {
+  if (logcie_log_depth > 0) {
+    // Already locked
+    logcie_flush_locked();
+    return;
+  }
+
+  LOGCIE_MUTEX_LOCK(logcie_mutex);
+  logcie_flush_locked();
   LOGCIE_MUTEX_UNLOCK(logcie_mutex);
 }
 
@@ -1437,9 +1443,9 @@ size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
   if (logcie_log_depth > 0) {
     return 0;
   }
+#endif
 
   logcie_log_depth++;
-#endif
 
   LOGCIE_MUTEX_LOCK(logcie_mutex);
 
@@ -1469,10 +1475,7 @@ size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
   }
 
   LOGCIE_MUTEX_UNLOCK(logcie_mutex);
-
-#ifndef LOGCIE_ALLOW_RECURSIVE_LOGGING
   logcie_log_depth--;
-#endif
 
   va_end(args);
   return 0;
