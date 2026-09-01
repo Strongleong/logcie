@@ -69,3 +69,36 @@ writer_calls=1000
 flushed_at_least_once=1
 all_accounted_for=1
 
+:test a_writer_can_call_logcie_flush_without_deadlocking
+:command compile
+:blob executable 2
+cc
+:blob args 103
+-std=c11 -Wall -Wextra -Werror -I../.. flush_from_writer.c -o .side_effects/flush_from_writer -lpthread
+:int return 0
+:command run
+:blob executable 31
+.side_effects/flush_from_writer
+:int timeout_ms 30000
+:int return 0
+:blob stdout 63
+after_info: writes=1 flushes=1
+after_error: writes=2 flushes=3
+
+
+:test the_same_holds_when_recursive_logging_is_allowed
+:command compile
+:blob executable 2
+cc
+:blob args 146
+-std=c11 -Wall -Wextra -Werror -DLOGCIE_ALLOW_RECURSIVE_LOGGING -I../.. flush_from_writer.c -o .side_effects/flush_from_writer_recursive -lpthread
+:int return 0
+:command run
+:blob executable 41
+.side_effects/flush_from_writer_recursive
+:int timeout_ms 30000
+:int return 0
+:blob stdout 63
+after_info: writes=1 flushes=1
+after_error: writes=2 flushes=3
+
