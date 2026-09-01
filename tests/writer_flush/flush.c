@@ -63,5 +63,10 @@ int main(void) {
   printf("after: flushes: %d\n", flushes);
   printf("after: writes: %d\n", writes);
 
+  LOGCIE_ERROR("Still enough space in buffer but it should autoflush");
+
+  printf("autoflush: flushes: %d\n", flushes);
+  printf("autoflush: writes: %d\n", writes);
+
   return 0;
 }

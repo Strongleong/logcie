@@ -9,11 +9,13 @@ cc
 :blob executable 19
 .side_effects/flush
 :int return 0
-:blob stdout 105
+:blob stdout 148
 before: flushes: 1
 before: writes: 3
 more: flushes: 1
 more: writes: 4
 after: flushes: 2
 after: writes: 4
+autoflush: flushes: 3
+autoflush: writes: 5
 
