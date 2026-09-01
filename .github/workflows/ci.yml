@@ -97,11 +97,17 @@ jobs:
           ./build -c gcc
           echo "$PWD/out" >> "$GITHUB_PATH"
 
-      # -d turns on ASan for the examples; the suite has its own TSan case
+      # -d turns on ASan for the examples; the suite has its own TSan cases
       - name: Examples under AddressSanitizer
         run: |
           cc build.c -o build
           ./build -d -c gcc -x g++
+          for exe in out/*; do [ -x "$exe" ] && [ -f "$exe" ] && "$exe" >/dev/null; done
+
+      # 09_threads and 10_app are the ones with anything to race.
+      - name: Examples under ThreadSanitizer
+        run: |
+          ./build -d -T -c gcc -x g++
           for exe in out/*; do [ -x "$exe" ] && [ -f "$exe" ] && "$exe" >/dev/null; done
 
       - name: Tests
