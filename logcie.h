@@ -1449,7 +1449,7 @@ size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
 
     sink->formatter.format(&sink->writer, sink->formatter.data, log, &args_copy);
 
-    if (log.level >= LOGCIE_AUTOFLUSH_LEVEL) {
+    if (log.level >= LOGCIE_AUTOFLUSH_LEVEL && sink->writer.flush) {
       sink->writer.flush(sink->writer.data);
     }
 
