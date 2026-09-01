@@ -856,6 +856,15 @@ LOGCIE_DEF uint8_t logcie_remove_sink_by_index(size_t index);
 LOGCIE_DEF void logcie_remove_all_sinks(void);
 
 /**
+ * @brief Flushes all registerd sinks.
+ *
+ * Iterates for every registered sink and calls its flusher, if it exists.
+ *
+ * @returns total size of all flushed bytes
+ */
+LOGCIE_DEF size_t logcie_flush(void);
+
+/**
  * @brief Default formatter using printf-style formatting and $ tokens.
  *
  * This is the built-in formatter that provides rich formatting capabilities
@@ -1384,6 +1393,18 @@ void logcie_remove_all_sinks(void) {
   LOGCIE_MUTEX_LOCK(logcie_mutex);
   logcie.sinks_len = 0;
   LOGCIE_MUTEX_UNLOCK(logcie_mutex);
+}
+
+LOGCIE_DEF size_t logcie_flush(void) {
+  size_t res = 0;
+  LOGCIE_MUTEX_LOCK(logcie_mutex);
+
+  for (size_t i = 0; i < logcie.sinks_len; i++) {
+    res += logcie.sinks[i]->writer.flush(logcie.sinks[i]->writer.data);
+  }
+
+  LOGCIE_MUTEX_UNLOCK(logcie_mutex);
+  return res;
 }
 
 size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
