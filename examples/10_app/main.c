@@ -26,11 +26,17 @@ static size_t console_writer(void *user_data, const Logcie_Log *log, const char 
   return fwrite(bytes, 1, len, out);
 }
 
+static void console_flush(void *user_data) {
+  (void)user_data;
+  fflush(stdout);
+  fflush(stderr);
+}
+
 // Console: INFO and up, but never the storage chatter. Neither storage.c nor
 // api.c is aware of this.
 static Logcie_Sink console = {
   .formatter = {logcie_token_formatter, "$c$L$<6$r ($M) $m"},
-  .writer    = {console_writer, logcie_file_flush, NULL},
+  .writer    = {console_writer, console_flush, NULL},
   .filter    = logcie_filter_and(
     logcie_filter_level_min(LOGCIE_LEVEL_INFO),
     logcie_filter_not(logcie_filter_module_prefix_eq("app.storage"))
@@ -63,6 +69,8 @@ int main(void) {
   storage_close();
 
   LOGCIE_INFO("done, see app.log for the full trace");
+
+  logcie_flush();
 
   fclose((FILE *)logfile.writer.data);
   return 0;
