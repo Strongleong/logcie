@@ -12,12 +12,11 @@ that supports multiple output sinks, customizable formatting, and flexible filte
 - Support for multiple sinks (stdout, file, etc.)
 - c11/c99 compatible (with -pedantic file)
 
-
 ## Table of Contents
 
 - [Quick Start](#quick-start)
 - [Installation](#installation)
-- [Migrating From v1](#migrating-from-v1)
+- [Migrating From v2](#migrating-from-v2)
 - [Building Examples](#building-examples)
 - [Basic Usage](#basic-usage)
 - [Log Levels](#log-levels)
@@ -71,26 +70,30 @@ int main() {
 #include "logcie.h"
 ```
 
-## Migrating From v1
+## Migrating From v2
 
-Writers gain a parameter and lose the varargs:
+`Logcie_Writer` gained a `flush` field, in the middle:
 
 ```c
-/* v1 */ size_t w(void *data, const char *fmt, va_list *va, ...);
-/* v2 */ size_t w(void *data, const Logcie_Log *log, const char *bytes, size_t len);
+/* v2 */ typedef struct { Logcie_WriterFn *write; void *data; } Logcie_Writer;
+/* v3 */ typedef struct { Logcie_WriterFn *write; Logcie_WriterFlushFn *flush; void *data; } Logcie_Writer;
 ```
 
-Write `bytes` directly; there is no format string to interpret. `log->msg` is
-the format string from the call site, *not* the rendered text.
+If you initialize it positionally, your target now lands in the flush slot.
+Add the flush argument, or `NULL`:
 
-Rename `logcie_printf_formatter` to `logcie_token_formatter` and
-`logcie_printf_writer` to `logcie_file_writer`.
+```c
+/* v2 */ .writer = {my_writer, target}
+/* v3 */ .writer = {my_writer, NULL, target}
+```
 
-If you relied on the first `logcie_add_sink` removing the built-in sink, call
-`logcie_remove_sink(logcie_get_default_sink())` explicitly.
+Designated initializers (`.write`, `.data`) need no change. `logcie_file_flush`
+is the built-in flush to pair with `logcie_file_writer`.
 
-`$<n` pads to `n` columns rather than `n-1`, so a format tuned against the old
-behaviour gains one space.
+Nothing else moved, and nothing has to be flushed for logging to keep working.
+But two behaviours are new and worth knowing about: a log at
+`LOGCIE_AUTOFLUSH_LEVEL` or above (`LOGCIE_LEVEL_ERROR` by default) now flushes
+the sink it was written to, and `logcie_flush()` exists for the rest. See [Flush](#flush).
 
 ## Configuration Macros
 
