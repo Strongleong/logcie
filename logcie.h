@@ -502,6 +502,7 @@ typedef enum Logcie_LogLevel {
 #endif
 
 #ifdef LOGCIE_AUTOFLUSH_DISABLE
+#undef LOGCIE_AUTOFLUSH_LEVEL
 #define LOGCIE_AUTOFLUSH_LEVEL Count_LOGCIE_LEVEL
 #endif
 
