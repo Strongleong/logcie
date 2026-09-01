@@ -6,6 +6,8 @@
 - Introduced `Logcie_WriterFlushFn` and `flush` field of `Logcie_Writer`.
   Flush is responsible for sending rest of the buffered data to its destination.
   It can be either calling fflush or write into a socket.
+- Introduced `logcie_flush()`. It will iterate over every registred sinks and
+  will call their flushers
 
 ## v2.0.0
 
