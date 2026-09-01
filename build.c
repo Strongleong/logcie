@@ -58,7 +58,8 @@ static OptlyCommand command = {
     optly_flag_string("outdir", 'o', "Set output dir", .value.as_string = "." PATH_SEP "out" PATH_SEP),
     optly_flag_string("c-compiler", 'c', "Set which C compier to use", .value.as_string = "clang"),
     optly_flag_string("cpp-compiler", 'x', "Set which C++ compier to use", .value.as_string = "clang++"),
-    optly_flag_bool("dry-run", 'r', "Do not compile but show compile commands")
+    optly_flag_bool("dry-run", 'r', "Do not compile but show compile commands"),
+    optly_flag_bool("thread-sanitizer", 'T', "Compile with thread sanitizer instead of address sanitizer")
   ),
   .commands = optly_commands(
     optly_command(
@@ -560,7 +561,7 @@ static bool build_example(const char *dir, const char *name) {
   if (optly_flag_value_bool(&command, "debug")) {
     cmd[i++] = "-ggdb";
 #ifndef _WIN32
-    cmd[i++] = "-fsanitize=address";
+    cmd[i++] = optly_flag_value_bool(&command, "thread-sanitizer") ? "-fsanitize=thread" : "-fsanitize=address";
 #endif
     cmd[i++] = "-fno-omit-frame-pointer";
     cmd[i++] = "-DLOGCIE_DEBUG_CHECKS";
