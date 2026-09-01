@@ -3,14 +3,23 @@
 ## Upcoming
 
 ### Added
-- Introduced `Logcie_WriterFlushFn` and `flush` field of `Logcie_Writer`.
-  Flush is responsible for sending rest of the buffered data to its destination.
-  It can be either calling fflush or write into a socket.
-- Introduced `logcie_flush()`. It will iterate over every registred sinks and
-  will call their flushers
-- Introduced `LOGCIE_AUTOFLUSH_LEVEL`. If log with this or higher level is encountered
-  it will force call writer flush.
-- Introduced `LOGCIE_AUTOFLUSH_DISABLE`. It will disable automatic sink flusing.
+- `Logcie_Writer` gained a `flush` field, for destinations that buffer. It is
+  called with the same `data` as `write`, and `NULL` means there is nothing to
+  flush. `logcie_file_flush` is the built-in one to pair with
+  `logcie_file_writer`.
+- `logcie_flush()` flushes every registered sink. Call it before exiting, and
+  before removing a sink -- logcie does not flush on removal, because closing
+  the destination is yours to do.
+- Logs at `LOGCIE_AUTOFLUSH_LEVEL` or above now flush the sink they were
+  written to, so a crash does not take the lines explaining it. Defaults to
+  `LOGCIE_LEVEL_ERROR`; define `LOGCIE_AUTOFLUSH_DISABLE` to switch it off.
+
+### Changed
+- **You are affected if you initialize `Logcie_Writer` positionally.** The
+  struct is now `{write, flush, data}`, so `{my_writer, target}` puts your
+  target in the flush slot. Add the flush argument, or `NULL`:
+  `{my_writer, NULL, target}`. Designated initializers (`.write`, `.data`) do
+  not need changing.
 
 ## v2.0.0
 
