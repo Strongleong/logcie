@@ -9,10 +9,18 @@
   `logcie_file_writer`.
 - `logcie_flush()` flushes every registered sink. Call it before exiting, and
   before removing a sink -- logcie does not flush on removal, because closing
-  the destination is yours to do.
+  the destination is yours to do. It is safe to call from inside a formatter or
+  a writer, unlike logging, which is refused there unless
+  `LOGCIE_ALLOW_RECURSIVE_LOGGING` is defined.
 - Logs at `LOGCIE_AUTOFLUSH_LEVEL` or above now flush the sink they were
   written to, so a crash does not take the lines explaining it. Defaults to
   `LOGCIE_LEVEL_ERROR`; define `LOGCIE_AUTOFLUSH_DISABLE` to switch it off.
+
+### Fixed
+- `logcie.h` builds with `NDEBUG` again. A probe in `logcie_set_colors` was
+  used only inside an assertion, so once assertions compiled away
+  `-Wall -Wextra -Werror` rejected it.
+
 
 ### Changed
 - **You are affected if you initialize `Logcie_Writer` positionally.** The
