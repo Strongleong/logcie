@@ -547,9 +547,8 @@ typedef size_t(Logcie_WriterFn)(void *user_data, const Logcie_Log *log, const ch
  * It can be either calling fflush or write into a socket.
  *
  * @param user_data  Destination for this writer (FILE *, socket, ...)
- * @return Number of bytes flushed
  */
-typedef size_t(Logcie_WriterFlushFn)(void *user_data);
+typedef void(Logcie_WriterFlushFn)(void *user_data);
 
 /**
  * @brief Writer struct
@@ -875,7 +874,7 @@ LOGCIE_DEF void logcie_remove_all_sinks(void);
  *
  * @returns total size of all flushed bytes
  */
-LOGCIE_DEF size_t logcie_flush(void);
+LOGCIE_DEF void logcie_flush(void);
 
 /**
  * @brief Default formatter using printf-style formatting and $ tokens.
@@ -931,9 +930,8 @@ LOGCIE_DEF size_t logcie_file_writer(void *user_data, const Logcie_Log *log, con
  * @see logcie_file_writer
  *
  * @param user_data  FILE * to write to, or NULL to discard
- * @return Number of bytes flushed
  */
-LOGCIE_DEF size_t logcie_file_flush(void *user_data);
+LOGCIE_DEF void logcie_file_flush(void *user_data);
 
 /**
  * @brief Renders the user's message into a buffer.
@@ -1408,20 +1406,18 @@ void logcie_remove_all_sinks(void) {
   LOGCIE_MUTEX_UNLOCK(logcie_mutex);
 }
 
-LOGCIE_DEF size_t logcie_flush(void) {
-  size_t res = 0;
+LOGCIE_DEF void logcie_flush(void) {
   LOGCIE_MUTEX_LOCK(logcie_mutex);
 
   for (size_t i = 0; i < logcie.sinks_len; i++) {
     Logcie_WriterFlushFn *flusher = logcie.sinks[i]->writer.flush;
 
     if (flusher) {
-      res += flusher(logcie.sinks[i]->writer.data);
+      flusher(logcie.sinks[i]->writer.data);
     }
   }
 
   LOGCIE_MUTEX_UNLOCK(logcie_mutex);
-  return res;
 }
 
 size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
@@ -1728,8 +1724,10 @@ LOGCIE_DEF size_t logcie_file_writer(void *user_data, const Logcie_Log *log, con
   return fwrite(bytes, 1, len, file);
 }
 
-LOGCIE_DEF size_t logcie_file_flush(void *user_data) {
-  return fflush((FILE *)user_data);
+LOGCIE_DEF void logcie_file_flush(void *user_data) {
+  if (user_data) {
+    fflush((FILE *)user_data);
+  }
 }
 
 LOGCIE_DEF uint8_t logcie_filter_not_fn(const void *data, Logcie_Log *log) {
