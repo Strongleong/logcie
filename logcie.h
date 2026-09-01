@@ -27,6 +27,8 @@
  *   LOGCIE_MODULE                  Module name for classic macros (default "Logcie")
  *   LOGCIE_MODULE_SEPARATOR        Moudle names separator for hierarchical module filtering (default '.')
  *   LOGCIE_MAX_SINKS               Maximum capacity of logcie sinks array (default: 16)
+ *   LOGCIE_AUTOFLUSH_LEVEL         Maximum log level that fill automatically call flush (default: LOGCIE_LEVEL_ERROR)
+ *   LOGCIE_AUTOFLUSH_DISABLE       Diables autoflush. Define to enable (default: not defined)
  *   LOGCIE_MAX_LINE                Stack buffer a log line is formatted into (default: 1024)
  *   LOGCIE_MALLOC / LOGCIE_FREE    Allocator for lines longer than LOGCIE_MAX_LINE
  *   LOGCIE_NO_MALLOC               Never allocate; truncate long lines instead
@@ -490,6 +492,17 @@ typedef enum Logcie_LogLevel {
  */
 #ifndef LOGCIE_MAX_SINKS
 #define LOGCIE_MAX_SINKS 16
+#endif
+
+/**
+ * @brief Maximum log level that fill automatically call flush
+ */
+#ifndef LOGCIE_AUTOFLUSH_LEVEL
+#define LOGCIE_AUTOFLUSH_LEVEL LOGCIE_LEVEL_ERROR
+#endif
+
+#ifdef LOGCIE_AUTOFLUSH_DISABLE
+#define LOGCIE_AUTOFLUSH_LEVEL Count_LOGCIE_LEVEL
 #endif
 
 /**
@@ -1439,6 +1452,10 @@ size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
     va_copy(args_copy, args);
 
     sink->formatter.format(&sink->writer, sink->formatter.data, log, &args_copy);
+
+    if (log.level >= LOGCIE_AUTOFLUSH_LEVEL) {
+      sink->writer.flush(sink->writer.data);
+    }
 
     va_end(args_copy);
   }
