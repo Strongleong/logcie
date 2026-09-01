@@ -58,6 +58,7 @@
  *          is safe. It also gets the log itself, for metadata a transport needs as a
  *          separate value rather than as text. A NULL user_data discards, which is
  *          /dev/null without the open().
+ *          Also writer has a flush. A flush is basically an fflush.
  *   Filter decides whether a log reaches the Sink at all. See the Filters section below for the built-i
  *          ones and how to combine them.
  *
@@ -94,7 +95,7 @@
  *   It would not be that great if Logcie was just empty framework and you need to set it up by yourself,
  *   so Logcie comes with a couple of pre-defined functions:
  *
- *      - logcie_file_writer      - built-in writer. Writes the formatted line to a FILE *
+ *      - logcie_file_writer      - built-in writer. Writes the formatted line to a FILE * and have a fflush as flush
  *      - logcie_token_formatter - built-in formatter that provides rich formatting using $ tokens. Here is the list:
  *                                   `$m` - Log message with printf formatting
  *                                   `$f` - Source file name
@@ -291,13 +292,13 @@
  *     //       there and fill the writer target in at run time.
  *     Logcie_Sink stdout_sink = {
  *       .formatter = { logcie_token_formatter, "[$L] $m" },
- *       .writer = { logcie_file_writer, NULL },
+ *       .writer = { logcie_file_writer, logcie_file_flush, NULL },
  *       .filter = { logcie_filter_level_min_fn, LOGCIE_LEVEL_INFO }
  *     };
  *
  *     Logcie_Sink file_sink = {
  *       .formatter = { logcie_token_formatter, "$L:$f:$x: $m ($t $d)" },
- *       .writer = { logcie_file_writer, NULL },
+ *       .writer = { logcie_file_writer, logcie_file_flush, NULL },
  *     };
  *
  *     int main(void) {
@@ -527,16 +528,29 @@ typedef struct Logcie_Log Logcie_Log;
 typedef size_t(Logcie_WriterFn)(void *user_data, const Logcie_Log *log, const char *bytes, size_t len);
 
 /**
+ * @brief Writer flush function type signature
+ *
+ * Flush is responsible for sending rest of the buffered data to its destination.
+ * It can be either calling fflush or write into a socket.
+ *
+ * @param user_data  Destination for this writer (FILE *, socket, ...)
+ * @return Number of bytes flushed
+ */
+typedef size_t(Logcie_WriterFlushFn)(void *user_data);
+
+/**
  * @brief Writer struct
  *
  * Stores writer function pointer and custom data for it
  *
  * @param write  Writer function pointer
+ * @param flush  Flush function pointer
  * @param data   Custom data for writer function
  */
 typedef struct Logcie_Writer {
-  Logcie_WriterFn *write;
-  void            *data;
+  Logcie_WriterFn      *write;
+  Logcie_WriterFlushFn *flush;
+  void                 *data;
 } Logcie_Writer;
 
 /**
@@ -702,21 +716,21 @@ struct Logcie_Log {
 // into separate macro arguments.
 #define LOGCIE_INTERNAL_EXPAND(x) x
 
-#define LOGCIE_TRACE(...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL(TRACE, __VA_ARGS__))
-#define LOGCIE_DEBUG(...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL(DEBUG, __VA_ARGS__))
+#define LOGCIE_TRACE(...)   LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL(TRACE, __VA_ARGS__))
+#define LOGCIE_DEBUG(...)   LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL(DEBUG, __VA_ARGS__))
 #define LOGCIE_VERBOSE(...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL(VERBOSE, __VA_ARGS__))
-#define LOGCIE_INFO(...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL(INFO, __VA_ARGS__))
-#define LOGCIE_WARN(...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL(WARN, __VA_ARGS__))
-#define LOGCIE_ERROR(...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL(ERROR, __VA_ARGS__))
-#define LOGCIE_FATAL(...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL(FATAL, __VA_ARGS__))
+#define LOGCIE_INFO(...)    LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL(INFO, __VA_ARGS__))
+#define LOGCIE_WARN(...)    LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL(WARN, __VA_ARGS__))
+#define LOGCIE_ERROR(...)   LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL(ERROR, __VA_ARGS__))
+#define LOGCIE_FATAL(...)   LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL(FATAL, __VA_ARGS__))
 
-#define LOGCIE_TRACE_MOD(mod, ...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_MOD(mod, TRACE, __VA_ARGS__))
-#define LOGCIE_DEBUG_MOD(mod, ...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_MOD(mod, DEBUG, __VA_ARGS__))
+#define LOGCIE_TRACE_MOD(mod, ...)   LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_MOD(mod, TRACE, __VA_ARGS__))
+#define LOGCIE_DEBUG_MOD(mod, ...)   LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_MOD(mod, DEBUG, __VA_ARGS__))
 #define LOGCIE_VERBOSE_MOD(mod, ...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_MOD(mod, VERBOSE, __VA_ARGS__))
-#define LOGCIE_INFO_MOD(mod, ...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_MOD(mod, INFO, __VA_ARGS__))
-#define LOGCIE_WARN_MOD(mod, ...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_MOD(mod, WARN, __VA_ARGS__))
-#define LOGCIE_ERROR_MOD(mod, ...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_MOD(mod, ERROR, __VA_ARGS__))
-#define LOGCIE_FATAL_MOD(mod, ...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_MOD(mod, FATAL, __VA_ARGS__))
+#define LOGCIE_INFO_MOD(mod, ...)    LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_MOD(mod, INFO, __VA_ARGS__))
+#define LOGCIE_WARN_MOD(mod, ...)    LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_MOD(mod, WARN, __VA_ARGS__))
+#define LOGCIE_ERROR_MOD(mod, ...)   LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_MOD(mod, ERROR, __VA_ARGS__))
+#define LOGCIE_FATAL_MOD(mod, ...)   LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_MOD(mod, FATAL, __VA_ARGS__))
 
 #define LOGCIE_LOG(level, ...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL(level, __VA_ARGS__))
 
@@ -725,13 +739,13 @@ struct Logcie_Log {
 #define LOGCIE_LOG_IMPL_VA(level, msg, ...)        logcie_log(LOGCIE_INTERNAL_CREATE_LOG(LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
 #define LOGCIE_LOG_MOD_VA(module, level, msg, ...) logcie_log(LOGCIE_INTERNAL_CREATE_LOG_MOD(module, LOGCIE_LEVEL_##level, msg, __FILE__, __LINE__), msg, __VA_ARGS__)
 
-#define LOGCIE_TRACE_VA(...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL_VA(TRACE, __VA_ARGS__))
-#define LOGCIE_DEBUG_VA(...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL_VA(DEBUG, __VA_ARGS__))
-#define LOGCIE_VERBOSE_VA(...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL_VA(VERBOSE, __VA_ARGS__))
-#define LOGCIE_INFO_VA(...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL_VA(INFO, __VA_ARGS__))
-#define LOGCIE_WARN_VA(...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL_VA(WARN, __VA_ARGS__))
-#define LOGCIE_ERROR_VA(...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL_VA(ERROR, __VA_ARGS__))
-#define LOGCIE_FATAL_VA(...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL_VA(FATAL, __VA_ARGS__))
+#define LOGCIE_TRACE_VA(...)      LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL_VA(TRACE, __VA_ARGS__))
+#define LOGCIE_DEBUG_VA(...)      LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL_VA(DEBUG, __VA_ARGS__))
+#define LOGCIE_VERBOSE_VA(...)    LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL_VA(VERBOSE, __VA_ARGS__))
+#define LOGCIE_INFO_VA(...)       LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL_VA(INFO, __VA_ARGS__))
+#define LOGCIE_WARN_VA(...)       LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL_VA(WARN, __VA_ARGS__))
+#define LOGCIE_ERROR_VA(...)      LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL_VA(ERROR, __VA_ARGS__))
+#define LOGCIE_FATAL_VA(...)      LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL_VA(FATAL, __VA_ARGS__))
 #define LOGCIE_LOG_VA(level, ...) LOGCIE_INTERNAL_EXPAND(LOGCIE_LOG_IMPL_VA(level, __VA_ARGS__))
 #endif
 
@@ -889,6 +903,15 @@ LOGCIE_DEF size_t logcie_token_formatter(Logcie_Writer *writer, void *user_data,
  *       does not substitute stdout for you.
  */
 LOGCIE_DEF size_t logcie_file_writer(void *user_data, const Logcie_Log *log, const char *bytes, size_t len);
+
+/**
+ * @brief Built-in flusher for build-in file wirter
+ * @see logcie_file_writer
+ *
+ * @param user_data  FILE * to write to, or NULL to discard
+ * @return Number of bytes flushed
+ */
+LOGCIE_DEF size_t logcie_file_flush(void *user_data);
 
 /**
  * @brief Renders the user's message into a buffer.
@@ -1243,7 +1266,7 @@ static inline const char *get_logcie_level_color(Logcie_LogLevel level) {
 // -pedantic on every earlier standard.
 static Logcie_Sink default_stdout_sink = {
   {logcie_token_formatter, (void *)(LOGCIE_DEFAULT_SINK_FORMAT)},
-  {logcie_file_writer, NULL},
+  {logcie_file_writer, logcie_file_flush, NULL},
   {NULL, NULL},
 };
 
@@ -1650,8 +1673,6 @@ size_t logcie_token_formatter(Logcie_Writer *writer, void *data, Logcie_Log log,
   return sizeof(stack_buf) - 1;
 }
 
-// TODO: logcie_writer_flush()???
-
 LOGCIE_DEF size_t logcie_file_writer(void *user_data, const Logcie_Log *log, const char *bytes, size_t len) {
   (void)log;
 
@@ -1663,6 +1684,10 @@ LOGCIE_DEF size_t logcie_file_writer(void *user_data, const Logcie_Log *log, con
   }
 
   return fwrite(bytes, 1, len, file);
+}
+
+LOGCIE_DEF size_t logcie_file_flush(void *user_data) {
+  return fflush((FILE *)user_data);
 }
 
 LOGCIE_DEF uint8_t logcie_filter_not_fn(const void *data, Logcie_Log *log) {
