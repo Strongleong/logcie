@@ -1278,6 +1278,7 @@ void logcie_set_colors(const char **colors) {
     // If it is compiled without -fsanitize=address then color would be NULL (I hope)
     const char *color = colors[Count_LOGCIE_LEVEL - 1];
     LOGCIE_INTERNAL_ASSERT(color != NULL, "Size of array of colors in logcie_set_colors is not equal to Count_LOGCIE_LEVEL");
+    (void)color;
     logcie_level_color = colors;
   } else {
     logcie_level_color = logcie_default_level_color;
