@@ -25,10 +25,10 @@
  *
  * Configuration macros (define before including the header):
  *   LOGCIE_MODULE                  Module name for classic macros (default "Logcie")
- *   LOGCIE_MODULE_SEPARATOR        Moudle names separator for hierarchical module filtering (default '.')
+ *   LOGCIE_MODULE_SEPARATOR        Module names separator for hierarchical module filtering (default '.')
  *   LOGCIE_MAX_SINKS               Maximum capacity of logcie sinks array (default: 16)
  *   LOGCIE_AUTOFLUSH_LEVEL         Level at and above which a log flushes its sink (default: LOGCIE_LEVEL_ERROR)
- *   LOGCIE_AUTOFLUSH_DISABLE       Define it to switch autoflushing off entierly (default: not defined)
+ *   LOGCIE_AUTOFLUSH_DISABLE       Define it to switch autoflushing off entirely (default: not defined)
  *   LOGCIE_MAX_LINE                Stack buffer a log line is formatted into (default: 1024)
  *   LOGCIE_MALLOC / LOGCIE_FREE    Allocator for lines longer than LOGCIE_MAX_LINE
  *   LOGCIE_NO_MALLOC               Never allocate; truncate long lines instead
