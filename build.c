@@ -506,6 +506,29 @@ static int read_build_flags(const char *dir, char *storage, size_t cap, char **o
   return count;
 }
 
+static bool build_self() {
+  LOGCIE_VERBOSE("Building self");
+
+  char *cmd[9] = {0};
+  int   i      = 0;
+
+  cmd[i++] = optly_flag_value_string(&command, "c-compiler");
+  cmd[i++] = "-Wall";
+  cmd[i++] = "-Wextra";
+  cmd[i++] = "-std=c11";
+  cmd[i++] = "-I.";
+  cmd[i++] = "./build.c";
+  cmd[i++] = "-o";
+  cmd[i++] = "./build";
+  cmd[i++] = NULL;
+
+  char line[CMD_MAX_LINE] = {0};
+  cmd_to_string(cmd, line, sizeof(line));
+  LOGCIE_INFO("%s", line);
+
+  return run_cmd(cmd);
+}
+
 static bool build_example(const char *dir, const char *name) {
   ExampleSources found;
   found.count = 0;
@@ -674,6 +697,10 @@ int main(int argc, char *argv[]) {
 
   if (optly_flag_value_bool(&command, "silent")) {
     stdout_sink_log_level = LOGCIE_LEVEL_WARN;
+  }
+
+  if (!build_self()) {
+    return 1;
   }
 
   if (optly_is_command(command.next_command, "tests")) {
