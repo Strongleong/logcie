@@ -1,4 +1,4 @@
-:test writer_flush_actually_flushes
+:test flush_reaches_every_sink_that_has_a_flusher
 :command compile
 :blob executable 2
 cc
@@ -9,13 +9,44 @@ cc
 :blob executable 19
 .side_effects/flush
 :int return 0
-:blob stdout 148
-before: flushes: 1
-before: writes: 3
-more: flushes: 1
-more: writes: 4
-after: flushes: 2
-after: writes: 4
-autoflush: flushes: 3
-autoflush: writes: 5
+:blob stdout 369
+below_level: w=1 f=0 plain_w=1 second_w=1 second_f=0
+explicit: w=1 f=1 plain_w=1 second_w=1 second_f=1
+autoflush_error: w=2 f=2 plain_w=2 second_w=2 second_f=2
+autoflush_fatal: w=3 f=3 plain_w=3 second_w=3 second_f=3
+filtered: w=3 f=3 plain_w=4 second_w=4 second_f=4
+self_flush: w=4 f=4 plain_w=5 second_w=5 second_f=4
+no_sinks: w=4 f=4 plain_w=5 second_w=5 second_f=4
+
+
+:test autoflush_disable_stops_automatic_flushing
+:command compile
+:blob executable 2
+cc
+:blob args 83
+-std=c11 -Wall -Wextra -Werror -I../.. no_autoflush.c -o .side_effects/no_autoflush
+:int return 0
+:command run
+:blob executable 26
+.side_effects/no_autoflush
+:int return 0
+:blob stdout 33
+after_logging=0
+after_explicit=1
+
+
+:test autoflush_level_can_be_lowered
+:command compile
+:blob executable 2
+cc
+:blob args 83
+-std=c11 -Wall -Wextra -Werror -I../.. custom_level.c -o .side_effects/custom_level
+:int return 0
+:command run
+:blob executable 26
+.side_effects/custom_level
+:int return 0
+:blob stdout 26
+after_info=0
+after_warn=1
 
