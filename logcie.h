@@ -1400,7 +1400,11 @@ LOGCIE_DEF size_t logcie_flush(void) {
   LOGCIE_MUTEX_LOCK(logcie_mutex);
 
   for (size_t i = 0; i < logcie.sinks_len; i++) {
-    res += logcie.sinks[i]->writer.flush(logcie.sinks[i]->writer.data);
+    Logcie_WriterFlushFn *flusher = logcie.sinks[i]->writer.flush;
+
+    if (flusher) {
+      res += flusher(logcie.sinks[i]->writer.data);
+    }
   }
 
   LOGCIE_MUTEX_UNLOCK(logcie_mutex);
