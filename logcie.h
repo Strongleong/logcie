@@ -28,7 +28,7 @@
  *   LOGCIE_MODULE_SEPARATOR        Moudle names separator for hierarchical module filtering (default '.')
  *   LOGCIE_MAX_SINKS               Maximum capacity of logcie sinks array (default: 16)
  *   LOGCIE_AUTOFLUSH_LEVEL         Maximum log level that fill automatically call flush (default: LOGCIE_LEVEL_ERROR)
- *   LOGCIE_AUTOFLUSH_DISABLE       Diables autoflush. Define to enable (default: not defined)
+ *   LOGCIE_AUTOFLUSH_DISABLE       Disables autoflush. Define to enable (default: not defined)
  *   LOGCIE_MAX_LINE                Stack buffer a log line is formatted into (default: 1024)
  *   LOGCIE_MALLOC / LOGCIE_FREE    Allocator for lines longer than LOGCIE_MAX_LINE
  *   LOGCIE_NO_MALLOC               Never allocate; truncate long lines instead
