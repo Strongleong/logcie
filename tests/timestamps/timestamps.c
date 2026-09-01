@@ -25,7 +25,7 @@ static size_t capture_writer(void *user_data, const Logcie_Log *log, const char 
 
 static Logcie_Sink sink = {
   .formatter = {logcie_token_formatter, NULL},
-  .writer    = {capture_writer, captured},
+  .writer    = {capture_writer, logcie_file_flush, captured},
   .filter    = {NULL, NULL},
 };
 

@@ -3,13 +3,13 @@
 
 static Logcie_Sink a = {
   .formatter = {logcie_token_formatter, (void *)"a:$m"},
-  .writer    = {logcie_file_writer, NULL},
+  .writer    = {logcie_file_writer, logcie_file_flush, NULL},
   .filter    = {NULL, NULL},
 };
 
 static Logcie_Sink b = {
   .formatter = {logcie_token_formatter, (void *)"b:$m"},
-  .writer    = {logcie_file_writer, NULL},
+  .writer    = {logcie_file_writer, logcie_file_flush, NULL},
   .filter    = {NULL, NULL},
 };
 

@@ -31,7 +31,7 @@ static size_t routing_writer(void *user_data, const Logcie_Log *log, const char 
 
 static Logcie_Sink sink = {
   {logcie_token_formatter, (void *)"$m"},
-  {routing_writer, NULL},
+  {routing_writer, logcie_file_flush, NULL},
   {NULL, NULL},
 };
 

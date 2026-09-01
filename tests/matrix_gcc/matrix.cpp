@@ -15,7 +15,7 @@
 
 static Logcie_Sink sink = {
   {logcie_token_formatter, (void *)"$L $m"},
-  {logcie_file_writer, NULL},
+  {logcie_file_writer, logcie_file_flush, NULL},
   {NULL, NULL},
 };
 
