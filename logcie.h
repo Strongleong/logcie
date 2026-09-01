@@ -27,8 +27,8 @@
  *   LOGCIE_MODULE                  Module name for classic macros (default "Logcie")
  *   LOGCIE_MODULE_SEPARATOR        Moudle names separator for hierarchical module filtering (default '.')
  *   LOGCIE_MAX_SINKS               Maximum capacity of logcie sinks array (default: 16)
- *   LOGCIE_AUTOFLUSH_LEVEL         Maximum log level that fill automatically call flush (default: LOGCIE_LEVEL_ERROR)
- *   LOGCIE_AUTOFLUSH_DISABLE       Disables autoflush. Define to enable (default: not defined)
+ *   LOGCIE_AUTOFLUSH_LEVEL         Level at and above which a log flushes its sink (default: LOGCIE_LEVEL_ERROR)
+ *   LOGCIE_AUTOFLUSH_DISABLE       Define it to switch autoflushing off entierly (default: not defined)
  *   LOGCIE_MAX_LINE                Stack buffer a log line is formatted into (default: 1024)
  *   LOGCIE_MALLOC / LOGCIE_FREE    Allocator for lines longer than LOGCIE_MAX_LINE
  *   LOGCIE_NO_MALLOC               Never allocate; truncate long lines instead
@@ -60,7 +60,8 @@
  *          is safe. It also gets the log itself, for metadata a transport needs as a
  *          separate value rather than as text. A NULL user_data discards, which is
  *          /dev/null without the open().
- *          Also writer has a flush. A flush is basically an fflush.
+ *          A Writer also carries a flush, for destinations that buffer. It is given the
+ *          same user_data as write, and NULL means there is nothing to flush.
  *   Filter decides whether a log reaches the Sink at all. See the Filters section below for the built-i
  *          ones and how to combine them.
  *
@@ -97,7 +98,8 @@
  *   It would not be that great if Logcie was just empty framework and you need to set it up by yourself,
  *   so Logcie comes with a couple of pre-defined functions:
  *
- *      - logcie_file_writer      - built-in writer. Writes the formatted line to a FILE * and have a fflush as flush
+ *      - logcie_file_writer     - built-in writer. Writes the formatted line to a FILE *
+ *      - logcie_file_flush      - built-in flush for it. Calls fflush on that FILE *
  *      - logcie_token_formatter - built-in formatter that provides rich formatting using $ tokens. Here is the list:
  *                                   `$m` - Log message with printf formatting
  *                                   `$f` - Source file name
@@ -495,7 +497,15 @@ typedef enum Logcie_LogLevel {
 #endif
 
 /**
- * @brief Maximum log level that fill automatically call flush
+ * @brief Level at and above which a log line flushes the sink it was written to.
+ *
+ * Buffered output is the output you lose when a process dies, and the lines
+ * worth having then are the ones explaining why. Flushing from ERROR up costs
+ * a syscall on the lines you were going to read anyway.
+ *
+ * Lower it to LOGCIE_LEVEL_TRACE to flush every line, or define
+ * LOGCIE_AUTOFLUSH_DISABLE to switch it off. A sink whose writer has no flush
+ * is skipped either way.
  */
 #ifndef LOGCIE_AUTOFLUSH_LEVEL
 #define LOGCIE_AUTOFLUSH_LEVEL LOGCIE_LEVEL_ERROR
@@ -557,8 +567,8 @@ typedef void(Logcie_WriterFlushFn)(void *user_data);
  * Stores writer function pointer and custom data for it
  *
  * @param write  Writer function pointer
- * @param flush  Flush function pointer
- * @param data   Custom data for writer function
+ * @param flush  Flush function pointer, or NULL when there is nothing to flush
+ * @param data   Custom data, handed to both write and flush
  */
 typedef struct Logcie_Writer {
   Logcie_WriterFn      *write;
