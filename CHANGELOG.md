@@ -8,6 +8,9 @@
   It can be either calling fflush or write into a socket.
 - Introduced `logcie_flush()`. It will iterate over every registred sinks and
   will call their flushers
+- Introduced `LOGCIE_AUTOFLUSH_LEVEL`. If log with this or higher level is encountered
+  it will force call writer flush.
+- Introduced `LOGCIE_AUTOFLUSH_DISABLE`. It will disable automatic sink flusing.
 
 ## v2.0.0
 
