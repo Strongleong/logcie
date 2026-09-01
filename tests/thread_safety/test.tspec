@@ -20,8 +20,8 @@ all_accounted_for=1
 :command compile
 :blob executable 2
 cc
-:blob args 76
--std=c11 -fsanitize=thread -I../.. threads.c -o .side_effects/tsan -lpthread
+:blob args 98
+-std=c11 -fsanitize=thread -Wall -Wextra -Werror -I../.. threads.c -o .side_effects/tsan -lpthread
 :int return 0
 :command run
 :blob executable 18
@@ -32,5 +32,40 @@ cc
 writer_calls=1000
 lines=1000
 intact=1000
+all_accounted_for=1
+
+:test flushing_while_other_threads_log_is_safe
+:command compile
+:blob executable 2
+cc
+:blob args 101
+-std=c11 -Wall -Wextra -Werror -I../.. concurrent_flush.c -o .side_effects/concurrent_flush -lpthread
+:int return 0
+:command run
+:blob executable 30
+.side_effects/concurrent_flush
+:int timeout_ms 30000
+:int return 0
+:blob stdout 62
+writer_calls=1000
+flushed_at_least_once=1
+all_accounted_for=1
+
+
+:test the_same_holds_under_thread_sanitizer_with_flushing
+:command compile
+:blob executable 2
+cc
+:blob args 124
+-std=c11 -fsanitize=thread -Wall -Wextra -Werror -I../.. concurrent_flush.c -o .side_effects/concurrent_flush_tsan -lpthread
+:int return 0
+:command run
+:blob executable 35
+.side_effects/concurrent_flush_tsan
+:int timeout_ms 60000
+:int return 0
+:blob stdout 62
+writer_calls=1000
+flushed_at_least_once=1
 all_accounted_for=1
 
