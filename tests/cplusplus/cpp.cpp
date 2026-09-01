@@ -6,7 +6,7 @@
 
 static Logcie_Sink sink = {
   {logcie_token_formatter, (void *)"$L/$M/$m"},
-  {logcie_file_writer, NULL},
+  {logcie_file_writer, logcie_file_flush, NULL},
   logcie_filter_and(
     logcie_filter_level_min(LOGCIE_LEVEL_INFO),
     logcie_filter_module_eq("core")

@@ -12,18 +12,18 @@ that supports multiple output sinks, customizable formatting, and flexible filte
 - Support for multiple sinks (stdout, file, etc.)
 - c11/c99 compatible (with -pedantic file)
 
-
 ## Table of Contents
 
 - [Quick Start](#quick-start)
 - [Installation](#installation)
-- [Migrating From v1](#migrating-from-v1)
+- [Migrating From v2](#migrating-from-v2)
 - [Building Examples](#building-examples)
 - [Basic Usage](#basic-usage)
 - [Log Levels](#log-levels)
 - [Architecture Overview](#architecture-overview)
   - [Formatter](#formatter)
   - [Writer](#writer)
+  - [Flush](#flush)
   - [Filter](#filter)
 - [Configuration Macros](#configuration-macros)
 - [Recursive Logging](#recursive-logging)
@@ -70,26 +70,30 @@ int main() {
 #include "logcie.h"
 ```
 
-## Migrating From v1
+## Migrating From v2
 
-Writers gain a parameter and lose the varargs:
+`Logcie_Writer` gained a `flush` field, in the middle:
 
 ```c
-/* v1 */ size_t w(void *data, const char *fmt, va_list *va, ...);
-/* v2 */ size_t w(void *data, const Logcie_Log *log, const char *bytes, size_t len);
+/* v2 */ typedef struct { Logcie_WriterFn *write; void *data; } Logcie_Writer;
+/* v3 */ typedef struct { Logcie_WriterFn *write; Logcie_WriterFlushFn *flush; void *data; } Logcie_Writer;
 ```
 
-Write `bytes` directly; there is no format string to interpret. `log->msg` is
-the format string from the call site, *not* the rendered text.
+If you initialize it positionally, your target now lands in the flush slot.
+Add the flush argument, or `NULL`:
 
-Rename `logcie_printf_formatter` to `logcie_token_formatter` and
-`logcie_printf_writer` to `logcie_file_writer`.
+```c
+/* v2 */ .writer = {my_writer, target}
+/* v3 */ .writer = {my_writer, NULL, target}
+```
 
-If you relied on the first `logcie_add_sink` removing the built-in sink, call
-`logcie_remove_sink(logcie_get_default_sink())` explicitly.
+Designated initializers (`.write`, `.data`) need no change. `logcie_file_flush`
+is the built-in flush to pair with `logcie_file_writer`.
 
-`$<n` pads to `n` columns rather than `n-1`, so a format tuned against the old
-behaviour gains one space.
+Nothing else moved, and nothing has to be flushed for logging to keep working.
+But two behaviours are new and worth knowing about: a log at
+`LOGCIE_AUTOFLUSH_LEVEL` or above (`LOGCIE_LEVEL_ERROR` by default) now flushes
+the sink it was written to, and `logcie_flush()` exists for the rest. See [Flush](#flush).
 
 ## Configuration Macros
 
@@ -107,6 +111,8 @@ Define any of these **before** you include `logcie.h` (or before
 | `LOGCIE_COLOR_*`                 | ANSI escape codes for each level color. You can override them or use `logcie_set_colors()`.                        | *(see source)*           |
 | `LOGCIE_MODULE_SEPARATOR`        | Character separating levels of a module name. (see [Module-Based Logging](#module-based-logging))                  | `'.'`                    |
 | `LOGCIE_MAX_SINKS`               | How many sinks can be registered at once. `logcie_add_sink` returns 0 once full.                                   | `16`                     |
+| `LOGCIE_AUTOFLUSH_LEVEL`         | Level at and above which a log flushes the sink it was written to. (see [Flush](#flush))                           | `LOGCIE_LEVEL_ERROR`     |
+| `LOGCIE_AUTOFLUSH_DISABLE`       | Define it to switch autoflush off entirely. `logcie_flush()` still works.                                          | *(not defined)*          |
 | `LOGCIE_MAX_LINE`                | Stack buffer a line is formatted into. Lines that fit cost no allocation.                                          | `1024`                   |
 | `LOGCIE_MALLOC` / `LOGCIE_FREE`  | Allocator used *only* for lines longer than `LOGCIE_MAX_LINE`. Define both or neither.                             | `malloc` / `free`        |
 | `LOGCIE_NO_MALLOC`               | Never allocate. Lines longer than `LOGCIE_MAX_LINE` are truncated instead.                                         | *(not defined)*          |
@@ -225,6 +231,39 @@ exactly that, which is the cheapest way to mute a sink without removing it —
 and the first thing to check when a sink is unexpectedly silent, since Logcie
 does not substitute `stdout` for you.
 
+### Flush
+
+Pushes whatever the writer has buffered out to its destination.
+
+```c
+void my_flush(void *user_data);
+```
+
+It lives on the writer rather than beside it, and it is handed the same
+`user_data` as `write`. A flush is only meaningful against the destination that
+was written to, so giving it its own pointer would only make it possible to
+aim the two at different things.
+
+```c
+Logcie_Writer w = {my_writer, my_flush, target};
+```
+
+`NULL` means there is nothing to flush, and such a sink is skipped rather than
+treated as a failure. `logcie_file_flush` is the built-in one, and a `NULL`
+target does nothing — `fflush(NULL)` would flush every open stream in the
+process, which is not one sink's business.
+
+Two things reach it:
+
+- **`logcie_flush()`** walks every registered sink and flushes it. Call it
+  before exiting, and before removing a sink. Logcie does not flush on removal:
+  the sink is yours, and so is closing whatever it writes to.
+- **Autoflush.** A log at `LOGCIE_AUTOFLUSH_LEVEL` or above flushes the sink it
+  was just written to. It defaults to `LOGCIE_LEVEL_ERROR`, because those are
+  the lines a crash would otherwise take with it. Lower it to
+  `LOGCIE_LEVEL_TRACE` to flush everything, or define `LOGCIE_AUTOFLUSH_DISABLE`
+  to switch it off and flush by hand.
+
 ### Filter
 
 Decides whether a log should be emitted.
@@ -264,7 +303,7 @@ This is how default sinks looks like:
 ```c
 static Logcie_Sink default_stdout_sink = {
     .formatter = {logcie_token_formatter, "$c$L$r " LOGCIE_COLOR_GRAY "$f:$x$r: $m"},
-    .writer    = {logcie_file_writer, stdout},
+    .writer    = {logcie_file_writer, logcie_file_flush, stdout},
     .filter    = {NULL, NULL},
 };
 ```
@@ -301,13 +340,18 @@ logcie_remove_all_sinks();
 static Logcie_Sink error_sink = {
     // nice format: date, time, level, module, message
     .formatter = {logcie_token_formatter, "$d $t [$L] $f:$x - $m"},
-    .writer    = {logcie_file_writer, NULL},
+    .writer    = {logcie_file_writer, logcie_file_flush, NULL},
     .filter    = logcie_filter_level_min(LOGCIE_LEVEL_ERROR)
 };
 
 int main(void) {
     error_sink.writer.data = fopen("errors.log", "a");
     logcie_add_sink(&error_sink);
+
+    // ... log ...
+
+    logcie_flush();
+    fclose(error_sink.writer.data);
 }
 ```
 

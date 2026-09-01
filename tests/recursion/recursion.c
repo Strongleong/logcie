@@ -14,7 +14,7 @@ static size_t reentrant_writer(void *user_data, const Logcie_Log *log, const cha
 
 static Logcie_Sink sink = {
   .formatter = {logcie_token_formatter, (void *)"$m"},
-  .writer    = {reentrant_writer, NULL},
+  .writer    = {reentrant_writer, logcie_file_flush, NULL},
   .filter    = {NULL, NULL},
 };
 

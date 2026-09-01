@@ -27,7 +27,7 @@ static size_t probe(Logcie_Writer *writer, void *user_data, Logcie_Log log, va_l
   return 0;
 }
 
-static Logcie_Sink sink = {{probe, NULL}, {logcie_file_writer, NULL}, {NULL, NULL}};
+static Logcie_Sink sink = {{probe, NULL}, {logcie_file_writer, logcie_file_flush, NULL}, {NULL, NULL}};
 
 int main(void) {
   logcie_remove_all_sinks();

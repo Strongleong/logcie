@@ -35,7 +35,7 @@ static size_t collecting_writer(void *user_data, const Logcie_Log *log, const ch
 
 static Logcie_Sink sink = {
   {logcie_token_formatter, (void *)"$M:$m"},
-  {collecting_writer, NULL},
+  {collecting_writer, logcie_file_flush, NULL},
   {NULL, NULL},
 };
 

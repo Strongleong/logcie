@@ -18,7 +18,7 @@ void net_work(void);
 // Everything at INFO and above, plus anything from net.* at any level.
 static Logcie_Sink console = {
   .formatter = {logcie_token_formatter, "[$L] ($M) $m"},
-  .writer    = {logcie_file_writer, NULL},
+  .writer    = {logcie_file_writer, logcie_file_flush, NULL},
   .filter    = logcie_filter_or(
     logcie_filter_level_min(LOGCIE_LEVEL_INFO),
     logcie_filter_module_prefix_eq("net")

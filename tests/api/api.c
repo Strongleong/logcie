@@ -3,7 +3,7 @@
 
 static Logcie_Sink sink = {
   .formatter = {logcie_token_formatter, (void *)"$c$L$r $m"},
-  .writer    = {logcie_file_writer, NULL},
+  .writer    = {logcie_file_writer, logcie_file_flush, NULL},
   .filter    = {NULL, NULL},
 };
 

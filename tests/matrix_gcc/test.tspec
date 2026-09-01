@@ -141,3 +141,66 @@ g++
 -std=c++11 -pedantic -Wall -Wextra -Werror -DLOGCIE_PEDANTIC -I../.. matrix.cpp -o .side_effects/cpp11
 :int return 0
 
+:test gcc_c11_ndebug
+:command compile
+:blob executable 3
+gcc
+:blob args 84
+-std=c11 -Wall -Wextra -Werror -DNDEBUG -I../.. matrix.c -o .side_effects/c11_ndebug
+:int return 0
+:command run
+:blob executable 24
+.side_effects/c11_ndebug
+:int return 0
+:blob stdout 18
+INFO n=1
+WARN s=x
+
+
+:test gcc_c11_autoflush_disable
+:command compile
+:blob executable 3
+gcc
+:blob args 113
+-std=c11 -Wall -Wextra -Werror -DLOGCIE_AUTOFLUSH_DISABLE -I../.. matrix.c -o .side_effects/c11_autoflush_disable
+:int return 0
+:command run
+:blob executable 35
+.side_effects/c11_autoflush_disable
+:int return 0
+:blob stdout 18
+INFO n=1
+WARN s=x
+
+
+:test gcc_c99_autoflush_level_thread_safe
+:command compile
+:blob executable 3
+gcc
+:blob args 159
+-std=c99 -Wall -Wextra -Werror -DLOGCIE_AUTOFLUSH_LEVEL=LOGCIE_LEVEL_TRACE -DLOGCIE_THREAD_SAFE -I../.. matrix.c -o .side_effects/c99_autoflush_trace -lpthread
+:int return 0
+:command run
+:blob executable 33
+.side_effects/c99_autoflush_trace
+:int return 0
+:blob stdout 18
+INFO n=1
+WARN s=x
+
+
+:test gcc_cpp11_autoflush_disable
+:command compile
+:blob executable 3
+g++
+:blob args 147
+-std=c++11 -pedantic -Wall -Wextra -Werror -DLOGCIE_PEDANTIC -DLOGCIE_AUTOFLUSH_DISABLE -I../.. matrix.cpp -o .side_effects/cpp11_autoflush_disable
+:int return 0
+:command run
+:blob executable 37
+.side_effects/cpp11_autoflush_disable
+:int return 0
+:blob stdout 18
+INFO n=1
+WARN s=x
+

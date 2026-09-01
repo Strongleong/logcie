@@ -2,6 +2,33 @@
 
 ## Upcoming
 
+### Added
+- `Logcie_Writer` gained a `flush` field, for destinations that buffer. It is
+  called with the same `data` as `write`, and `NULL` means there is nothing to
+  flush. `logcie_file_flush` is the built-in one to pair with
+  `logcie_file_writer`.
+- `logcie_flush()` flushes every registered sink. Call it before exiting, and
+  before removing a sink -- logcie does not flush on removal, because closing
+  the destination is yours to do. It is safe to call from inside a formatter or
+  a writer, unlike logging, which is refused there unless
+  `LOGCIE_ALLOW_RECURSIVE_LOGGING` is defined.
+- Logs at `LOGCIE_AUTOFLUSH_LEVEL` or above now flush the sink they were
+  written to, so a crash does not take the lines explaining it. Defaults to
+  `LOGCIE_LEVEL_ERROR`; define `LOGCIE_AUTOFLUSH_DISABLE` to switch it off.
+
+### Fixed
+- `logcie.h` builds with `NDEBUG` again. A probe in `logcie_set_colors` was
+  used only inside an assertion, so once assertions compiled away
+  `-Wall -Wextra -Werror` rejected it.
+
+
+### Changed
+- **You are affected if you initialize `Logcie_Writer` positionally.** The
+  struct is now `{write, flush, data}`, so `{my_writer, target}` puts your
+  target in the flush slot. Add the flush argument, or `NULL`:
+  `{my_writer, NULL, target}`. Designated initializers (`.write`, `.data`) do
+  not need changing.
+
 ## v2.0.0
 
 ### Added

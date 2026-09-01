@@ -58,7 +58,8 @@ static OptlyCommand command = {
     optly_flag_string("outdir", 'o', "Set output dir", .value.as_string = "." PATH_SEP "out" PATH_SEP),
     optly_flag_string("c-compiler", 'c', "Set which C compier to use", .value.as_string = "clang"),
     optly_flag_string("cpp-compiler", 'x', "Set which C++ compier to use", .value.as_string = "clang++"),
-    optly_flag_bool("dry-run", 'r', "Do not compile but show compile commands")
+    optly_flag_bool("dry-run", 'r', "Do not compile but show compile commands"),
+    optly_flag_bool("thread-sanitizer", 'T', "Compile with thread sanitizer instead of address sanitizer")
   ),
   .commands = optly_commands(
     optly_command(
@@ -88,13 +89,13 @@ uint8_t stdout_sink_filter(const void *data, Logcie_Log *log) {
 
 static Logcie_Sink stdout_sink = {
   .formatter = {logcie_token_formatter, LOGCIE_COLOR_GRAY "[$M]$r $c$L$r:$m"},
-  .writer    = {logcie_file_writer, NULL},
+  .writer    = {logcie_file_writer, logcie_file_flush, NULL},
   .filter    = {stdout_sink_filter, NULL}
 };
 
 static Logcie_Sink optly_sink = {
   .formatter = {logcie_token_formatter, LOGCIE_COLOR_GRAY "[$M]$r $c$L$r:$m"},
-  .writer    = {logcie_file_writer, NULL},
+  .writer    = {logcie_file_writer, logcie_file_flush, NULL},
   .filter    = logcie_filter_and(
     logcie_filter_module_eq("optly"),
     logcie_filter_level_min(LOGCIE_LEVEL_INFO)
@@ -560,7 +561,7 @@ static bool build_example(const char *dir, const char *name) {
   if (optly_flag_value_bool(&command, "debug")) {
     cmd[i++] = "-ggdb";
 #ifndef _WIN32
-    cmd[i++] = "-fsanitize=address";
+    cmd[i++] = optly_flag_value_bool(&command, "thread-sanitizer") ? "-fsanitize=thread" : "-fsanitize=address";
 #endif
     cmd[i++] = "-fno-omit-frame-pointer";
     cmd[i++] = "-DLOGCIE_DEBUG_CHECKS";

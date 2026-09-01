@@ -23,7 +23,7 @@ int main(void) {
 
   Logcie_Sink file_sink = {
     .formatter = {logcie_token_formatter, "$d $t [$L] ($M) $m"},
-    .writer    = {logcie_file_writer, logfile},
+    .writer    = {logcie_file_writer, logcie_file_flush, logfile},
     .filter    = {NULL, NULL}
   };
 
