@@ -1,5 +1,5 @@
 /*
- * Logcie v2.0.0 - Logging Library (Single Header)
+ * Logcie v3.0.0 - Logging Library (Single Header)
  *
  * Description:
  *   Logcie is a lightweight, modular, single-header logging library written in C.
@@ -356,7 +356,7 @@
 #endif
 
 // Versioning macros
-#define LOGCIE_VERSION_MAJOR         2
+#define LOGCIE_VERSION_MAJOR         3
 #define LOGCIE_VERSION_MINOR         0
 #define LOGCIE_VERSION_RELEASE       0
 #define LOGCIE_VERSION_NUMBER        (LOGCIE_VERSION_MAJOR * 100 * 100 + LOGCIE_VERSION_MINOR * 100 + LOGCIE_VERSION_RELEASE)

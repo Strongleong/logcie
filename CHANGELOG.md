@@ -2,6 +2,8 @@
 
 ## Upcoming
 
+## v3.0.0
+
 ### Added
 - `Logcie_Writer` gained a `flush` field, for destinations that buffer. It is
   called with the same `data` as `write`, and `NULL` means there is nothing to
