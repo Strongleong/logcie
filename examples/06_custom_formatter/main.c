@@ -1,6 +1,6 @@
 // A formatter turns a log into bytes:
 //
-//   size_t my_formatter(Logcie_Writer *writer, void *user_data, Logcie_Log log, va_list *args);
+//   size_t my_formatter(Logcie_Writer *writer, void *user_data, Logcie_Log log);
 //
 // It owns the serialization, so the $ token language belongs to
 // logcie_token_formatter rather than to Logcie. This one emits JSON and ignores
@@ -15,7 +15,7 @@
 #define LOGCIE_IMPLEMENTATION
 #include <logcie.h>
 
-static size_t json_formatter(Logcie_Writer *writer, void *user_data, Logcie_Log log, va_list *args) {
+static size_t json_formatter(Logcie_Writer *writer, void *user_data, Logcie_Log log) {
   (void)user_data;
 
   // Rendering log.msg means running it through vsnprintf with the arguments
@@ -28,13 +28,13 @@ static size_t json_formatter(Logcie_Writer *writer, void *user_data, Logcie_Log 
   char   stack_msg[128];
   char  *msg    = stack_msg;
   char  *heap   = NULL;
-  size_t needed = logcie_render_message(stack_msg, sizeof(stack_msg), &log, args);
+  size_t needed = logcie_render_message(stack_msg, sizeof(stack_msg), &log);
 
   if (needed >= sizeof(stack_msg)) {
     heap = (char *)malloc(needed + 1);
 
     if (heap) {
-      logcie_render_message(heap, needed + 1, &log, args);
+      logcie_render_message(heap, needed + 1, &log);
       msg = heap;
     }
   }
