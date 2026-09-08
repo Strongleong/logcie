@@ -2,6 +2,12 @@
 
 ## Upcoming
 
+### Added
+- `$T` renders the operating system's thread id, the one `top`, `gdb` and a
+  journal show. Read on Windows, Linux, macOS, FreeBSD, OpenBSD and NetBSD, and
+  empty anywhere else. On Linux it needs `_DEFAULT_SOURCE` or `_GNU_SOURCE`,
+  which every dialect but a strict `-std=cNN` already sets.
+
 ## v3.1.0
 
 ### Changed

@@ -454,6 +454,7 @@ Format strings use `$` tokens to insert log metadata. The default formatter supp
 | `$f`    | Source file name                                       | "main.c"                 |
 | `$x`    | Line number                                            | "42"                     |
 | `$M`    | Module name                                            | "network"                |
+| `$T`    | Operating system thread id                             | "4812"                   |
 | `$l`    | Log level (lowercase)                                  | "info"                   |
 | `$L`    | Log level (uppercase)                                  | "INFO"                   |
 | `$c`    | ANSI color code for log level                          | `\x1b[36;20m`            |
@@ -464,6 +465,16 @@ Format strings use `$` tokens to insert log metadata. The default formatter supp
 | `$z`    | Timezone offset                                        | "+3"                     |
 | `$<n`   | Pads prevous token out to `n` columns (example: `$<5`) | "     "                  |
 | `$$`    | Literal dollar sign                                    | "$"                      |
+
+`$T` is the thread id the operating system uses, the one `top`, `gdb` and a
+journal show, so a log line can be matched to a thread you are already looking
+at. It is read once per thread and kept.
+
+Logcie reads it on Windows, Linux, macOS, FreeBSD, OpenBSD and NetBSD. Anywhere
+else `$T` renders empty. On Linux it also renders empty under a strict dialect
+such as `-std=c99`, because glibc only declares `syscall` when the program asks
+for it; define `_DEFAULT_SOURCE` or `_GNU_SOURCE` before including anything, the
+same way `examples/13_app` defines `_POSIX_C_SOURCE` to get `$N`.
 
 ### Format Examples
 
