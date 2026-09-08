@@ -152,8 +152,8 @@
  *
  * Memory management:
  *   This library does not manage the lifetime of Sinks or their associated resources.
- *   Ensure that any Sink you create remains valid for as long as it is in use.
- *   TIP: Just have them in main function, or in static/global scope.
+ *   A Sink must stay valid for as long as it is registered. Keeping them in main, or
+ *   in static scope, is the easy way.
  *
  * Filters:
  *   Filters allow you to control which logs are emitted to a specific Sink.
@@ -162,7 +162,7 @@
  *   A filter is a structure that consist of pointer to filtering function and
  *   a pointer to custom data that filter might want to use.
  *
- *   A filtering function is simply a function that recieves a `Logcie_Log` and returns:
+ *   A filtering function receives a `Logcie_Log` and returns:
  *     1 (true)  - to allow the log
  *     0 (false) - to suppress the log
  *
@@ -841,11 +841,11 @@ LOGCIE_DEF size_t logcie_get_sink_count(void);
 LOGCIE_DEF Logcie_Sink *logcie_get_sink(size_t index);
 
 /**
- * @brief Returns pointer to default stdout sink
+ * @brief Returns a pointer to the default stdout sink.
  *
- * Allows you to custompize default sink rather than added brand new one.
+ * Reconfigure it in place instead of registering a sink of your own.
  *
- * @return Const pointer to the default Logcie_Sink
+ * @return Pointer to the default Logcie_Sink
  */
 LOGCIE_DEF Logcie_Sink *logcie_get_default_sink(void);
 
@@ -898,11 +898,10 @@ LOGCIE_DEF uint8_t logcie_remove_sink_by_index(size_t index);
 LOGCIE_DEF void logcie_remove_all_sinks(void);
 
 /**
- * @brief Flushes all registerd sinks.
+ * @brief Flushes every registered sink that has a flush function.
  *
- * Iterates for every registered sink and calls its flusher, if it exists.
- *
- * @returns total size of all flushed bytes
+ * @note Call it before removing a sink. Removal does not flush, and does not
+ *       close the sink's destination.
  */
 LOGCIE_DEF void logcie_flush(void);
 
@@ -964,11 +963,11 @@ LOGCIE_DEF size_t logcie_file_writer(void *user_data, const Logcie_Log *log, con
 LOGCIE_DEF void logcie_file_flush(void *user_data);
 
 /**
- * @brief Renders the user's message into a buffer.
+ * @brief Copies the message into a buffer.
  *
- * Useful when writing a formatter: every formatter has to turn log->msg plus
- * its arguments into text, and this handles the va_list copying that a second
- * render pass requires.
+ * logcie_log applies the printf arguments before any sink runs, so log->msg is
+ * already the finished message. This is how a formatter gets it, with the same
+ * contract as snprintf.
  *
  * @param buf   Destination buffer, or NULL when cap is 0
  * @param cap   Capacity of buf
@@ -1164,7 +1163,7 @@ LOGCIE_DEF void logcie_set_colors(const char **colors);
 #endif
 
 #ifndef LOGCIE_THREAD_SAFE
-#define LOGCIE_MUTEX_DECLARE(name) struct logcie_unused_##name  // NOTE: To fix dandling `;`
+#define LOGCIE_MUTEX_DECLARE(name) struct logcie_unused_##name  // NOTE: To fix dangling `;`
 #define LOGCIE_MUTEX_INIT(m)
 #define LOGCIE_MUTEX_DESTROY(m)
 #define LOGCIE_MUTEX_LOCK(m)
@@ -1584,10 +1583,7 @@ LOGCIE_DEF Logcie_Log logcie_make_log(const char *module, Logcie_LogLevel level,
   } while (0)
 
 /**
- * @brief Renders the user's message into a buffer.
- *
- * Every formatter needs this and none should reimplement it: the va_list has
- * to be copied because the caller may render more than once.
+ * @brief Copies the message into a buffer.
  *
  * @return Length the message would have, which may exceed cap
  */

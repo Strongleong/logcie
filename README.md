@@ -113,9 +113,10 @@ Define any of these **before** you include `logcie.h` (or before
 | `LOGCIE_MAX_SINKS`               | How many sinks can be registered at once. `logcie_add_sink` returns 0 once full.                                   | `16`                     |
 | `LOGCIE_AUTOFLUSH_LEVEL`         | Level at and above which a log flushes the sink it was written to. (see [Flush](#flush))                           | `LOGCIE_LEVEL_ERROR`     |
 | `LOGCIE_AUTOFLUSH_DISABLE`       | Define it to switch autoflush off entirely. `logcie_flush()` still works.                                          | *(not defined)*          |
-| `LOGCIE_MAX_LINE`                | Stack buffer a line is formatted into. Lines that fit cost no allocation.                                          | `1024`                   |
-| `LOGCIE_MALLOC` / `LOGCIE_FREE`  | Allocator used *only* for lines longer than `LOGCIE_MAX_LINE`. Define both or neither.                             | `malloc` / `free`        |
-| `LOGCIE_NO_MALLOC`               | Never allocate. Lines longer than `LOGCIE_MAX_LINE` are truncated instead.                                         | *(not defined)*          |
+| `LOGCIE_LINE_BUFFER_SIZE`        | Bytes of stack buffer a line is formatted into. Lines that fit cost no allocation.                                 | `1024`                   |
+| `LOGCIE_MAX_LINE`                | Deprecated name for `LOGCIE_LINE_BUFFER_SIZE`. Still works, and wins if both are set.                              | *(not defined)*          |
+| `LOGCIE_MALLOC` / `LOGCIE_FREE`  | Allocator used *only* for lines longer than `LOGCIE_LINE_BUFFER_SIZE`. Define both or neither.                     | `malloc` / `free`        |
+| `LOGCIE_NO_MALLOC`               | Never allocate. Long lines are truncated instead.                                                                  | *(not defined)*          |
 | `LOGCIE_DEBUG_CHECKS`            | Enable internal consistency assertions.                                                                            | *(not defined)*          |
 
 > **Note:** The compiler‑pedantic fallback (`LOGCIE_VA_LOGS`) is automatically defined when variadic macros are not available - you don’t need to touch it.
@@ -190,11 +191,16 @@ output. Its `user_data` is whatever that formatter needs: for the built-in one
 that is a [format token](#format-tokens) string.
 
 ```c
-size_t my_formatter(Logcie_Writer *writer, void *user_data, Logcie_Log log, va_list *args);
+size_t my_formatter(Logcie_Writer *writer, void *user_data, Logcie_Log log);
 ```
 
-Use `logcie_render_message(buf, cap, &log, args)` to render `log.msg` and its
-arguments — every formatter needs it, and it handles the `va_list` copying.
+`logcie_log` applies the `printf` arguments before any sink runs, so `log.msg`
+is already the finished message. Use `logcie_render_message(buf, cap, &log)` to
+copy it into your buffer. It follows the `snprintf` contract and returns the
+length it wanted, so you can size with `(NULL, 0)` first, or copy and check.
+
+A formatter builds the line from that message and whatever metadata it wants
+from `log`.
 
 ### Writer
 
@@ -212,8 +218,8 @@ Three things worth knowing:
 - **The log comes along** so a transport can use metadata as a value instead of
   parsing it back out of the text. `syslog(3)` wants a priority, Android wants a
   priority and a tag, a network sink may want the module as a routing key.
-- **`log->msg` is the format string from the call site, not the text.** The
-  rendered line is `bytes`. Use `bytes`; use `log` for metadata.
+- **`log->msg` is the message.** `bytes` is the finished line, with the
+  timestamp, level and module applied. Write `bytes`; read `log` for metadata.
 
 `bytes` is not NUL terminated, so always use `len`.
 
@@ -421,7 +427,7 @@ Format strings use `$` tokens to insert log metadata. The default formatter supp
 
 | Token   | Description                                            | Example Output           |
 | ------- | -------------                                          | ----------------         |
-| `$m`    | Log message with printf formatting                     | "Connection established" |
+| `$m`    | The log message, with its arguments already applied    | "Connection established" |
 | `$f`    | Source file name                                       | "main.c"                 |
 | `$x`    | Line number                                            | "42"                     |
 | `$M`    | Module name                                            | "network"                |
@@ -475,7 +481,7 @@ Each Sink can have its own filter, enabling fine-grained routing of logs.
 A filter is a structure that consist of pointer to filtering function and
 a pointer to custom data that filter might want to use.
 
-A filtering function is simply a function that receives a `Logcie_Log` and returns:
+A filtering function receives a `Logcie_Log` and returns:
  - 1 (true)  - to allow the log
  - 0 (false) - to suppress the log
 
@@ -553,7 +559,7 @@ Example:
 
 - **Thread safety is opt‑in** - Define `LOGCIE_THREAD_SAFE` before the implementation to serialise all operations with a mutex.  Without it, concurrent calls may interleave or crash.
 - **No built-in log rotation** - File management must be handled by the application (or just use `logrotate`)
-- **Custom formatters require `va_list` handling** - Advanced usage requires understanding of variadic arguments
+- **Custom formatters receive the message already rendered** and build the line from it
 
 Future versions may address these limitations based on user feedback and requirements.
 
