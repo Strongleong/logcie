@@ -2,6 +2,8 @@
 
 ## Upcoming
 
+## v3.2.0
+
 ### Added
 - `$T` renders the operating system's thread id, the one `top`, `gdb` and a
   journal show. Read on Windows, Linux, macOS, FreeBSD, OpenBSD and NetBSD, and
