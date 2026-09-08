@@ -7,23 +7,23 @@
 
 #include <string.h>
 
-static size_t probe(Logcie_Writer *writer, void *user_data, Logcie_Log log, va_list *args) {
+static size_t probe(Logcie_Writer *writer, void *user_data, Logcie_Log log) {
   (void)writer;
   (void)user_data;
 
-  printf("sizing=%zu\n", logcie_render_message(NULL, 0, &log, args));
+  printf("sizing=%zu\n", logcie_render_message(NULL, 0, &log));
 
   char small[8];
-  printf("truncated_wants=%zu\n", logcie_render_message(small, sizeof(small), &log, args));
+  printf("truncated_wants=%zu\n", logcie_render_message(small, sizeof(small), &log));
   printf("truncated_text=%s\n", small);
 
   char full[64];
-  printf("full_wants=%zu\n", logcie_render_message(full, sizeof(full), &log, args));
+  printf("full_wants=%zu\n", logcie_render_message(full, sizeof(full), &log));
   printf("full_text=%s\n", full);
 
   /* NOTE: repeated calls must agree, which is what proves the va_list is being
    * copied rather than consumed. */
-  printf("repeatable=%d\n", logcie_render_message(NULL, 0, &log, args) == strlen(full));
+  printf("repeatable=%d\n", logcie_render_message(NULL, 0, &log) == strlen(full));
   return 0;
 }
 

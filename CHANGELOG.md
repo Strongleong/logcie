@@ -2,6 +2,39 @@
 
 ## Upcoming
 
+### Changed
+- **`log.msg` now holds the message.** `logcie_log` applies the `printf`
+  arguments before any sink runs, so a formatter, writer or filter reading it
+  sees finished text. It used to hold the format string.
+
+  You are affected if you read `log.msg` expecting a format string, or filter on
+  it: `logcie_filter_message_contains("needle")` did not match
+  `LOGCIE_INFO("found %s", "needle")` before and does now.
+- **Custom formatters lose their `va_list *` parameter.** The message is already
+  rendered by the time a formatter runs, so it was always `NULL`:
+
+  ```c
+  /* v3.0 */ size_t my_formatter(Logcie_Writer *w, void *ud, Logcie_Log log, va_list *args);
+  /* v3.1 */ size_t my_formatter(Logcie_Writer *w, void *ud, Logcie_Log log);
+  ```
+
+  `logcie_render_message(buf, cap, &log)` drops it too and now copies the
+  message instead of rendering it. A formatter that only called it needs the
+  signature change and no other edit.
+- `LOGCIE_MAX_LINE` is now `LOGCIE_LINE_BUFFER_SIZE`. The old name claimed to be
+  a maximum; with an allocator a line exceeds it freely. Defining
+  `LOGCIE_MAX_LINE` still works and still wins.
+
+### Added
+- `examples/13_async_sink`: a writer that owns a queue and a thread, for a sink
+  that would otherwise block the caller. Logcie has no worker threads of its
+  own; a writer gets one complete line per call and `writer.flush` is where
+  `logcie_flush()` drains it.
+
+### Fixed
+- `logcie_flush` documented a return value it does not have, and
+  `logcie_get_default_sink` documented a const pointer it never returned.
+
 ## v3.0.0
 
 ### Added

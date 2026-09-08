@@ -7,6 +7,11 @@ on:
     branches: [ master ]
   workflow_dispatch:
 
+# A push that supersedes an in-flight run makes that run's answer irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # The .tspec suite is the real check. strum is POSIX-only, so this is
   # everywhere it can run.
@@ -104,7 +109,7 @@ jobs:
           ./build -d -c gcc -x g++
           for exe in out/*; do [ -x "$exe" ] && [ -f "$exe" ] && "$exe" >/dev/null; done
 
-      # 09_threads and 10_app are the ones with anything to race.
+      # 09_threads, 10_async_sink and 13_app are the ones with anything to race.
       - name: Examples under ThreadSanitizer
         run: |
           ./build -d -T -c gcc -x g++

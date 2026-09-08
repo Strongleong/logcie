@@ -10,6 +10,12 @@
  *   #define LOGCIE_IMPLEMENTATION
  *   #include "logcie.h"
  *
+ *   Define LOGCIE_IMPLEMENTATION in exactly one translation unit -- usually a deps.c
+ *   or libs.c holding your header-only libraries. That file compiles the whole of
+ *   logcie, so logcie's own statics are in scope there: a custom formatter or writer
+ *   that wants get_logcie_level_label, the render helpers or the internal macros
+ *   belongs in that file rather than reimplementing them.
+ *
  *   LOGCIE_INFO("Hello from Logcie");
  *   LOGCIE_VERBOSE("Logcie supports %s logging", "printf-style");
  *
@@ -29,8 +35,9 @@
  *   LOGCIE_MAX_SINKS               Maximum capacity of logcie sinks array (default: 16)
  *   LOGCIE_AUTOFLUSH_LEVEL         Level at and above which a log flushes its sink (default: LOGCIE_LEVEL_ERROR)
  *   LOGCIE_AUTOFLUSH_DISABLE       Define it to switch autoflushing off entirely (default: not defined)
- *   LOGCIE_MAX_LINE                Stack buffer a log line is formatted into (default: 1024)
- *   LOGCIE_MALLOC / LOGCIE_FREE    Allocator for lines longer than LOGCIE_MAX_LINE
+ *   LOGCIE_LINE_BUFFER_SIZE        Bytes of stack buffer a line is formatted into (default: 1024)
+ *   LOGCIE_MAX_LINE                Old name for LOGCIE_LINE_BUFFER_SIZE
+ *   LOGCIE_MALLOC / LOGCIE_FREE    Allocator for lines longer than LOGCIE_LINE_BUFFER_SIZE
  *   LOGCIE_NO_MALLOC               Never allocate; truncate long lines instead
  *   LOGCIE_DEFAULT_SINK_FORMAT     Format string for the automatic stdout sink
  *   LOGCIE_DEF                     Linkage of public functions (default extern)
@@ -64,6 +71,14 @@
  *          same user_data as write, and NULL means there is nothing to flush.
  *   Filter decides whether a log reaches the Sink at all. See the Filters section below for the built-i
  *          ones and how to combine them.
+ *
+ *   Three things, three names. The *format string* is what the call site wrote,
+ *   "user %s logged in". The *message* is that with its arguments applied,
+ *   "user alice logged in". The *line* is what a Formatter builds from the message
+ *   and the metadata around it, "[INFO] (app) user alice logged in".
+ *
+ *   logcie_log renders the message before any Sink runs, so log.msg is the message.
+ *   A Formatter turns it into a line; a Writer is handed that line.
  *
  *   A combination of Formatter, Writer and Filter is called a Sink.
  *   You can register up to LOGCIE_MAX_SINKS sinks. Logcie sends every log to every sink available.
@@ -143,8 +158,8 @@
  *
  * Memory management:
  *   This library does not manage the lifetime of Sinks or their associated resources.
- *   Ensure that any Sink you create remains valid for as long as it is in use.
- *   TIP: Just have them in main function, or in static/global scope.
+ *   A Sink must stay valid for as long as it is registered. Keeping them in main, or
+ *   in static scope, is the easy way.
  *
  * Filters:
  *   Filters allow you to control which logs are emitted to a specific Sink.
@@ -153,7 +168,7 @@
  *   A filter is a structure that consist of pointer to filtering function and
  *   a pointer to custom data that filter might want to use.
  *
- *   A filtering function is simply a function that recieves a `Logcie_Log` and returns:
+ *   A filtering function receives a `Logcie_Log` and returns:
  *     1 (true)  - to allow the log
  *     0 (false) - to suppress the log
  *
@@ -451,17 +466,29 @@ typedef enum Logcie_LogLevel {
 #endif
 
 /**
- * @brief Size of the stack buffer a log line is formatted into.
+ * @brief Bytes of stack buffer a log line is formatted into.
  *
- * A line that fits costs no allocation at all. Longer lines go through
- * LOGCIE_MALLOC, or are truncated when there is none.
+ * A line that fits costs no allocation. Longer lines go through LOGCIE_MALLOC,
+ * or are truncated under LOGCIE_NO_MALLOC.
  */
-#ifndef LOGCIE_MAX_LINE
-#define LOGCIE_MAX_LINE 1024
+#ifndef LOGCIE_LINE_BUFFER_SIZE
+#ifdef LOGCIE_MAX_LINE
+#define LOGCIE_LINE_BUFFER_SIZE LOGCIE_MAX_LINE
+#else
+#define LOGCIE_LINE_BUFFER_SIZE 1024
+#endif
 #endif
 
 /**
- * @brief Allocator used only for log lines longer than LOGCIE_MAX_LINE.
+ * @deprecated Use LOGCIE_LINE_BUFFER_SIZE. Defining this still works and still
+ *             wins, so no existing configuration has to change.
+ */
+#ifndef LOGCIE_MAX_LINE
+#define LOGCIE_MAX_LINE LOGCIE_LINE_BUFFER_SIZE
+#endif
+
+/**
+ * @brief Allocator used only for log lines longer than LOGCIE_LINE_BUFFER_SIZE.
  *
  * Define both LOGCIE_MALLOC and LOGCIE_FREE to route those rare long lines
  * through your own allocator -- an arena, a ring buffer, a debug allocator:
@@ -473,7 +500,7 @@ typedef enum Logcie_LogLevel {
  * @endcode
  *
  * Define LOGCIE_NO_MALLOC to forbid allocation outright, which is what you
- * want where dynamic allocation is banned. Lines longer than LOGCIE_MAX_LINE
+ * want where dynamic allocation is banned. Lines longer than LOGCIE_LINE_BUFFER_SIZE
  * are then truncated instead of allocated.
  */
 #if defined(LOGCIE_MALLOC) != defined(LOGCIE_FREE)
@@ -545,8 +572,8 @@ typedef struct Logcie_Log Logcie_Log;
  *
  * @note One call is one complete line. A writer is never handed a fragment, so
  *       a sink that treats each call as one record is safe.
- * @note log->msg is the format string as written at the call site, not the
- *       text. The rendered line is `bytes` -- use that. `log` is there for
+ * @note log->msg is the message, with its arguments already applied. `bytes` is
+ *       the line the formatter built from it -- write that. `log` is there for
  *       metadata: level, module, timestamp, location.
  */
 typedef size_t(Logcie_WriterFn)(void *user_data, const Logcie_Log *log, const char *bytes, size_t len);
@@ -589,15 +616,13 @@ typedef struct Logcie_Writer {
  *                   reads it as a token string; another formatter may want a
  *                   field mask, or nothing at all
  * @param log        Log to format
- * @param args       Arguments passed to the logging macro, for log->msg.
- *                   Use logcie_render_message() rather than handling them by hand
  * @return Number of bytes handed to the writer
  *
  * @note Call writer->write once, with the whole line. A writer is allowed to
  *       treat one call as one record, so splitting a line across calls would
  *       break syslog and network sinks.
  */
-typedef size_t(Logcie_FormatterFn)(Logcie_Writer *writer, void *user_data, Logcie_Log log, va_list *args);
+typedef size_t(Logcie_FormatterFn)(Logcie_Writer *writer, void *user_data, Logcie_Log log);
 
 /**
  * @brief Formatter struct
@@ -676,7 +701,7 @@ typedef struct Logcie_LogLocation {
  * It is typically created by the LOGCIE_* macros and passed to formatters.
  *
  * @field level     Severity level of the log message
- * @field msg       Format string for the log message
+ * @field msg       The message: the format string with its arguments applied
  * @field time      Timestamp when the log was created
  * @field nanos     Nanoseconds. 0 when not supported
  * @field module    Optional module name for categorizing logs
@@ -822,11 +847,11 @@ LOGCIE_DEF size_t logcie_get_sink_count(void);
 LOGCIE_DEF Logcie_Sink *logcie_get_sink(size_t index);
 
 /**
- * @brief Returns pointer to default stdout sink
+ * @brief Returns a pointer to the default stdout sink.
  *
- * Allows you to custompize default sink rather than added brand new one.
+ * Reconfigure it in place instead of registering a sink of your own.
  *
- * @return Const pointer to the default Logcie_Sink
+ * @return Pointer to the default Logcie_Sink
  */
 LOGCIE_DEF Logcie_Sink *logcie_get_default_sink(void);
 
@@ -879,11 +904,10 @@ LOGCIE_DEF uint8_t logcie_remove_sink_by_index(size_t index);
 LOGCIE_DEF void logcie_remove_all_sinks(void);
 
 /**
- * @brief Flushes all registerd sinks.
+ * @brief Flushes every registered sink that has a flush function.
  *
- * Iterates for every registered sink and calls its flusher, if it exists.
- *
- * @returns total size of all flushed bytes
+ * @note Call it before removing a sink. Removal does not flush, and does not
+ *       close the sink's destination.
  */
 LOGCIE_DEF void logcie_flush(void);
 
@@ -917,7 +941,7 @@ LOGCIE_DEF void logcie_flush(void);
  * @param va         Variadic arguments that was passed to logging function (LOGCIE_INFO("message %s", "this would be in va")
  * @return Number of characters written to the sink
  */
-LOGCIE_DEF size_t logcie_token_formatter(Logcie_Writer *writer, void *user_data, Logcie_Log log, va_list *args);
+LOGCIE_DEF size_t logcie_token_formatter(Logcie_Writer *writer, void *user_data, Logcie_Log log);
 
 /**
  * @brief Built-in writer that appends a line to a FILE *
@@ -945,16 +969,15 @@ LOGCIE_DEF size_t logcie_file_writer(void *user_data, const Logcie_Log *log, con
 LOGCIE_DEF void logcie_file_flush(void *user_data);
 
 /**
- * @brief Renders the user's message into a buffer.
+ * @brief Copies the message into a buffer.
  *
- * Useful when writing a formatter: every formatter has to turn log->msg plus
- * its arguments into text, and this handles the va_list copying that a second
- * render pass requires.
+ * logcie_log applies the printf arguments before any sink runs, so log->msg is
+ * already the finished message. This is how a formatter gets it, with the same
+ * contract as snprintf.
  *
  * @param buf   Destination buffer, or NULL when cap is 0
  * @param cap   Capacity of buf
  * @param log   Log whose msg is rendered
- * @param args  Arguments passed to the logging macro
  * @return Length the message would have, not counting the terminator, which
  *         may exceed cap
  *
@@ -964,7 +987,7 @@ LOGCIE_DEF void logcie_file_flush(void *user_data);
  *       not fit -- that costs one pass for the common line, where sizing first
  *       always costs two.
  */
-LOGCIE_DEF size_t logcie_render_message(char *buf, size_t cap, const Logcie_Log *log, va_list *args);
+LOGCIE_DEF size_t logcie_render_message(char *buf, size_t cap, const Logcie_Log *log);
 
 typedef struct Logcie_FilterCombinationData {
   Logcie_Filter a;
@@ -1146,7 +1169,7 @@ LOGCIE_DEF void logcie_set_colors(const char **colors);
 #endif
 
 #ifndef LOGCIE_THREAD_SAFE
-#define LOGCIE_MUTEX_DECLARE(name) struct logcie_unused_##name  // NOTE: To fix dandling `;`
+#define LOGCIE_MUTEX_DECLARE(name) struct logcie_unused_##name  // NOTE: To fix dangling `;`
 #define LOGCIE_MUTEX_INIT(m)
 #define LOGCIE_MUTEX_DESTROY(m)
 #define LOGCIE_MUTEX_LOCK(m)
@@ -1438,21 +1461,12 @@ LOGCIE_DEF void logcie_flush(void) {
   LOGCIE_MUTEX_UNLOCK(logcie_mutex);
 }
 
-size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
-#ifndef LOGCIE_ALLOW_RECURSIVE_LOGGING
-  if (logcie_log_depth > 0) {
-    return 0;
-  }
-#endif
-
-  logcie_log_depth++;
-
+// NOTE: the lock and the recursion guard live here, together, so nothing can
+// hold one without the other. logcie_flush reads the depth to tell whether it
+// already owns logcie_mutex.
+static void logcie_run_sinks(Logcie_Log log) {
   LOGCIE_MUTEX_LOCK(logcie_mutex);
-
-  va_list args;
-  va_start(args, fmt);
-
-  log.msg = fmt;
+  logcie_log_depth++;
 
   for (size_t i = 0; i < logcie.sinks_len; i++) {
     Logcie_Sink *sink = logcie.sinks[i];
@@ -1462,20 +1476,63 @@ size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
       continue;
     }
 
-    va_list args_copy;
-    va_copy(args_copy, args);
-
-    sink->formatter.format(&sink->writer, sink->formatter.data, log, &args_copy);
+    sink->formatter.format(&sink->writer, sink->formatter.data, log);
 
     if (log.level >= LOGCIE_AUTOFLUSH_LEVEL && sink->writer.flush) {
       sink->writer.flush(sink->writer.data);
     }
-
-    va_end(args_copy);
   }
 
-  LOGCIE_MUTEX_UNLOCK(logcie_mutex);
   logcie_log_depth--;
+  LOGCIE_MUTEX_UNLOCK(logcie_mutex);
+}
+
+size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
+#ifndef LOGCIE_ALLOW_RECURSIVE_LOGGING
+  if (logcie_log_depth > 0) {
+    return 0;
+  }
+#endif
+
+  va_list args;
+  va_start(args, fmt);
+
+  // NOTE: rendered here, once, because a va_list cannot outlive this call.
+  // Every sink is handed the message rather than the format string.
+  char    stack_msg[LOGCIE_LINE_BUFFER_SIZE];
+  char   *heap_msg = NULL;
+  va_list attempt;
+
+  va_copy(attempt, args);
+  int32_t rendered = vsnprintf(stack_msg, sizeof(stack_msg), fmt, attempt);
+  va_end(attempt);
+
+  size_t needed = rendered > 0 ? (size_t)rendered : 0;
+
+  if (needed < sizeof(stack_msg)) {
+    log.msg = stack_msg;
+  } else {
+#ifdef LOGCIE_MALLOC
+    heap_msg = (char *)LOGCIE_MALLOC(needed + 1);
+
+    if (heap_msg != NULL) {
+      va_copy(attempt, args);
+      vsnprintf(heap_msg, needed + 1, fmt, attempt);
+      va_end(attempt);
+    }
+#endif
+
+    // NOTE: no allocator, or none available: the message keeps what fit.
+    log.msg = heap_msg != NULL ? heap_msg : stack_msg;
+  }
+
+  logcie_run_sinks(log);
+
+#ifdef LOGCIE_MALLOC
+  if (heap_msg != NULL) {
+    LOGCIE_FREE(heap_msg);
+  }
+#endif
 
   va_end(args);
   return 0;
@@ -1532,33 +1589,32 @@ LOGCIE_DEF Logcie_Log logcie_make_log(const char *module, Logcie_LogLevel level,
   } while (0)
 
 /**
- * @brief Renders the user's message into a buffer.
- *
- * Every formatter needs this and none should reimplement it: the va_list has
- * to be copied because the caller may render more than once.
+ * @brief Copies the message into a buffer.
  *
  * @return Length the message would have, which may exceed cap
  */
-LOGCIE_DEF size_t logcie_render_message(char *buf, size_t cap, const Logcie_Log *log, va_list *args) {
+LOGCIE_DEF size_t logcie_render_message(char *buf, size_t cap, const Logcie_Log *log) {
   // NOTE: (NULL, 0) is a legal sizing call, exactly as it is for snprintf, so
-  // buf is deliberately not checked. It is how a formatter asks how much room
-  // the message needs without rendering it anywhere.
+  // buf is deliberately not checked.
   LOGCIE_INTERNAL_ASSERT((cap == 0 || buf), "Render buffer is missing");
   LOGCIE_INTERNAL_ASSERT(log, "Log is missing");
 
-  va_list copy;
-  va_copy(copy, *args);
+  size_t len = log->msg ? strlen(log->msg) : 0;
 
-  int32_t written = vsnprintf(buf, cap, log->msg, copy);
+  if (cap > 0) {
+    size_t fit = len < cap ? len : cap - 1;
 
-  va_end(copy);
-  return written > 0 ? (size_t)written : 0;
+    memcpy(buf, log->msg, fit);
+    buf[fit] = '\0';
+  }
+
+  return len;
 }
 
 // NOTE: renders the whole line and returns the length it would have had. A
 // return value >= cap means it was truncated, and the caller decides whether
 // to retry on a bigger buffer or accept the truncation.
-static size_t logcie_render_tokens(char *buf, size_t cap, const char *fmt, const Logcie_Log *log, va_list *args) {
+static size_t logcie_render_tokens(char *buf, size_t cap, const char *fmt, const Logcie_Log *log) {
   LOGCIE_INTERNAL_ASSERT(buf, "Render buffer is missing");
   LOGCIE_INTERNAL_ASSERT(cap > 0, "Render buffer has no capacity");
 
@@ -1621,7 +1677,7 @@ static size_t logcie_render_tokens(char *buf, size_t cap, const char *fmt, const
       case 'm': {
         size_t off = needed < cap ? needed : cap;
 
-        last_len = logcie_render_message(buf + off, cap - off, log, args);
+        last_len = logcie_render_message(buf + off, cap - off, log);
         needed += last_len;
         break;
       }
@@ -1684,7 +1740,7 @@ static size_t logcie_render_tokens(char *buf, size_t cap, const char *fmt, const
 
 #undef LOGCIE_INTERNAL_EMIT
 
-size_t logcie_token_formatter(Logcie_Writer *writer, void *data, Logcie_Log log, va_list *args) {
+size_t logcie_token_formatter(Logcie_Writer *writer, void *data, Logcie_Log log) {
   const char *fmt = (const char *)data;
 
   LOGCIE_INTERNAL_ASSERT(writer, "Sink have no writer");
@@ -1692,12 +1748,9 @@ size_t logcie_token_formatter(Logcie_Writer *writer, void *data, Logcie_Log log,
 
   // NOTE: a line that fits costs one stack buffer and no allocator call, and
   // the writer is handed the finished line in a single call.
-  char    stack_buf[LOGCIE_MAX_LINE];
-  va_list attempt;
+  char stack_buf[LOGCIE_LINE_BUFFER_SIZE];
 
-  va_copy(attempt, *args);
-  size_t needed = logcie_render_tokens(stack_buf, sizeof(stack_buf), fmt, &log, &attempt);
-  va_end(attempt);
+  size_t needed = logcie_render_tokens(stack_buf, sizeof(stack_buf), fmt, &log);
 
   if (needed < sizeof(stack_buf)) {
     writer->write(writer->data, &log, stack_buf, needed);
@@ -1709,9 +1762,7 @@ size_t logcie_token_formatter(Logcie_Writer *writer, void *data, Logcie_Log log,
     char *heap = (char *)LOGCIE_MALLOC(needed + 1);
 
     if (heap != NULL) {
-      va_copy(attempt, *args);
-      size_t written = logcie_render_tokens(heap, needed + 1, fmt, &log, &attempt);
-      va_end(attempt);
+      size_t written = logcie_render_tokens(heap, needed + 1, fmt, &log);
 
       writer->write(writer->data, &log, heap, written);
       LOGCIE_FREE(heap);

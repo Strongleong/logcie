@@ -40,6 +40,7 @@ that supports multiple output sinks, customizable formatting, and flexible filte
 - [Limitations](#limitations)
 - [Testing](#testing)
 - [Usage in libraries](#usage-in-libraries)
+- [Releasing](#releasing)
 - [License](#license)
 
 ## Quick Start
@@ -69,6 +70,18 @@ int main() {
 // In any other file where you want to use logcie
 #include "logcie.h"
 ```
+
+In a project of any size that one file is usually a `deps.c` or `libs.c` holding
+every header-only library, or a `logcie.c` of its own.
+
+**That file sees everything Logcie has.** The implementation is compiled into
+it, so its `static` helpers are in scope: `get_logcie_level_label`, the render
+functions, the internal macros. A custom formatter or writer that wants them
+belongs in that file, where it can use the same level names and colours the
+built-in formatter uses instead of keeping a copy that drifts.
+
+Anything with `LOGCIE_INTERNAL_` in the name is fair game there too, with the
+usual caveat that it can change between releases.
 
 ## Migrating From v2
 
@@ -101,7 +114,7 @@ Define any of these **before** you include `logcie.h` (or before
 `#define LOGCIE_IMPLEMENTATION`) to customise Logcie.
 
 | Macro                            | Description                                                                                                        | Default                  |
-| -------                          | -------------                                                                                                      | ---------                |
+| -----                            | -----------                                                                                                        | -------                  |
 | `LOGCIE_MODULE`                  | Module name attached to classic macros (`LOGCIE_INFO`, …). (see [Module-Based Logging](#module-based-logging))     | `"Logcie"`               |
 | `LOGCIE_DEFAULT_SINK_FORMAT`     | Format string for the automatic stdout sink.                                                                       | `"$c$L$r … $f:$x$r: $m"` |
 | `LOGCIE_THREAD_SAFE`             | Enables a mutex around all sink operations and log calls (requires pthreads).                                      | *(not defined)*          |
@@ -113,9 +126,10 @@ Define any of these **before** you include `logcie.h` (or before
 | `LOGCIE_MAX_SINKS`               | How many sinks can be registered at once. `logcie_add_sink` returns 0 once full.                                   | `16`                     |
 | `LOGCIE_AUTOFLUSH_LEVEL`         | Level at and above which a log flushes the sink it was written to. (see [Flush](#flush))                           | `LOGCIE_LEVEL_ERROR`     |
 | `LOGCIE_AUTOFLUSH_DISABLE`       | Define it to switch autoflush off entirely. `logcie_flush()` still works.                                          | *(not defined)*          |
-| `LOGCIE_MAX_LINE`                | Stack buffer a line is formatted into. Lines that fit cost no allocation.                                          | `1024`                   |
-| `LOGCIE_MALLOC` / `LOGCIE_FREE`  | Allocator used *only* for lines longer than `LOGCIE_MAX_LINE`. Define both or neither.                             | `malloc` / `free`        |
-| `LOGCIE_NO_MALLOC`               | Never allocate. Lines longer than `LOGCIE_MAX_LINE` are truncated instead.                                         | *(not defined)*          |
+| `LOGCIE_LINE_BUFFER_SIZE`        | Bytes of stack buffer a line is formatted into. Lines that fit cost no allocation.                                 | `1024`                   |
+| `LOGCIE_MAX_LINE`                | Deprecated name for `LOGCIE_LINE_BUFFER_SIZE`. Still works, and wins if both are set.                              | *(not defined)*          |
+| `LOGCIE_MALLOC` / `LOGCIE_FREE`  | Allocator used *only* for lines longer than `LOGCIE_LINE_BUFFER_SIZE`. Define both or neither.                     | `malloc` / `free`        |
+| `LOGCIE_NO_MALLOC`               | Never allocate. Long lines are truncated instead.                                                                  | *(not defined)*          |
 | `LOGCIE_DEBUG_CHECKS`            | Enable internal consistency assertions.                                                                            | *(not defined)*          |
 
 > **Note:** The compiler‑pedantic fallback (`LOGCIE_VA_LOGS`) is automatically defined when variadic macros are not available - you don’t need to touch it.
@@ -144,7 +158,11 @@ Each directory under `examples/` is one program, and they are meant to be read
 in order. Each adds one thing to the one before it.
 
 An example needing extra compiler flags puts them in a `build.flags` file next
-to its sources; `09_threads` uses that for `-lpthread`.
+to its sources; `09_threads` and `10_async_sink` use that for `-lpthread`.
+
+`10_async_sink` is the one to copy if a sink of yours is slow. Logcie has no
+worker threads: a writer that would block gets a queue and a thread of its own,
+and the example is a working one you can take wholesale.
 
 ## Basic Usage
 
@@ -190,11 +208,16 @@ output. Its `user_data` is whatever that formatter needs: for the built-in one
 that is a [format token](#format-tokens) string.
 
 ```c
-size_t my_formatter(Logcie_Writer *writer, void *user_data, Logcie_Log log, va_list *args);
+size_t my_formatter(Logcie_Writer *writer, void *user_data, Logcie_Log log);
 ```
 
-Use `logcie_render_message(buf, cap, &log, args)` to render `log.msg` and its
-arguments — every formatter needs it, and it handles the `va_list` copying.
+`logcie_log` applies the `printf` arguments before any sink runs, so `log.msg`
+is already the finished message. Use `logcie_render_message(buf, cap, &log)` to
+copy it into your buffer. It follows the `snprintf` contract and returns the
+length it wanted, so you can size with `(NULL, 0)` first, or copy and check.
+
+A formatter builds the line from that message and whatever metadata it wants
+from `log`.
 
 ### Writer
 
@@ -212,8 +235,8 @@ Three things worth knowing:
 - **The log comes along** so a transport can use metadata as a value instead of
   parsing it back out of the text. `syslog(3)` wants a priority, Android wants a
   priority and a tag, a network sink may want the module as a routing key.
-- **`log->msg` is the format string from the call site, not the text.** The
-  rendered line is `bytes`. Use `bytes`; use `log` for metadata.
+- **`log->msg` is the message.** `bytes` is the finished line, with the
+  timestamp, level and module applied. Write `bytes`; read `log` for metadata.
 
 `bytes` is not NUL terminated, so always use `len`.
 
@@ -249,9 +272,15 @@ Logcie_Writer w = {my_writer, my_flush, target};
 ```
 
 `NULL` means there is nothing to flush, and such a sink is skipped rather than
-treated as a failure. `logcie_file_flush` is the built-in one, and a `NULL`
-target does nothing — `fflush(NULL)` would flush every open stream in the
-process, which is not one sink's business.
+treated as a failure.
+
+`logcie_file_flush` is the built-in one, and a `NULL` target does nothing:
+`fflush(NULL)` would flush every open stream in the process, which is not one
+sink's business.
+
+A writer that would block, such as a socket or a disk that stalls, can queue the
+line and return, doing the write on a thread it owns. `logcie_flush()` calls the
+sink's flush, so that is where the queue drains. See `examples/10_async_sink`.
 
 Two things reach it:
 
@@ -421,7 +450,7 @@ Format strings use `$` tokens to insert log metadata. The default formatter supp
 
 | Token   | Description                                            | Example Output           |
 | ------- | -------------                                          | ----------------         |
-| `$m`    | Log message with printf formatting                     | "Connection established" |
+| `$m`    | The log message, with its arguments already applied    | "Connection established" |
 | `$f`    | Source file name                                       | "main.c"                 |
 | `$x`    | Line number                                            | "42"                     |
 | `$M`    | Module name                                            | "network"                |
@@ -475,7 +504,7 @@ Each Sink can have its own filter, enabling fine-grained routing of logs.
 A filter is a structure that consist of pointer to filtering function and
 a pointer to custom data that filter might want to use.
 
-A filtering function is simply a function that receives a `Logcie_Log` and returns:
+A filtering function receives a `Logcie_Log` and returns:
  - 1 (true)  - to allow the log
  - 0 (false) - to suppress the log
 
@@ -553,7 +582,7 @@ Example:
 
 - **Thread safety is opt‑in** - Define `LOGCIE_THREAD_SAFE` before the implementation to serialise all operations with a mutex.  Without it, concurrent calls may interleave or crash.
 - **No built-in log rotation** - File management must be handled by the application (or just use `logrotate`)
-- **Custom formatters require `va_list` handling** - Advanced usage requires understanding of variadic arguments
+- **Custom formatters receive the message already rendered** and build the line from it
 
 Future versions may address these limitations based on user feedback and requirements.
 
@@ -612,7 +641,7 @@ You can add simple snippet to make your library support logcie
 If you need to have fallback logging this can be used instead of `(void *)0`:
 
 ```c
-#define YOURLIB_LOG(level, ...)                \
+#define YOURLIB_LOG(level, ...)               \
    do {                                       \
      fprintf(stderr, #level ": "__VA_ARGS__); \
      fprintf(stderr, "\n");                   \
@@ -620,6 +649,19 @@ If you need to have fallback logging this can be used instead of `(void *)0`:
 ```
 
 Just change YOURLLIB to something more fitting :)
+
+## Releasing
+
+The CD workflow runs on a `v*` tag and refuses the release unless three things
+agree:
+
+1. `./build tests` passes.
+2. `LOGCIE_VERSION_MAJOR`/`MINOR`/`RELEASE` in `logcie.h` spell the tag.
+3. `CHANGELOG.md` has a `## v<version>` heading. Its contents become the release
+   description.
+
+So releasing is: add the version heading under `## Upcoming` in `CHANGELOG.md`,
+bump the three version macros in `logcie.h`, tag.
 
 ## License
 

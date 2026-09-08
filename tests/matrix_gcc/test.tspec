@@ -204,3 +204,50 @@ g++
 INFO n=1
 WARN s=x
 
+:test gcc_c11_no_malloc
+:command compile
+:blob executable 3
+gcc
+:blob args 97
+-std=c11 -Wall -Wextra -Werror -DLOGCIE_NO_MALLOC -I../.. matrix.c -o .side_effects/c11_no_malloc
+:int return 0
+:command run
+:blob executable 27
+.side_effects/c11_no_malloc
+:int return 0
+:blob stdout 18
+INFO n=1
+WARN s=x
+
+
+:test gcc_c99_deprecated_max_line
+:command compile
+:blob executable 3
+gcc
+:blob args 99
+-std=c99 -Wall -Wextra -Werror -DLOGCIE_MAX_LINE=256 -I../.. matrix.c -o .side_effects/c99_max_line
+:int return 0
+:command run
+:blob executable 26
+.side_effects/c99_max_line
+:int return 0
+:blob stdout 18
+INFO n=1
+WARN s=x
+
+
+:test gcc_c11_line_buffer_size
+:command compile
+:blob executable 3
+gcc
+:blob args 111
+-std=c11 -Wall -Wextra -Werror -DLOGCIE_LINE_BUFFER_SIZE=2048 -I../.. matrix.c -o .side_effects/c11_line_buffer
+:int return 0
+:command run
+:blob executable 29
+.side_effects/c11_line_buffer
+:int return 0
+:blob stdout 18
+INFO n=1
+WARN s=x
+
