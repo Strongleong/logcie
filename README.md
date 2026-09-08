@@ -40,6 +40,7 @@ that supports multiple output sinks, customizable formatting, and flexible filte
 - [Limitations](#limitations)
 - [Testing](#testing)
 - [Usage in libraries](#usage-in-libraries)
+- [Releasing](#releasing)
 - [License](#license)
 
 ## Quick Start
@@ -648,6 +649,19 @@ If you need to have fallback logging this can be used instead of `(void *)0`:
 ```
 
 Just change YOURLLIB to something more fitting :)
+
+## Releasing
+
+The CD workflow runs on a `v*` tag and refuses the release unless three things
+agree:
+
+1. `./build tests` passes.
+2. `LOGCIE_VERSION_MAJOR`/`MINOR`/`RELEASE` in `logcie.h` spell the tag.
+3. `CHANGELOG.md` has a `## v<version>` heading. Its contents become the release
+   description.
+
+So releasing is: add the version heading under `## Upcoming` in `CHANGELOG.md`,
+bump the three version macros in `logcie.h`, tag.
 
 ## License
 
