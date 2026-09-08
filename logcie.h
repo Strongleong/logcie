@@ -29,8 +29,9 @@
  *   LOGCIE_MAX_SINKS               Maximum capacity of logcie sinks array (default: 16)
  *   LOGCIE_AUTOFLUSH_LEVEL         Level at and above which a log flushes its sink (default: LOGCIE_LEVEL_ERROR)
  *   LOGCIE_AUTOFLUSH_DISABLE       Define it to switch autoflushing off entirely (default: not defined)
- *   LOGCIE_MAX_LINE                Stack buffer a log line is formatted into (default: 1024)
- *   LOGCIE_MALLOC / LOGCIE_FREE    Allocator for lines longer than LOGCIE_MAX_LINE
+ *   LOGCIE_LINE_BUFFER_SIZE        Bytes of stack buffer a line is formatted into (default: 1024)
+ *   LOGCIE_MAX_LINE                Old name for LOGCIE_LINE_BUFFER_SIZE
+ *   LOGCIE_MALLOC / LOGCIE_FREE    Allocator for lines longer than LOGCIE_LINE_BUFFER_SIZE
  *   LOGCIE_NO_MALLOC               Never allocate; truncate long lines instead
  *   LOGCIE_DEFAULT_SINK_FORMAT     Format string for the automatic stdout sink
  *   LOGCIE_DEF                     Linkage of public functions (default extern)
@@ -451,17 +452,29 @@ typedef enum Logcie_LogLevel {
 #endif
 
 /**
- * @brief Size of the stack buffer a log line is formatted into.
+ * @brief Bytes of stack buffer a log line is formatted into.
  *
- * A line that fits costs no allocation at all. Longer lines go through
- * LOGCIE_MALLOC, or are truncated when there is none.
+ * A line that fits costs no allocation. Longer lines go through LOGCIE_MALLOC,
+ * or are truncated under LOGCIE_NO_MALLOC.
  */
-#ifndef LOGCIE_MAX_LINE
-#define LOGCIE_MAX_LINE 1024
+#ifndef LOGCIE_LINE_BUFFER_SIZE
+#ifdef LOGCIE_MAX_LINE
+#define LOGCIE_LINE_BUFFER_SIZE LOGCIE_MAX_LINE
+#else
+#define LOGCIE_LINE_BUFFER_SIZE 1024
+#endif
 #endif
 
 /**
- * @brief Allocator used only for log lines longer than LOGCIE_MAX_LINE.
+ * @deprecated Use LOGCIE_LINE_BUFFER_SIZE. Defining this still works and still
+ *             wins, so no existing configuration has to change.
+ */
+#ifndef LOGCIE_MAX_LINE
+#define LOGCIE_MAX_LINE LOGCIE_LINE_BUFFER_SIZE
+#endif
+
+/**
+ * @brief Allocator used only for log lines longer than LOGCIE_LINE_BUFFER_SIZE.
  *
  * Define both LOGCIE_MALLOC and LOGCIE_FREE to route those rare long lines
  * through your own allocator -- an arena, a ring buffer, a debug allocator:
@@ -473,7 +486,7 @@ typedef enum Logcie_LogLevel {
  * @endcode
  *
  * Define LOGCIE_NO_MALLOC to forbid allocation outright, which is what you
- * want where dynamic allocation is banned. Lines longer than LOGCIE_MAX_LINE
+ * want where dynamic allocation is banned. Lines longer than LOGCIE_LINE_BUFFER_SIZE
  * are then truncated instead of allocated.
  */
 #if defined(LOGCIE_MALLOC) != defined(LOGCIE_FREE)
@@ -1692,7 +1705,7 @@ size_t logcie_token_formatter(Logcie_Writer *writer, void *data, Logcie_Log log,
 
   // NOTE: a line that fits costs one stack buffer and no allocator call, and
   // the writer is handed the finished line in a single call.
-  char    stack_buf[LOGCIE_MAX_LINE];
+  char    stack_buf[LOGCIE_LINE_BUFFER_SIZE];
   va_list attempt;
 
   va_copy(attempt, *args);
