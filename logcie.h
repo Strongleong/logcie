@@ -120,6 +120,7 @@
  *                                   `$f` - Source file name
  *                                   `$x` - Line number
  *                                   `$M` - Module name
+ *                                   `$T` - Operating system thread id, empty where logcie cannot read one
  *                                   `$l` - Log level (lowercase)
  *                                   `$L` - Log level (uppercase)
  *                                   `$c` - ANSI color code for log level
@@ -1207,6 +1208,57 @@ LOGCIE_MUTEX_DECLARE(logcie_mutex);
 
 static LOGCIE_THREAD_LOCAL int logcie_log_depth = 0;
 
+// NOTE: whatever the operating system calls a thread, so a log line can be
+// matched against a thread in top, gdb or a journal. Every platform spells it
+// differently and the type differs too, so it is normalised to one width.
+//
+// NOTE: on glibc, syscall() is declared unless the dialect is strict -- gcc's
+// default and -std=gnu11 define _DEFAULT_SOURCE, -std=c99 does not. Under a
+// strict dialect $T is empty until the program defines _DEFAULT_SOURCE or
+// _GNU_SOURCE itself, the way an example already does for $N.
+#if defined(_WIN32)
+#define LOGCIE_INTERNAL_THREAD_ID() ((unsigned long long)GetCurrentThreadId())
+#elif defined(__APPLE__)
+#define LOGCIE_INTERNAL_THREAD_ID() logcie_darwin_thread_id()
+#elif defined(__linux__) && (defined(_GNU_SOURCE) || defined(_DEFAULT_SOURCE) || defined(_BSD_SOURCE))
+#include <sys/syscall.h>
+#include <unistd.h>
+#define LOGCIE_INTERNAL_THREAD_ID() ((unsigned long long)syscall(SYS_gettid))
+#elif defined(__FreeBSD__)
+#include <pthread_np.h>
+#define LOGCIE_INTERNAL_THREAD_ID() ((unsigned long long)pthread_getthreadid_np())
+#elif defined(__OpenBSD__)
+#include <unistd.h>
+#define LOGCIE_INTERNAL_THREAD_ID() ((unsigned long long)getthrid())
+#elif defined(__NetBSD__)
+#include <lwp.h>
+#define LOGCIE_INTERNAL_THREAD_ID() ((unsigned long long)_lwp_self())
+#endif
+
+#ifdef LOGCIE_INTERNAL_THREAD_ID
+
+#if defined(__APPLE__)
+static unsigned long long logcie_darwin_thread_id(void) {
+  uint64_t id = 0;
+
+  pthread_threadid_np(NULL, &id);
+  return (unsigned long long)id;
+}
+#endif
+
+// NOTE: zero means not fetched yet.
+static LOGCIE_THREAD_LOCAL unsigned long long logcie_thread_id = 0;
+
+static inline unsigned long long logcie_current_thread_id(void) {
+  if (logcie_thread_id == 0) {
+    logcie_thread_id = LOGCIE_INTERNAL_THREAD_ID();
+  }
+
+  return logcie_thread_id;
+}
+
+#endif  // LOGCIE_INTERNAL_THREAD_ID
+
 // NOTE: localtime and gmtime hand back a pointer into storage shared across the
 // process, so two threads formatting at once can read a struct the other is
 // rewriting. That buffer lives in libc, so no lock held here can protect it --
@@ -1673,6 +1725,12 @@ static size_t logcie_render_tokens(char *buf, size_t cap, const char *fmt, const
       case 'f': LOGCIE_INTERNAL_EMIT("%s", log->location.file ? log->location.file : ""); break;
       case 'x': LOGCIE_INTERNAL_EMIT("%u", log->location.line); break;
       case 'M': LOGCIE_INTERNAL_EMIT("%s", log->module ? log->module : ""); break;
+
+#ifdef LOGCIE_INTERNAL_THREAD_ID
+      case 'T': LOGCIE_INTERNAL_EMIT("%llu", logcie_current_thread_id()); break;
+#else
+      case 'T': break;
+#endif
 
       case 'm': {
         size_t off = needed < cap ? needed : cap;
