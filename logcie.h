@@ -10,6 +10,12 @@
  *   #define LOGCIE_IMPLEMENTATION
  *   #include "logcie.h"
  *
+ *   Define LOGCIE_IMPLEMENTATION in exactly one translation unit -- usually a deps.c
+ *   or libs.c holding your header-only libraries. That file compiles the whole of
+ *   logcie, so logcie's own statics are in scope there: a custom formatter or writer
+ *   that wants get_logcie_level_label, the render helpers or the internal macros
+ *   belongs in that file rather than reimplementing them.
+ *
  *   LOGCIE_INFO("Hello from Logcie");
  *   LOGCIE_VERBOSE("Logcie supports %s logging", "printf-style");
  *

@@ -70,6 +70,18 @@ int main() {
 #include "logcie.h"
 ```
 
+In a project of any size that one file is usually a `deps.c` or `libs.c` holding
+every header-only library, or a `logcie.c` of its own.
+
+**That file sees everything Logcie has.** The implementation is compiled into
+it, so its `static` helpers are in scope: `get_logcie_level_label`, the render
+functions, the internal macros. A custom formatter or writer that wants them
+belongs in that file, where it can use the same level names and colours the
+built-in formatter uses instead of keeping a copy that drifts.
+
+Anything with `LOGCIE_INTERNAL_` in the name is fair game there too, with the
+usual caveat that it can change between releases.
+
 ## Migrating From v2
 
 `Logcie_Writer` gained a `flush` field, in the middle:
