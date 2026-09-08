@@ -1155,6 +1155,10 @@ LOGCIE_DEF void logcie_set_colors(const char **colors);
 #include <stdlib.h>
 #endif
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #ifndef LOGCIE_INTERNAL_ASSERT
 #define LOGCIE_INTERNAL_ASSERT(bool, msg) assert(bool &&msg)
 #endif
@@ -1177,7 +1181,6 @@ LOGCIE_DEF void logcie_set_colors(const char **colors);
 #define LOGCIE_MUTEX_UNLOCK(m)
 #else
 #if defined(_WIN32)
-#include <windows.h>
 #define LOGCIE_MUTEX_DECLARE(name) SRWLOCK name = SRWLOCK_INIT
 #define LOGCIE_MUTEX_INIT(m)
 #define LOGCIE_MUTEX_DESTROY(m)
