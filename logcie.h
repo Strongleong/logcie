@@ -1221,8 +1221,9 @@ static LOGCIE_THREAD_LOCAL int logcie_log_depth = 0;
 // _GNU_SOURCE itself, the way an example already does for $N.
 #if defined(_WIN32)
 #define LOGCIE_INTERNAL_THREAD_ID() ((unsigned long long)GetCurrentThreadId())
-#elif defined(__APPLE__)
+#elif defined(__APPLE__) && (defined(_DARWIN_C_SOURCE) || (defined(__DARWIN_C_LEVEL) && __DARWIN_C_LEVEL >= 900000L))
 #define LOGCIE_INTERNAL_THREAD_ID() logcie_darwin_thread_id()
+#include <pthread.h>
 #elif defined(__linux__) && (defined(_GNU_SOURCE) || defined(_DEFAULT_SOURCE) || defined(_BSD_SOURCE))
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -1240,7 +1241,7 @@ static LOGCIE_THREAD_LOCAL int logcie_log_depth = 0;
 
 #ifdef LOGCIE_INTERNAL_THREAD_ID
 
-#if defined(__APPLE__)
+#if defined(__APPLE__) && (defined(_DARWIN_C_SOURCE) || (defined(__DARWIN_C_LEVEL) && __DARWIN_C_LEVEL >= 900000L))
 static unsigned long long logcie_darwin_thread_id(void) {
   uint64_t id = 0;
 
