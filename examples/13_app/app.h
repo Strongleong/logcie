@@ -7,6 +7,6 @@ int  storage_open(const char *path);
 void storage_write(const char *key, size_t bytes);
 void storage_close(void);
 
-void api_serve(int requests);
+void api_serve(int worker, int requests);
 
 #endif

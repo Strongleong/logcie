@@ -3,17 +3,17 @@
 
 #include "app.h"
 
-void api_serve(int requests) {
+void api_serve(int worker, int requests) {
   for (int i = 0; i < requests; i++) {
-    LOGCIE_DEBUG("request %d received", i);
+    LOGCIE_DEBUG("worker %d: request %d received", worker, i);
 
     storage_write("session", (size_t)i * 700);
 
     if (i == 2) {
-      LOGCIE_ERROR("request %d failed: %s", i, "upstream timeout");
+      LOGCIE_ERROR("worker %d: request %d failed: %s", worker, i, "upstream timeout");
       continue;
     }
 
-    LOGCIE_TRACE("request %d served", i);
+    LOGCIE_TRACE("worker %d: request %d served", worker, i);
   }
 }
