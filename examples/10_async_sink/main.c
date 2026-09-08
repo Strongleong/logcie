@@ -13,6 +13,9 @@
 //
 // Copy this file, replace slow_write with whatever you actually write to, and
 // the rest is yours to tune.
+
+#define _GNU_SOURCE
+
 #define LOGCIE_MODULE "app"
 #define LOGCIE_THREAD_SAFE
 #define LOGCIE_IMPLEMENTATION
@@ -158,7 +161,7 @@ static void async_sink_stop(Async_Sink *queue) {
 static Async_Sink queue;
 
 static Logcie_Sink slow_sink = {
-  .formatter = {logcie_token_formatter, "[$L] ($M) $m"},
+  .formatter = {logcie_token_formatter, "[$L] ($M:$T) $m"},
   .writer    = {async_sink_write, async_sink_flush, &queue},
   .filter    = {NULL, NULL},
 };

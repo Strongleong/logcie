@@ -1,0 +1,43 @@
+:test a_thread_keeps_one_id_and_no_two_threads_share_one
+:command compile
+:blob executable 2
+cc
+:blob args 73
+-Wall -Wextra -Werror -pthread -I../.. threads.c -o .side_effects/threads
+:int return 0
+:command run
+:blob executable 21
+.side_effects/threads
+:int timeout_ms 30000
+:int return 0
+:blob stdout 123
+lines=6
+main_is_stable=1
+worker_a_is_stable=1
+worker_b_is_stable=1
+workers_differ=1
+worker_differs_from_main=1
+not_empty=1
+
+
+:test the_same_holds_under_thread_sanitizer
+:command compile
+:blob executable 2
+cc
+:blob args 96
+-Wall -Wextra -Werror -pthread -I../.. -fsanitize=thread threads.c -o .side_effects/threads_tsan
+:int return 0
+:command run
+:blob executable 26
+.side_effects/threads_tsan
+:int timeout_ms 60000
+:int return 0
+:blob stdout 123
+lines=6
+main_is_stable=1
+worker_a_is_stable=1
+worker_b_is_stable=1
+workers_differ=1
+worker_differs_from_main=1
+not_empty=1
+
