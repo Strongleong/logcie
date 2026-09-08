@@ -145,9 +145,9 @@ Each directory under `examples/` is one program, and they are meant to be read
 in order. Each adds one thing to the one before it.
 
 An example needing extra compiler flags puts them in a `build.flags` file next
-to its sources; `09_threads` and `13_async_sink` use that for `-lpthread`.
+to its sources; `09_threads` and `10_async_sink` use that for `-lpthread`.
 
-`13_async_sink` is the one to copy if a sink of yours is slow. Logcie has no
+`10_async_sink` is the one to copy if a sink of yours is slow. Logcie has no
 worker threads: a writer that would block gets a queue and a thread of its own,
 and the example is a working one you can take wholesale.
 
@@ -267,7 +267,7 @@ sink's business.
 
 A writer that would block, such as a socket or a disk that stalls, can queue the
 line and return, doing the write on a thread it owns. `logcie_flush()` calls the
-sink's flush, so that is where the queue drains. See `examples/13_async_sink`.
+sink's flush, so that is where the queue drains. See `examples/10_async_sink`.
 
 Two things reach it:
 
