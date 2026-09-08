@@ -7,6 +7,11 @@ on:
     branches: [ master ]
   workflow_dispatch:
 
+# A push that supersedes an in-flight run makes that run's answer irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # The .tspec suite is the real check. strum is POSIX-only, so this is
   # everywhere it can run.

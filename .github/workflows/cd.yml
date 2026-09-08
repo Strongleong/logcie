@@ -48,6 +48,25 @@ jobs:
             exit 1
           fi
 
+      # The release page should say what changed. Taking it from CHANGELOG.md
+      # rather than the commit log means it says it in the terms the changelog
+      # already uses: who is affected, and what to do.
+      - name: Extract the changelog section for this tag
+        run: |
+          awk -v tag="## ${GITHUB_REF_NAME}" '
+            $0 == tag      { found = 1; next }
+            found && /^## / { exit }
+            found          { print }
+          ' CHANGELOG.md > release-notes.md
+
+          if [ ! -s release-notes.md ]; then
+            echo "::error::CHANGELOG.md has no '## ${GITHUB_REF_NAME}' section"
+            exit 1
+          fi
+
+          echo "--- release notes ---"
+          cat release-notes.md
+
       # logcie.h is the artifact. Shipping it as a release asset means a user
       # can pin a version without cloning or trusting a moving branch.
       - name: Package
@@ -60,6 +79,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          body_path: release-notes.md
+          fail_on_unmatched_files: true
           files: |
             logcie.h
             logcie-${{ github.ref_name }}.tar.gz
