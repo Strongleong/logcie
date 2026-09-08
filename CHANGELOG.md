@@ -2,6 +2,8 @@
 
 ## Upcoming
 
+## v3.1.0
+
 ### Changed
 - **`log.msg` now holds the message.** `logcie_log` applies the `printf`
   arguments before any sink runs, so a formatter, writer or filter reading it
