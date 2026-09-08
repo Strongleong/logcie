@@ -251,3 +251,18 @@ gcc
 INFO n=1
 WARN s=x
 
+:test gcc_c99_default_source
+:command compile
+:blob executable 3
+gcc
+:blob args 101
+-std=c99 -Wall -Wextra -Werror -D_DEFAULT_SOURCE -I../.. matrix.c -o .side_effects/c99_default_source
+:int return 0
+:command run
+:blob executable 32
+.side_effects/c99_default_source
+:int return 0
+:blob stdout 18
+INFO n=1
+WARN s=x
+
