@@ -101,7 +101,7 @@ Define any of these **before** you include `logcie.h` (or before
 `#define LOGCIE_IMPLEMENTATION`) to customise Logcie.
 
 | Macro                            | Description                                                                                                        | Default                  |
-| -------                          | -------------                                                                                                      | ---------                |
+| -----                            | -----------                                                                                                        | -------                  |
 | `LOGCIE_MODULE`                  | Module name attached to classic macros (`LOGCIE_INFO`, …). (see [Module-Based Logging](#module-based-logging))     | `"Logcie"`               |
 | `LOGCIE_DEFAULT_SINK_FORMAT`     | Format string for the automatic stdout sink.                                                                       | `"$c$L$r … $f:$x$r: $m"` |
 | `LOGCIE_THREAD_SAFE`             | Enables a mutex around all sink operations and log calls (requires pthreads).                                      | *(not defined)*          |
@@ -628,7 +628,7 @@ You can add simple snippet to make your library support logcie
 If you need to have fallback logging this can be used instead of `(void *)0`:
 
 ```c
-#define YOURLIB_LOG(level, ...)                \
+#define YOURLIB_LOG(level, ...)               \
    do {                                       \
      fprintf(stderr, #level ": "__VA_ARGS__); \
      fprintf(stderr, "\n");                   \
