@@ -7,6 +7,9 @@
 //
 // The lock covers logging, not reconfiguration: add and remove sinks before
 // starting threads and after joining them, never in between.
+
+#define _GNU_SOURCE
+
 #define LOGCIE_MODULE      "worker"
 #define LOGCIE_THREAD_SAFE
 #define LOGCIE_IMPLEMENTATION
@@ -31,7 +34,7 @@ int main(void) {
   pthread_t threads[THREADS];
 
   // A writer runs while the lock is held, so it needs no locking of its own
-  logcie_get_default_sink()->formatter.data = "[$L] ($M) $m";
+  logcie_get_default_sink()->formatter.data = "[$L] ($M:$T) $m";
 
   for (long t = 0; t < THREADS; t++) {
     if (pthread_create(&threads[t], NULL, worker, (void *)t) != 0) {
