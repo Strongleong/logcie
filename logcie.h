@@ -1263,6 +1263,20 @@ static inline unsigned long long logcie_current_thread_id(void) {
 
 #endif  // LOGCIE_INTERNAL_THREAD_ID
 
+// NOTE: glibc renames the field rather than dropping it when the dialect is
+// strict, so this is about spelling, not availability. Testing __USE_MISC to
+// decide whether the field exists would lose it under -std=c99, which is a
+// dialect the includer chooses and the header cannot influence.
+#if defined(__GLIBC__)
+#ifdef __USE_MISC
+#define LOGCIE_INTERNAL_GMTOFF(tm) ((tm)->tm_gmtoff)
+#else
+#define LOGCIE_INTERNAL_GMTOFF(tm) ((tm)->__tm_gmtoff)
+#endif
+#elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+#define LOGCIE_INTERNAL_GMTOFF(tm) ((tm)->tm_gmtoff)
+#endif
+
 // NOTE: localtime and gmtime hand back a pointer into storage shared across the
 // process, so two threads formatting at once can read a struct the other is
 // rewriting. That buffer lives in libc, so no lock held here can protect it --
@@ -1280,22 +1294,6 @@ static void logcie_localtime(const time_t *t, struct tm *out) {
   localtime_r(t, out);
 #else
   struct tm *shared = localtime(t);
-
-  if (shared != NULL) {
-    *out = *shared;
-  }
-#endif
-}
-
-static void logcie_gmtime(const time_t *t, struct tm *out) {
-  memset(out, 0, sizeof(*out));
-
-#if defined(_MSC_VER)
-  gmtime_s(out, t);
-#elif defined(_POSIX_C_SOURCE) || defined(_DEFAULT_SOURCE) || defined(_GNU_SOURCE) || defined(_BSD_SOURCE)
-  gmtime_r(t, out);
-#else
-  struct tm *shared = gmtime(t);
 
   if (shared != NULL) {
     *out = *shared;
@@ -1627,22 +1625,77 @@ LOGCIE_DEF Logcie_Log logcie_make_log(const char *module, Logcie_LogLevel level,
   return log;
 }
 
-// NOTE: appends one token and keeps `needed` as the length the whole line
-// would have, fitted or not. snprintf reports that length even when it
-// truncates, which is what lets one pass both render and measure -- there is
-// no separate sizing walk over the format string to keep in sync.
-//
-// NOTE: the offset is clamped to cap before the pointer arithmetic. Forming
-// buf + needed past the end of the buffer is undefined even without a
-// dereference, and once needed reaches cap a size of 0 makes snprintf write
-// nothing while still returning the length it wanted.
-#define LOGCIE_INTERNAL_EMIT(...)                                 \
-  do {                                                            \
-    size_t  off_ = needed < cap ? needed : cap;                   \
-    int32_t n_   = snprintf(buf + off_, cap - off_, __VA_ARGS__); \
-    last_len     = n_ > 0 ? (size_t)n_ : 0;                       \
-    needed += last_len;                                           \
-  } while (0)
+static inline size_t logcie_append_mem(char *buf, size_t cap, size_t off, const char *src, size_t len) {
+  if (off < cap) {
+    size_t fit = cap - off;
+
+    if (fit > len) {
+      fit = len;
+    }
+
+    memcpy(buf + off, src, fit);
+  }
+
+  return off + len;
+}
+
+static inline size_t logcie_append_u64(char *buf, size_t cap, size_t off, uint64_t value, uint8_t min_digits) {
+  char   digits[20];
+  size_t len = 0;
+
+  do {
+    digits[len++] = (char)('0' + value % 10);
+    value /= 10;
+  } while (value != 0);
+
+  if (len < min_digits) {
+    size_t zeros = min_digits - len;
+
+    if (off < cap) {
+      size_t fit = cap - off;
+
+      if (fit > zeros) {
+        fit = zeros;
+      }
+
+      memset(buf + off, '0', fit);
+    }
+
+    off += zeros;
+  }
+
+  if (off < cap) {
+    size_t fit = cap - off;
+
+    if (fit > len) {
+      fit = len;
+    }
+
+    for (size_t i = 0; i < fit; i++) {
+      buf[off + i] = digits[len - 1 - i];
+    }
+  }
+
+  return off + len;
+}
+
+static inline size_t logcie_append_i32(char *buf, size_t cap, size_t off, int32_t value) {
+  if (value < 0) {
+    if (off < cap) {
+      buf[off] = '-';
+    }
+    off++;
+
+    return logcie_append_u64(buf, cap, off, (uint64_t)(-(int64_t)value), 1);
+  }
+
+  if (off < cap) {
+    buf[off] = '+';
+  }
+  off++;
+
+  return logcie_append_u64(buf, cap, off, (uint64_t)value, 1);
+}
 
 /**
  * @brief Copies the message into a buffer.
@@ -1667,6 +1720,21 @@ LOGCIE_DEF size_t logcie_render_message(char *buf, size_t cap, const Logcie_Log 
   return len;
 }
 
+static inline int32_t logcie_timezone_offset(const time_t *t, struct tm *local_tm) {
+#ifdef LOGCIE_INTERNAL_GMTOFF
+  (void)t;
+  return (int32_t)(LOGCIE_INTERNAL_GMTOFF(local_tm) / 3600);
+#else
+  // NOTE: two mktime calls, and glibc's stats /etc/localtime on each. Only
+  // reached where the platform keeps no offset in struct tm.
+  struct tm utc_tm;
+  struct tm local_copy = *local_tm;
+
+  logcie_gmtime(t, &utc_tm);
+  return (int32_t)difftime(mktime(&local_copy), mktime(&utc_tm)) / 3600;
+#endif
+}
+
 // NOTE: renders the whole line and returns the length it would have had. A
 // return value >= cap means it was truncated, and the caller decides whether
 // to retry on a bigger buffer or accept the truncation.
@@ -1683,33 +1751,34 @@ static size_t logcie_render_tokens(char *buf, size_t cap, const char *fmt, const
 
 #ifdef __cplusplus
   struct tm local_tm = {};
-  struct tm utc_tm   = {};
 #else
   struct tm local_tm = {0};
-  struct tm utc_tm   = {0};
 #endif
 
-  int32_t local_hours = 0;
-  int32_t timediff    = 0;
-  uint8_t time_ready  = 0;
+  int32_t timediff   = 0;
+  uint8_t time_ready = 0;
 
   // NOTE: the time functions are safe here because the formatter only runs
   // from logcie_log, which holds the lock when LOGCIE_THREAD_SAFE is on.
-#define LOGCIE_INTERNAL_ENSURE_TIME()                                             \
-  do {                                                                            \
-    if (!time_ready) {                                                            \
-      logcie_localtime(&log->time, &local_tm);                                    \
-      logcie_gmtime(&log->time, &utc_tm);                                         \
-      local_hours = local_tm.tm_hour;                                             \
-      timediff    = (int32_t)difftime(mktime(&local_tm), mktime(&utc_tm)) / 3600; \
-      time_ready  = 1;                                                            \
-    }                                                                             \
+#define LOGCIE_INTERNAL_ENSURE_TIME()                             \
+  do {                                                            \
+    if (!time_ready) {                                            \
+      logcie_localtime(&log->time, &local_tm);                    \
+      timediff   = logcie_timezone_offset(&log->time, &local_tm); \
+      time_ready = 1;                                             \
+    }                                                             \
   } while (0)
 
   while (*fmt != '\0') {
     if (*fmt != '$') {
-      LOGCIE_INTERNAL_EMIT("%c", *fmt);
-      fmt++;
+      const char *start = fmt;
+
+      while (*fmt != '\0' && *fmt != '$') {
+        fmt++;
+      }
+
+      last_len = (size_t)(fmt - start);
+      needed   = logcie_append_mem(buf, cap, needed, start, last_len);
       continue;
     }
 
@@ -1720,20 +1789,79 @@ static size_t logcie_render_tokens(char *buf, size_t cap, const char *fmt, const
     }
 
     switch (*fmt) {
-      case '$': LOGCIE_INTERNAL_EMIT("$"); break;
-      case 'l': LOGCIE_INTERNAL_EMIT("%s", get_logcie_level_label(log->level)); break;
-      case 'L': LOGCIE_INTERNAL_EMIT("%s", get_logcie_level_label_upper(log->level)); break;
-      case 'c': LOGCIE_INTERNAL_EMIT("%s", get_logcie_level_color(log->level)); break;
-      case 'r': LOGCIE_INTERNAL_EMIT("%s", LOGCIE_COLOR_RESET); break;
-      case 'N': LOGCIE_INTERNAL_EMIT("%09u", log->nanos); break;
-      case 'f': LOGCIE_INTERNAL_EMIT("%s", log->location.file ? log->location.file : ""); break;
-      case 'x': LOGCIE_INTERNAL_EMIT("%u", log->location.line); break;
-      case 'M': LOGCIE_INTERNAL_EMIT("%s", log->module ? log->module : ""); break;
+      case '$':
+        if (needed < cap) {
+          buf[needed] = '$';
+        }
+        needed++;
+        last_len = 1;
+        break;
+
+      case 'l': {
+        const char *value = get_logcie_level_label(log->level);
+        last_len          = strlen(value);
+        needed            = logcie_append_mem(buf, cap, needed, value, last_len);
+        break;
+      }
+
+      case 'L': {
+        const char *value = get_logcie_level_label_upper(log->level);
+        last_len          = strlen(value);
+        needed            = logcie_append_mem(buf, cap, needed, value, last_len);
+        break;
+      }
+
+      case 'c': {
+        const char *value = get_logcie_level_color(log->level);
+        last_len          = strlen(value);
+        needed            = logcie_append_mem(buf, cap, needed, value, last_len);
+        break;
+      }
+
+      case 'r':
+        last_len = sizeof(LOGCIE_COLOR_RESET) - 1;
+        needed   = logcie_append_mem(buf, cap, needed, LOGCIE_COLOR_RESET, last_len);
+        break;
+
+      case 'N': {
+        size_t before = needed;
+        needed        = logcie_append_u64(buf, cap, needed, (uint64_t)log->nanos, 9);
+        last_len      = needed - before;
+        break;
+      }
+
+      case 'f': {
+        const char *value = log->location.file ? log->location.file : "";
+        last_len          = strlen(value);
+        needed            = logcie_append_mem(buf, cap, needed, value, last_len);
+        break;
+      }
+
+      case 'x': {
+        size_t before = needed;
+        needed        = logcie_append_u64(buf, cap, needed, (uint64_t)log->location.line, 1);
+        last_len      = needed - before;
+        break;
+      }
+
+      case 'M': {
+        const char *value = log->module ? log->module : "";
+        last_len          = strlen(value);
+        needed            = logcie_append_mem(buf, cap, needed, value, last_len);
+        break;
+      }
 
 #ifdef LOGCIE_INTERNAL_THREAD_ID
-      case 'T': LOGCIE_INTERNAL_EMIT("%llu", logcie_current_thread_id()); break;
+      case 'T': {
+        size_t before = needed;
+        needed        = logcie_append_u64(buf, cap, needed, (uint64_t)logcie_current_thread_id(), 1);
+        last_len      = needed - before;
+        break;
+      }
 #else
-      case 'T': break;
+      case 'T':
+        last_len = 0;
+        break;
 #endif
 
       case 'm': {
@@ -1744,20 +1872,65 @@ static size_t logcie_render_tokens(char *buf, size_t cap, const char *fmt, const
         break;
       }
 
-      case 'd':
-        LOGCIE_INTERNAL_ENSURE_TIME();
-        LOGCIE_INTERNAL_EMIT("%d-%02d-%02d", local_tm.tm_year + 1900, local_tm.tm_mon + 1, local_tm.tm_mday);
-        break;
+      case 'd': {
+        size_t before;
 
-      case 't':
         LOGCIE_INTERNAL_ENSURE_TIME();
-        LOGCIE_INTERNAL_EMIT("%02d:%02d:%02d", local_hours, local_tm.tm_min, local_tm.tm_sec);
-        break;
 
-      case 'z':
-        LOGCIE_INTERNAL_ENSURE_TIME();
-        LOGCIE_INTERNAL_EMIT("%+d", timediff);
+        before = needed;
+        needed = logcie_append_u64(buf, cap, needed, (uint64_t)(local_tm.tm_year + 1900), 1);
+
+        if (needed < cap) {
+          buf[needed] = '-';
+        }
+
+        needed++;
+        needed = logcie_append_u64(buf, cap, needed, (uint64_t)(local_tm.tm_mon + 1), 2);
+
+        if (needed < cap) {
+          buf[needed] = '-';
+        }
+
+        needed++;
+        needed   = logcie_append_u64(buf, cap, needed, (uint64_t)local_tm.tm_mday, 2);
+        last_len = needed - before;
         break;
+      }
+
+      case 't': {
+        size_t before;
+
+        LOGCIE_INTERNAL_ENSURE_TIME();
+
+        before = needed;
+        needed = logcie_append_u64(buf, cap, needed, (uint64_t)local_tm.tm_hour, 2);
+
+        if (needed < cap) {
+          buf[needed] = ':';
+        }
+
+        needed++;
+        needed = logcie_append_u64(buf, cap, needed, (uint64_t)local_tm.tm_min, 2);
+
+        if (needed < cap) {
+          buf[needed] = ':';
+        }
+
+        needed++;
+        needed   = logcie_append_u64(buf, cap, needed, (uint64_t)local_tm.tm_sec, 2);
+        last_len = needed - before;
+        break;
+      }
+
+      case 'z': {
+        size_t before;
+
+        LOGCIE_INTERNAL_ENSURE_TIME();
+        before   = needed;
+        needed   = logcie_append_i32(buf, cap, needed, timediff);
+        last_len = needed - before;
+        break;
+      }
 
       case '<': {
         fmt++;
@@ -1774,7 +1947,18 @@ static size_t logcie_render_tokens(char *buf, size_t cap, const char *fmt, const
         int32_t pad = (int32_t)target - (int32_t)last_len;
 
         if (pad > 0) {
-          LOGCIE_INTERNAL_EMIT("%*s", pad, "");
+          if (needed < cap) {
+            size_t fit = cap - needed;
+
+            if (fit > (size_t)pad) {
+              fit = (size_t)pad;
+            }
+
+            memset(buf + needed, ' ', fit);
+          }
+
+          needed += (size_t)pad;
+          last_len = (size_t)pad;
         } else {
           // NOTE: nothing was written, so the previous token's length must not
           // survive into the next $<n.
@@ -1793,14 +1977,16 @@ static size_t logcie_render_tokens(char *buf, size_t cap, const char *fmt, const
     fmt++;
   }
 
-  LOGCIE_INTERNAL_EMIT("\n");
+  if (needed < cap) {
+    buf[needed] = '\n';
+  }
+
+  needed++;
 
 #undef LOGCIE_INTERNAL_ENSURE_TIME
 
   return needed;
 }
-
-#undef LOGCIE_INTERNAL_EMIT
 
 size_t logcie_token_formatter(Logcie_Writer *writer, void *data, Logcie_Log log) {
   const char *fmt = (const char *)data;
