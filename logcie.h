@@ -1720,7 +1720,7 @@ LOGCIE_DEF size_t logcie_render_message(char *buf, size_t cap, const Logcie_Log 
   return len;
 }
 
-static inline int32_t logcie_timezone_offset(const time_t *t, struct tm *local_tm) {
+static inline int32_t logcie_timezone_offset(const time_t *t, const struct tm *local_tm) {
 #ifdef LOGCIE_INTERNAL_GMTOFF
   (void)t;
   return (int32_t)(LOGCIE_INTERNAL_GMTOFF(local_tm) / 3600);
@@ -1733,6 +1733,29 @@ static inline int32_t logcie_timezone_offset(const time_t *t, struct tm *local_t
   logcie_gmtime(t, &utc_tm);
   return (int32_t)difftime(mktime(&local_copy), mktime(&utc_tm)) / 3600;
 #endif
+}
+
+// NOTE: the calendar fields and the offset are the same for every log in a
+// given second, and working them out costs about seventy nanoseconds of
+// localtime and timezone parsing. Kept per thread, so it needs no lock and
+// cannot become shared state.
+//
+// NOTE: a clock stepping backwards, or a DST change, renders at most the rest
+// of one second with the previous offset. The key is the second itself, so it
+// corrects on the next one.
+static LOGCIE_THREAD_LOCAL time_t    logcie_tm_cached_at = (time_t)-1;
+static LOGCIE_THREAD_LOCAL struct tm logcie_tm_cached;
+static LOGCIE_THREAD_LOCAL int32_t   logcie_tz_cached = 0;
+
+static inline void logcie_time_fields(const time_t *t, struct tm *out, int32_t *offset) {
+  if (*t != logcie_tm_cached_at) {
+    logcie_localtime(t, &logcie_tm_cached);
+    logcie_tz_cached    = logcie_timezone_offset(t, &logcie_tm_cached);
+    logcie_tm_cached_at = *t;
+  }
+
+  *out    = logcie_tm_cached;
+  *offset = logcie_tz_cached;
 }
 
 // NOTE: renders the whole line and returns the length it would have had. A
@@ -1760,13 +1783,12 @@ static size_t logcie_render_tokens(char *buf, size_t cap, const char *fmt, const
 
   // NOTE: the time functions are safe here because the formatter only runs
   // from logcie_log, which holds the lock when LOGCIE_THREAD_SAFE is on.
-#define LOGCIE_INTERNAL_ENSURE_TIME()                             \
-  do {                                                            \
-    if (!time_ready) {                                            \
-      logcie_localtime(&log->time, &local_tm);                    \
-      timediff   = logcie_timezone_offset(&log->time, &local_tm); \
-      time_ready = 1;                                             \
-    }                                                             \
+#define LOGCIE_INTERNAL_ENSURE_TIME()                       \
+  do {                                                      \
+    if (!time_ready) {                                      \
+      logcie_time_fields(&log->time, &local_tm, &timediff); \
+      time_ready = 1;                                       \
+    }                                                       \
   } while (0)
 
   while (*fmt != '\0') {
