@@ -1515,10 +1515,57 @@ LOGCIE_DEF void logcie_flush(void) {
   LOGCIE_MUTEX_UNLOCK(logcie_mutex);
 }
 
-// NOTE: the lock and the recursion guard live here, together, so nothing can
-// hold one without the other. logcie_flush reads the depth to tell whether it
-// already owns logcie_mutex.
-static void logcie_run_sinks(Logcie_Log log) {
+// NOTE: *heap is set only when the message did not fit the stack. The caller frees it.
+static const char *logcie_render_message_once(char *stack, size_t cap, char **heap, const char *fmt, va_list args) {
+  va_list attempt;
+
+  va_copy(attempt, args);
+  int32_t written = vsnprintf(stack, cap, fmt, attempt);
+  va_end(attempt);
+
+  size_t needed = written > 0 ? (size_t)written : 0;
+
+  if (needed < cap) {
+    return stack;
+  }
+
+#ifdef LOGCIE_MALLOC
+  *heap = (char *)LOGCIE_MALLOC(needed + 1);
+
+  if (*heap != NULL) {
+    va_copy(attempt, args);
+    vsnprintf(*heap, needed + 1, fmt, attempt);
+    va_end(attempt);
+    return *heap;
+  }
+#else
+  (void)heap;
+#endif
+
+  // NOTE: no allocator, or none available: the message keeps what fit.
+  return stack;
+}
+
+size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
+#ifndef LOGCIE_ALLOW_RECURSIVE_LOGGING
+  if (logcie_log_depth > 0) {
+    return 0;
+  }
+#endif
+
+  char    stack_msg[LOGCIE_LINE_BUFFER_SIZE];
+  char   *heap_msg = NULL;
+  uint8_t rendered = 0;
+  va_list args;
+
+  va_start(args, fmt);
+
+  // NOTE: the format string until a sink asks for the message.
+  log.msg = fmt;
+
+  // NOTE: the lock and the recursion guard are taken together, so nothing can
+  // hold one without the other. logcie_flush reads the depth to tell whether it
+  // already owns logcie_mutex.
   LOGCIE_MUTEX_LOCK(logcie_mutex);
   logcie_log_depth++;
 
@@ -1526,8 +1573,20 @@ static void logcie_run_sinks(Logcie_Log log) {
     Logcie_Sink *sink = logcie.sinks[i];
     LOGCIE_INTERNAL_ASSERT(sink && sink->formatter.format, "Sink have no formatter");
 
+    // NOTE: the one built-in filter that reads the message, so it is rendered
+    // for by name. A filter of your own sees the format string.
+    if (!rendered && sink->filter.filter == logcie_filter_message_contains_fn) {
+      log.msg  = logcie_render_message_once(stack_msg, sizeof(stack_msg), &heap_msg, fmt, args);
+      rendered = 1;
+    }
+
     if (sink->filter.filter && !sink->filter.filter(sink->filter.data, &log)) {
       continue;
+    }
+
+    if (!rendered) {
+      log.msg  = logcie_render_message_once(stack_msg, sizeof(stack_msg), &heap_msg, fmt, args);
+      rendered = 1;
     }
 
     sink->formatter.format(&sink->writer, sink->formatter.data, log);
@@ -1539,48 +1598,6 @@ static void logcie_run_sinks(Logcie_Log log) {
 
   logcie_log_depth--;
   LOGCIE_MUTEX_UNLOCK(logcie_mutex);
-}
-
-size_t logcie_log(Logcie_Log log, const char *fmt, ...) {
-#ifndef LOGCIE_ALLOW_RECURSIVE_LOGGING
-  if (logcie_log_depth > 0) {
-    return 0;
-  }
-#endif
-
-  va_list args;
-  va_start(args, fmt);
-
-  // NOTE: rendered here, once, because a va_list cannot outlive this call.
-  // Every sink is handed the message rather than the format string.
-  char    stack_msg[LOGCIE_LINE_BUFFER_SIZE];
-  char   *heap_msg = NULL;
-  va_list attempt;
-
-  va_copy(attempt, args);
-  int32_t rendered = vsnprintf(stack_msg, sizeof(stack_msg), fmt, attempt);
-  va_end(attempt);
-
-  size_t needed = rendered > 0 ? (size_t)rendered : 0;
-
-  if (needed < sizeof(stack_msg)) {
-    log.msg = stack_msg;
-  } else {
-#ifdef LOGCIE_MALLOC
-    heap_msg = (char *)LOGCIE_MALLOC(needed + 1);
-
-    if (heap_msg != NULL) {
-      va_copy(attempt, args);
-      vsnprintf(heap_msg, needed + 1, fmt, attempt);
-      va_end(attempt);
-    }
-#endif
-
-    // NOTE: no allocator, or none available: the message keeps what fit.
-    log.msg = heap_msg != NULL ? heap_msg : stack_msg;
-  }
-
-  logcie_run_sinks(log);
 
 #ifdef LOGCIE_MALLOC
   if (heap_msg != NULL) {
