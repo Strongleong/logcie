@@ -2,6 +2,9 @@
 
 ## Upcoming
 
+### Fixed
+- Several optimisations changes
+
 ## v3.2.0
 
 ### Added
