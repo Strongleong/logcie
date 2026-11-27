@@ -2,6 +2,20 @@
 
 ## Upcoming
 
+### Added
+- `$(` and `$)` delimit format groups. `$<n` can now pad an entire group instead
+   of only the preceding token, making it possible to align more complex prefixes:
+
+  ```c
+  "$([$M:$c$L$r]$)$<13 $m"
+  ```
+
+  Groups can be nested. Color tokens (`$c` and `$r`) do not contribute to the group width.
+- `LOGCIE_GROUP_MAX_DEPTH` (default 16) controls the maximum group nesting depth.
+  Groups exceeding this limit are not tracked, but their contents are still rendered
+  normally and contribute to the width of enclosing tracked groups.
+  Padding inside an untracked group falls back to normal token-level padding.
+
 ## v3.2.0
 
 ### Added

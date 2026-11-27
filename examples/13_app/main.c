@@ -91,7 +91,7 @@ static size_t json_formatter(Logcie_Writer *writer, void *user_data, Logcie_Log 
 // Console: INFO and up, but never the storage chatter. Neither storage.c nor
 // api.c is aware of this.
 static Logcie_Sink console = {
-  .formatter = {logcie_token_formatter, "$c$L$<6$r ($M) $m"},
+  .formatter = {logcie_token_formatter, "$c$L$<6$r $(($M))$<9 $m"},
   .writer    = {console_writer, console_flush, NULL},
   .filter    = logcie_filter_and(
     logcie_filter_level_min(LOGCIE_LEVEL_INFO),

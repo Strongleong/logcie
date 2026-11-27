@@ -35,6 +35,7 @@
  *   LOGCIE_MAX_SINKS               Maximum capacity of logcie sinks array (default: 16)
  *   LOGCIE_AUTOFLUSH_LEVEL         Level at and above which a log flushes its sink (default: LOGCIE_LEVEL_ERROR)
  *   LOGCIE_AUTOFLUSH_DISABLE       Define it to switch autoflushing off entirely (default: not defined)
+ *   LOGCIE_GROUP_MAX_DEPTH         Maximum amount of nested padding groups
  *   LOGCIE_LINE_BUFFER_SIZE        Bytes of stack buffer a line is formatted into (default: 1024)
  *   LOGCIE_MAX_LINE                Old name for LOGCIE_LINE_BUFFER_SIZE
  *   LOGCIE_MALLOC / LOGCIE_FREE    Allocator for lines longer than LOGCIE_LINE_BUFFER_SIZE
@@ -129,7 +130,9 @@
  *                                   `$t` - Time (HH:MM:SS)
  *                                   `$N` - Nanoseconds
  *                                   `$z` - Timezone offset
- *                                   `$<n - Pads the previous token out to n columns
+ *                                   `$<n - Pads the previous token or group up to n columns
+ *                                   `$(` - Start of a group for padding
+ *                                   `$)` - End of a group for padding
  *                                   `$$` - Literal dollar sign
  *
  *   Also by default, Logcie already has a Sink installed with the printf writer and formatter,
@@ -464,6 +467,18 @@ typedef enum Logcie_LogLevel {
  */
 #ifndef LOGCIE_MODULE_SEPARATOR
 #define LOGCIE_MODULE_SEPARATOR '.'
+#endif
+
+/**
+ * @brief Maximum depth of nested padding groups
+ *
+ * Groups exceeding this limit are not tracked as separate groups.
+ * Their delimiters are consumed, their contents are rendered normally,
+ * and their contents still contribute to the width of enclosing tracked groups.
+ * Padding inside an untracked group falls back to the normal token-level behavior.
+ */
+#ifndef LOGCIE_GROUP_MAX_DEPTH
+#define LOGCIE_GROUP_MAX_DEPTH 16
 #endif
 
 /**
@@ -933,7 +948,9 @@ LOGCIE_DEF void logcie_flush(void);
  * `$t` - Time (HH:MM:SS)
  * `$N` - Nanoseconds
  * `$z` - Timezone offset
- * `$<n - Pads the previous token out to n columns
+ * `$<n - Pads the previous token or group up to n columns
+ * `$(` - Start of a group for padding
+ * `$)` - End of a group for padding
  * `$$` - Literal dollar sign
  *
  * @param writer     Pointer to writer (see Logcie_Writer)
@@ -1674,8 +1691,12 @@ static size_t logcie_render_tokens(char *buf, size_t cap, const char *fmt, const
   LOGCIE_INTERNAL_ASSERT(buf, "Render buffer is missing");
   LOGCIE_INTERNAL_ASSERT(cap > 0, "Render buffer has no capacity");
 
-  size_t needed   = 0;
-  size_t last_len = 0;
+  size_t  needed         = 0;
+  size_t  last_len       = 0;
+  size_t  group_depth    = 0;
+  uint8_t group_overflow = 0;
+
+  size_t group_lens[LOGCIE_GROUP_MAX_DEPTH] = {0};
 
   // NOTE: the timestamp is captured at the call site, in
   // LOGCIE_INTERNAL_CREATE_LOG. This is only the conversion of that instant
@@ -1709,6 +1730,11 @@ static size_t logcie_render_tokens(char *buf, size_t cap, const char *fmt, const
   while (*fmt != '\0') {
     if (*fmt != '$') {
       LOGCIE_INTERNAL_EMIT("%c", *fmt);
+
+      for (size_t i = 0; i < group_depth; i++) {
+        group_lens[i]++;
+      }
+
       fmt++;
       continue;
     }
@@ -1719,7 +1745,10 @@ static size_t logcie_render_tokens(char *buf, size_t cap, const char *fmt, const
       break;
     }
 
-    switch (*fmt) {
+    const char   token          = *fmt;
+    const size_t emited_before = needed;
+
+    switch (token) {
       case '$': LOGCIE_INTERNAL_EMIT("$"); break;
       case 'l': LOGCIE_INTERNAL_EMIT("%s", get_logcie_level_label(log->level)); break;
       case 'L': LOGCIE_INTERNAL_EMIT("%s", get_logcie_level_label_upper(log->level)); break;
@@ -1785,9 +1814,36 @@ static size_t logcie_render_tokens(char *buf, size_t cap, const char *fmt, const
         break;
       }
 
+      case '(': {
+        if (group_overflow || group_depth == LOGCIE_GROUP_MAX_DEPTH) {
+          group_overflow++;
+        } else {
+          group_lens[group_depth++] = 0;
+        }
+        break;
+      }
+
+      case ')': {
+        if (group_overflow) {
+          group_overflow--;
+        } else if (group_depth > 0) {
+          last_len = group_lens[--group_depth];
+        }
+        break;
+      }
+
       default:
         fprintf(stderr, "%sWARN: unknown format sequence '$%c'. Skipping...\n" LOGCIE_COLOR_RESET, get_logcie_level_color(LOGCIE_LEVEL_WARN), *fmt);
         break;
+    }
+
+    // NOTE: color sequences do not occupy visible columns.
+    if (group_depth && token != 'c' && token != 'r') {
+      size_t emitted = needed - emited_before;
+
+      for (size_t i = 0; i < group_depth; i++) {
+        group_lens[i] += emitted;
+      }
     }
 
     fmt++;
