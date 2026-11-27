@@ -75,6 +75,72 @@ $
 :blob stdout 8
 [INFO ]
 
+:test group_padding
+:command run
+:blob executable 20
+.side_effects/tokens
+:blob args 16
+"$([$L]$)$<8 $m"
+:int return 0
+:blob stdout 15
+[INFO]   msg=7
+
+:test group_padding_multiple_tokens
+:command run
+:blob executable 20
+.side_effects/tokens
+:blob args 20
+"$([$M:$L]$)$<12 $m"
+:int return 0
+:blob stdout 19
+[net:INFO]   msg=7
+
+:test nested_group_padding
+:command run
+:blob executable 20
+.side_effects/tokens
+:blob args 29
+"$([$M:($($L$)$<6)]$)$<16 $m"
+:int return 0
+:blob stdout 23
+[net:(INFO  )]   msg=7
+
+:test group_wider_than_padding_target
+:command run
+:blob executable 20
+.side_effects/tokens
+:blob args 19
+"$([$M:$L]$)$<5 $m"
+:int return 0
+:blob stdout 17
+[net:INFO] msg=7
+
+:test group_padding_ignores_color_sequences
+:command run
+:blob executable 20
+.side_effects/tokens
+:blob args 20
+"$([$c$L$r]$)$<8 $m"
+:int return 0
+:blob stdout 27
+[[36;20mINFO[0m]   msg=7
+
+:test excessive_group_nesting
+:command compile
+:blob executable 2
+cc
+:blob args 103
+-std=c11 -Wall -Wextra -Werror -DLOGCIE_GROUP_MAX_DEPTH=2 -I../.. tokens.c -o .side_effects/group_depth
+:int return 0
+:command run
+:blob executable 25
+.side_effects/group_depth
+:blob args 23
+"$($($([X$L$)$<8$)$)$m"
+:int return 0
+:blob stdout 16
+[XINFO    msg=7
+
 :test file_token_is_the_path_given_to_the_compiler
 :command run
 :blob executable 20
