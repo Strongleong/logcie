@@ -126,6 +126,7 @@ Define any of these **before** you include `logcie.h` (or before
 | `LOGCIE_MAX_SINKS`               | How many sinks can be registered at once. `logcie_add_sink` returns 0 once full.                                   | `16`                     |
 | `LOGCIE_AUTOFLUSH_LEVEL`         | Level at and above which a log flushes the sink it was written to. (see [Flush](#flush))                           | `LOGCIE_LEVEL_ERROR`     |
 | `LOGCIE_AUTOFLUSH_DISABLE`       | Define it to switch autoflush off entirely. `logcie_flush()` still works.                                          | *(not defined)*          |
+| `LOGCIE_GROUP_MAX_DEPTH`         | Maximum amount of nested padding groups                                                                            | 16                       |
 | `LOGCIE_LINE_BUFFER_SIZE`        | Bytes of stack buffer a line is formatted into. Lines that fit cost no allocation.                                 | `1024`                   |
 | `LOGCIE_MAX_LINE`                | Deprecated name for `LOGCIE_LINE_BUFFER_SIZE`. Still works, and wins if both are set.                              | *(not defined)*          |
 | `LOGCIE_MALLOC` / `LOGCIE_FREE`  | Allocator used *only* for lines longer than `LOGCIE_LINE_BUFFER_SIZE`. Define both or neither.                     | `malloc` / `free`        |
@@ -448,23 +449,25 @@ Since logcie_add_sink() stores the pointer to your sink structure (not a copy), 
 
 Format strings use `$` tokens to insert log metadata. The default formatter supports the following tokens:
 
-| Token   | Description                                            | Example Output           |
-| ------- | -------------                                          | ----------------         |
-| `$m`    | The log message, with its arguments already applied    | "Connection established" |
-| `$f`    | Source file name                                       | "main.c"                 |
-| `$x`    | Line number                                            | "42"                     |
-| `$M`    | Module name                                            | "network"                |
-| `$T`    | Operating system thread id                             | "4812"                   |
-| `$l`    | Log level (lowercase)                                  | "info"                   |
-| `$L`    | Log level (uppercase)                                  | "INFO"                   |
-| `$c`    | ANSI color code for log level                          | `\x1b[36;20m`            |
-| `$r`    | ANSI reset color code                                  | `\x1b[0m`                |
-| `$d`    | Date (YYYY-MM-DD)                                      | "2025-12-24"             |
-| `$t`    | Time (HH:MM:SS)                                        | "14:30:15"               |
-| `$N`    | Nanoseconds                                            | "970431843"              |
-| `$z`    | Timezone offset                                        | "+3"                     |
-| `$<n`   | Pads prevous token out to `n` columns (example: `$<5`) | "     "                  |
-| `$$`    | Literal dollar sign                                    | "$"                      |
+| Token   | Description                                                       | Example Output           |
+| -----   | -----------                                                       | --------------           |
+| `$m`    | The log message, with its arguments already applied               | "Connection established" |
+| `$f`    | Source file name                                                  | "main.c"                 |
+| `$x`    | Line number                                                       | "42"                     |
+| `$M`    | Module name                                                       | "network"                |
+| `$T`    | Operating system thread id                                        | "4812"                   |
+| `$l`    | Log level (lowercase)                                             | "info"                   |
+| `$L`    | Log level (uppercase)                                             | "INFO"                   |
+| `$c`    | ANSI color code for log level                                     | `\x1b[36;20m`            |
+| `$r`    | ANSI reset color code                                             | `\x1b[0m`                |
+| `$d`    | Date (YYYY-MM-DD)                                                 | "2025-12-24"             |
+| `$t`    | Time (HH:MM:SS)                                                   | "14:30:15"               |
+| `$N`    | Nanoseconds                                                       | "970431843"              |
+| `$z`    | Timezone offset                                                   | "+3"                     |
+| `$<n`   | Pads prevous token or a group out to `n` columns (example: `$<5`) | "INFO    log"            |
+| `$(`    | Start of a group for padding                                      | "[INFO]:  log"           |
+| `$)`    | End of a group for padding                                        | "[INFO]:  log"           |
+| `$$`    | Literal dollar sign                                               | "$"                      |
 
 `$T` is the thread id the operating system uses, the one `top`, `gdb` and a
 journal show, so a log line can be matched to a thread you are already looking
