@@ -2,6 +2,8 @@
 
 ## Upcoming
 
+## v3.3.0
+
 ### Added
 - `$(` and `$)` delimit format groups. `$<n` can now pad an entire group instead
    of only the preceding token, making it possible to align more complex prefixes:
